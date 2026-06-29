@@ -1,0 +1,429 @@
+const { v4: uuidv4 } = require('uuid');
+const db = require('../database/knex');
+const { hashToken, compareToken } = require('../utils/jwt');
+
+// ==========================================
+// User Operations
+// ==========================================
+
+/**
+ * Find user by their primary database ID.
+ * @param {number} id - User primary ID
+ * @returns {Promise<Object>}
+ */
+const findUserById = (id) => db('users').where({ id }).whereNull('deleted_at').first();
+
+/**
+ * Find user by their mobile number.
+ * @param {string} mobile - Mobile number with country code prefix
+ * @returns {Promise<Object>}
+ */
+const findUserByMobile = (mobile) =>
+  db('users').where({ mobile_number: mobile }).whereNull('deleted_at').first();
+
+/**
+ * Find user by their email address.
+ * @param {string} email - Email address
+ * @returns {Promise<Object>}
+ */
+const findUserByEmail = (email) => {
+  if (!email) return null;
+  return db('users').where({ email }).whereNull('deleted_at').first();
+};
+
+/**
+ * Insert a new user record.
+ * @param {Object} data - User creation data
+ * @param {Object} [trx] - Optional transaction object
+ * @returns {Promise<Object>}
+ */
+const createUser = async (data, trx = null) => {
+  const q = trx ? trx('users') : db('users');
+  const [id] = await q.insert(data);
+  return trx ? trx('users').where({ id }).first() : findUserById(id);
+};
+
+/**
+ * Update an existing user record.
+ * @param {number} id - User ID
+ * @param {Object} data - Update payload
+ * @returns {Promise<Object>}
+ */
+const updateUser = async (id, data) => {
+  await db('users').where({ id }).update(data);
+  return findUserById(id);
+};
+
+/**
+ * Get the roles assigned to a user by joining directly to the roles table.
+ * @param {number} userId - User ID
+ * @returns {Promise<Array>}
+ */
+const getUserRoles = (userId) =>
+  db('users')
+    .join('roles', 'users.role_id', 'roles.id')
+    .where('users.id', userId)
+    .select('roles.code', 'roles.name');
+
+/**
+ * Get languages assigned to the user.
+ * @param {number} userId - User ID
+ * @returns {Promise<Array>}
+ */
+const getUserLanguages = (userId) =>
+  db('user_languages')
+    .join('languages', 'user_languages.language_id', 'languages.id')
+    .where('user_languages.user_id', userId)
+    .select('languages.code', 'languages.name');
+
+/**
+ * Retrieve the complete user profile including company details, roles, language, and address.
+ * @param {number} userId - User ID
+ * @returns {Promise<Object>}
+ */
+const getFullProfile = async (userId) => {
+  const user = await findUserById(userId);
+  if (!user) return null;
+
+  const profile = await db('company_details').where({ user_id: userId }).first();
+  const roles = await getUserRoles(userId);
+  const languages = await getUserLanguages(userId);
+  const address = await db('addresses').where({ user_id: userId, is_primary: true }).first();
+
+  let city = null,
+    state = null,
+    country = null;
+  if (address) {
+    if (address.city_id) city = await db('cities').where({ id: address.city_id }).first();
+    if (address.state_id) state = await db('states').where({ id: address.state_id }).first();
+    if (address.country_id)
+      country = await db('countries').where({ id: address.country_id }).first();
+  }
+
+  return {
+    ...user,
+    profile,
+    roles,
+    languages,
+    address: address ? { ...address, city, state, country } : null,
+  };
+};
+
+/**
+ * Format the full profile object for client responses.
+ * @param {Object} data - Full profile dataset
+ * @returns {Object}
+ */
+const formatUser = (data) => {
+  if (!data) return null;
+  const { profile, roles, languages, address, ...user } = data;
+  return {
+    uuid: user.uuid,
+    full_name: user.full_name,
+    company_name: profile?.company_name,
+    mobile_number: user.mobile_number,
+    email: user.email,
+    gst_number: profile?.gst_number,
+    profile_image: profile?.profile_image,
+    business_category_id: profile?.business_category_id,
+    business_type_id: profile?.business_type_id,
+    language: languages?.[0]?.code || null,
+    role: roles?.[0]?.code || null,
+    address: address
+      ? {
+          address_line_1: address.address_line_1,
+          address_line_2: address.address_line_2,
+          city: address.city?.name,
+          state: address.state?.name,
+          country: address.country?.name,
+          pincode: address.pincode,
+        }
+      : null,
+    is_verified: user.is_verified,
+    is_active: user.is_active,
+    last_login: user.last_login,
+    created_at: user.created_at,
+    updated_at: user.updated_at,
+  };
+};
+
+// ==========================================
+// OTP Logs
+// ==========================================
+
+/**
+ * Log an OTP request.
+ * @param {Object} data - OTP metadata
+ * @returns {Promise<void>}
+ */
+const createOtpLog = (data) => db('otp_logs').insert(data);
+
+/**
+ * Retrieve OTP details by its Firebase verification ID.
+ * @param {string} id - Firebase verification ID
+ * @returns {Promise<Object>}
+ */
+const findOtpByVerificationId = (id) =>
+  db('otp_logs').where({ firebase_verification_id: id }).first();
+
+/**
+ * Mark an OTP session as verified.
+ * @param {number} id - OTP record ID
+ * @returns {Promise<void>}
+ */
+const markOtpVerified = (id) =>
+  db('otp_logs').where({ id }).update({ status: 'verified', verified_at: db.fn.now() });
+
+/**
+ * Mark an OTP session as expired.
+ * @param {number} id - OTP record ID
+ * @returns {Promise<void>}
+ */
+const markOtpExpired = (id) => db('otp_logs').where({ id }).update({ status: 'expired' });
+
+/**
+ * Regenerate an OTP session with a new ID and expiry time.
+ * @param {number} id - OTP record ID
+ * @param {string} verificationId - New Firebase ID
+ * @param {Date} expiresAt - Expiry timestamp
+ * @returns {Promise<void>}
+ */
+const updateOtpVerificationId = (id, verificationId, expiresAt) =>
+  db('otp_logs').where({ id }).update({
+    firebase_verification_id: verificationId,
+    status: 'pending',
+    expires_at: expiresAt,
+  });
+
+// ==========================================
+// Refresh Tokens
+// ==========================================
+
+/**
+ * Save a new refresh token hash for a user.
+ * @param {number} userId - User ID
+ * @param {string} token - Raw refresh token string
+ * @param {Date} expiresAt - Expiry timestamp
+ * @returns {Promise<void>}
+ */
+const saveRefreshToken = async (userId, token, expiresAt) => {
+  const tokenHash = await hashToken(token);
+  return db('refresh_tokens').insert({
+    user_id: userId,
+    token_hash: tokenHash,
+    expires_at: expiresAt,
+    is_revoked: false,
+  });
+};
+
+/**
+ * Validate and find a user's active, non-revoked refresh token.
+ * @param {number} userId - User ID
+ * @param {string} token - Raw refresh token
+ * @returns {Promise<Object|null>}
+ */
+const findValidRefreshToken = async (userId, token) => {
+  const tokens = await db('refresh_tokens')
+    .where({ user_id: userId, is_revoked: false })
+    .where('expires_at', '>', db.fn.now());
+
+  for (const record of tokens) {
+    if (await compareToken(token, record.token_hash)) return record;
+  }
+  return null;
+};
+
+/**
+ * Revoke a refresh token by ID.
+ * @param {number} id - Token record ID
+ * @returns {Promise<void>}
+ */
+const revokeRefreshToken = (id) => db('refresh_tokens').where({ id }).update({ is_revoked: true });
+
+/**
+ * Revoke all active refresh tokens for a user.
+ * @param {number} userId - User ID
+ * @returns {Promise<void>}
+ */
+const revokeAllRefreshTokens = (userId) =>
+  db('refresh_tokens').where({ user_id: userId, is_revoked: false }).update({ is_revoked: true });
+
+/**
+ * Find and revoke a specific refresh token.
+ * @param {number} userId - User ID
+ * @param {string} token - Raw refresh token value
+ * @returns {Promise<Object|null>}
+ */
+const revokeRefreshTokenByValue = async (userId, token) => {
+  const record = await findValidRefreshToken(userId, token);
+  if (record) await revokeRefreshToken(record.id);
+  return record;
+};
+
+// ==========================================
+// Roles & Languages Configuration
+// ==========================================
+
+/**
+ * Find active role by its unique code.
+ * @param {string} code - Role code (e.g. 'buyer')
+ * @returns {Promise<Object>}
+ */
+const findRoleByCode = (code) => db('roles').where({ code, is_active: true }).first();
+
+/**
+ * Find active language by its code.
+ * @param {string} code - Language code (e.g. 'en')
+ * @returns {Promise<Object>}
+ */
+const findLanguageByCode = (code) => db('languages').where({ code, is_active: true }).first();
+
+/**
+ * Associate a language preference with a user.
+ * @param {number} userId - User ID
+ * @param {number} langId - Language ID
+ * @param {Object} trx - Transaction object
+ * @returns {Promise<void>}
+ */
+const assignLanguage = (userId, langId, trx) =>
+  trx('user_languages').insert({ user_id: userId, language_id: langId });
+
+// ==========================================
+// Profiles & Addresses
+// ==========================================
+
+/**
+ * Create company details for a user.
+ * @param {Object} data - Profile fields
+ * @param {Object} trx - Transaction object
+ * @returns {Promise<void>}
+ */
+const createProfile = (data, trx) => trx('company_details').insert(data);
+
+/**
+ * Update company details for a user.
+ * @param {number} userId - User ID
+ * @param {Object} data - Updated profile fields
+ * @returns {Promise<void>}
+ */
+const updateProfile = (userId, data) =>
+  db('company_details').where({ user_id: userId }).update(data);
+
+/**
+ * Find IDs for a given city, state, and country.
+ * @param {string} cityName - City name
+ * @param {string} stateName - State name
+ * @param {string} countryName - Country name
+ * @returns {Promise<Object>}
+ */
+const findLocationIds = async (cityName, stateName, countryName) => {
+  const country = await db('countries').where('name', 'like', `%${countryName}%`).first();
+  const state = country
+    ? await db('states')
+        .where('name', 'like', `%${stateName}%`)
+        .where({ country_id: country.id })
+        .first()
+    : null;
+  const city = state
+    ? await db('cities')
+        .where('name', 'like', `%${cityName}%`)
+        .where({ state_id: state.id })
+        .first()
+    : null;
+  return { country_id: country?.id, state_id: state?.id, city_id: city?.id };
+};
+
+/**
+ * Create a new address entry for a user.
+ * @param {Object} data - Address fields
+ * @param {Object} trx - Transaction object
+ * @returns {Promise<void>}
+ */
+const createAddress = (data, trx) => trx('addresses').insert(data);
+
+/**
+ * Update primary address, creating one if not exists.
+ * @param {number} userId - User ID
+ * @param {Object} data - Updated address fields
+ * @returns {Promise<void>}
+ */
+const updateAddress = async (userId, data) => {
+  const existing = await db('addresses').where({ user_id: userId, is_primary: true }).first();
+  if (existing) {
+    return db('addresses').where({ id: existing.id }).update(data);
+  }
+  return db('addresses').insert({ ...data, user_id: userId, is_primary: true });
+};
+
+/**
+ * Log a user login event.
+ * @param {Object} data - Login log metadata
+ * @returns {Promise<void>}
+ */
+const createLoginLog = (data) => db('login_logs').insert(data);
+
+/**
+ * Soft delete a user and perform cleanup of active sessions/devices.
+ * @param {number} userId - User ID
+ * @returns {Promise<void>}
+ */
+const softDeleteUser = async (userId) => {
+  await db.transaction(async (trx) => {
+    // 1. Soft delete the user: nullify mobile number, set inactive and deleted_at
+    await trx('users').where({ id: userId }).update({
+      mobile_number: null,
+      is_active: false,
+      deleted_at: trx.fn.now(),
+      updated_by: userId,
+    });
+
+    // 2. Delete user's active device tokens
+    await trx('devices').where({ user_id: userId }).del();
+
+    // 3. Revoke all user refresh tokens
+    await trx('refresh_tokens')
+      .where({ user_id: userId, is_revoked: false })
+      .update({ is_revoked: true });
+  });
+};
+
+/**
+ * Delete device registration for a user.
+ * @param {number} userId - User ID
+ * @returns {Promise<void>}
+ */
+const deleteUserDevice = (userId) => db('devices').where({ user_id: userId }).del();
+
+module.exports = {
+  uuidv4,
+  findUserById,
+  findUserByMobile,
+  findUserByEmail,
+  createUser,
+  updateUser,
+  getUserRoles,
+  getFullProfile,
+  formatUser,
+  createOtpLog,
+  findOtpByVerificationId,
+  markOtpVerified,
+  markOtpExpired,
+  updateOtpVerificationId,
+  saveRefreshToken,
+  findValidRefreshToken,
+  revokeRefreshToken,
+  revokeAllRefreshTokens,
+  revokeRefreshTokenByValue,
+  findRoleByCode,
+  findLanguageByCode,
+  assignLanguage,
+  createProfile,
+  updateProfile,
+  findLocationIds,
+  createAddress,
+  updateAddress,
+  createLoginLog,
+  softDeleteUser,
+  deleteUserDevice,
+  db,
+};

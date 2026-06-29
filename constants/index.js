@@ -1,0 +1,45 @@
+module.exports = {
+  HTTP_STATUS: {
+    OK: 200,
+    CREATED: 201,
+    BAD_REQUEST: 400,
+    UNAUTHORIZED: 401,
+    FORBIDDEN: 403,
+    NOT_FOUND: 404,
+    CONFLICT: 409,
+    INTERNAL_SERVER_ERROR: 500,
+  },
+  MESSAGES: {
+    SUCCESS: 'Success',
+    OTP_SENT: 'OTP sent successfully',
+    OTP_VERIFIED: 'OTP verified successfully',
+    OTP_RESENT: 'OTP resent successfully',
+    REGISTER_SUCCESS: 'Registration successful',
+    LOGIN_SUCCESS: 'Login successful',
+    LOGOUT_SUCCESS: 'Logout successful',
+    TOKEN_REFRESHED: 'Token refreshed successfully',
+    PROFILE_UPDATED: 'Profile updated successfully',
+    ACCOUNT_DELETED: 'Account deleted successfully',
+  },
+  ROLE_CODES: {
+    BUYER: 'buyer',
+    SELLER: 'seller',
+    BUYER_SELLER: 'buyer_seller',
+    ADMIN: 'admin',
+  },
+  LANGUAGE_CODES: {
+    ENGLISH: 'en',
+    HINDI: 'hi',
+    GUJARATI: 'gu',
+  },
+  TOKEN_TYPES: {
+    ACCESS: 'access',
+    REFRESH: 'refresh',
+    REGISTRATION: 'registration',
+  },
+  OTP_STATUS: {
+    PENDING: 'pending',
+    VERIFIED: 'verified',
+    EXPIRED: 'expired',
+  },
+};
