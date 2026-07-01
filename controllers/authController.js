@@ -76,7 +76,7 @@ const getProfile = async (req, res, next) => {
 
 const updateProfile = async (req, res, next) => {
   try {
-    const data = await authService.updateProfile(req.user.id, req.body);
+    const data = await authService.updateProfile(req.user.id, req.body, req.files);
     return success(res, MESSAGES.PROFILE_UPDATED, data);
   } catch (err) {
     next(err);

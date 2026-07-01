@@ -2,6 +2,7 @@ const { body, validationResult } = require('express-validator');
 const userModel = require('../models/userModel');
 const { AppError } = require('../utils/response');
 const { ROLE_CODES } = require('../constants');
+const { IMAGE_FIELD_LABELS } = require('../utils/media');
 
 const GST_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
@@ -18,19 +19,14 @@ const blockedRules = [
   blockedField('role_id', 'Role'),
   blockedField('business_type_id', 'Business type'),
   blockedField('business_category_id', 'Business category'),
+  blockedField('profile_image', 'Profile image'),
+  blockedField('company_logo', 'Company logo'),
+  blockedField('company_banner', 'Company banner'),
   blockedField('device_type', 'Device type'),
   blockedField('device_token', 'Device token'),
   blockedField('device', 'Device'),
   blockedField('complete_profile', 'complete_profile'),
 ];
-
-const imageUrl = (field, label) =>
-  body(field)
-    .trim()
-    .notEmpty()
-    .withMessage(`${label} is required`)
-    .isURL()
-    .withMessage(`Invalid ${label} URL`);
 
 const industryRules = [
   body('industry')
@@ -43,7 +39,6 @@ const industryRules = [
 
 const buyerProfileRules = [
   ...blockedRules,
-  imageUrl('profile_image', 'Profile image'),
   body('company_name').trim().notEmpty().withMessage('Company name is required').isLength({ min: 2, max: 200 }),
   ...industryRules,
   body('gst_number')
@@ -61,8 +56,6 @@ const buyerProfileRules = [
 
 const sellerProfileRules = [
   ...blockedRules,
-  imageUrl('company_logo', 'Company logo'),
-  imageUrl('company_banner', 'Company banner'),
   body('company_name').trim().notEmpty().withMessage('Company name is required').isLength({ min: 2, max: 200 }),
   body('gst_number')
     .trim()
@@ -88,9 +81,6 @@ const sellerProfileRules = [
 
 const buyerSellerProfileRules = [
   ...blockedRules,
-  imageUrl('profile_image', 'Profile image'),
-  imageUrl('company_logo', 'Company logo'),
-  imageUrl('company_banner', 'Company banner'),
   body('company_name').trim().notEmpty().withMessage('Company name is required').isLength({ min: 2, max: 200 }),
   ...industryRules,
   body('gst_number')
@@ -169,6 +159,26 @@ const getProfileFieldsForRole = (roleCode) => {
   return [...required, ...optional];
 };
 
+const REQUIRED_IMAGE_FIELDS = {
+  [ROLE_CODES.BUYER]: ['profile_image'],
+  [ROLE_CODES.SELLER]: ['company_logo', 'company_banner'],
+  [ROLE_CODES.BUYER_SELLER]: ['profile_image', 'company_logo', 'company_banner'],
+};
+
+const validateRequiredImages = (roleCode, files = {}, existingProfile = {}) => {
+  const requiredFields = REQUIRED_IMAGE_FIELDS[roleCode] || [];
+  return requiredFields
+    .filter((field) => {
+      const hasNewFile = Boolean(files[field]?.[0]);
+      const hasExisting = Boolean(existingProfile?.[field]);
+      return !hasNewFile && !hasExisting;
+    })
+    .map((field) => ({
+      field,
+      message: `${IMAGE_FIELD_LABELS[field] || field} is required`,
+    }));
+};
+
 const getRequiredFieldsForRole = (roleCode) => REQUIRED_BY_ROLE[roleCode] || [];
 
 /**
@@ -195,6 +205,15 @@ const validateProfileUpdate = async (req, _res, next) => {
           errors.array().map((e) => ({ field: e.path, message: e.msg })),
         ),
       );
+    }
+
+    const existingProfile = await userModel.db('company_details')
+      .where({ user_id: req.user.id })
+      .first();
+
+    const imageErrors = validateRequiredImages(roleCode, req.files, existingProfile);
+    if (imageErrors.length) {
+      return next(new AppError('Validation failed', 400, imageErrors));
     }
 
     req.userRoleCode = roleCode;

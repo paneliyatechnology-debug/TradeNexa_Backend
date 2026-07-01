@@ -277,7 +277,7 @@ const getProfile = (userId) => profileService.getProfile(userId);
 /**
  * Update user profile (role-based fields).
  */
-const updateProfile = (userId, data) => profileService.updateProfile(userId, data);
+const updateProfile = (userId, data, files) => profileService.updateProfile(userId, data, files);
 
 /**
  * Soft delete user profile and clean up active sessions.

@@ -12,6 +12,7 @@ const {
   verifyRegistration,
 } = require('../middleware/auth');
 const { validateProfileUpdate } = require('../middleware/profileValidation');
+const { handleProfileUpload } = require('../middleware/profileUpload');
 const { otpLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
@@ -23,7 +24,7 @@ router.post('/register', registerRules, validate, verifyRegistration, authContro
 router.post('/refresh-token', refreshRules, validate, authController.refreshToken);
 router.post('/logout', authenticate, logoutRules, validate, authController.logout);
 router.get('/profile', authenticate, authController.getProfile);
-router.put('/profile', authenticate, validateProfileUpdate, authController.updateProfile);
+router.put('/profile', authenticate, handleProfileUpload, validateProfileUpdate, authController.updateProfile);
 router.delete('/profile', authenticate, authController.deleteProfile);
 
 module.exports = router;

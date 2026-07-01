@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const db = require('../database/knex');
+const { resolveMediaUrl } = require('../utils/media');
 const { hashToken, compareToken } = require('../utils/jwt');
 
 // ==========================================
@@ -150,7 +151,7 @@ const formatUser = (data) => {
   };
 
   const buyerFields = {
-    profile_image: profile?.profile_image || null,
+    profile_image: resolveMediaUrl(profile?.profile_image),
     company_name: profile?.company_name || null,
     industry: profile?.industry || null,
     gst_number: profile?.gst_number || null,
@@ -167,8 +168,8 @@ const formatUser = (data) => {
   };
 
   const sellerFields = {
-    company_logo: profile?.company_logo || null,
-    company_banner: profile?.company_banner || null,
+    company_logo: resolveMediaUrl(profile?.company_logo),
+    company_banner: resolveMediaUrl(profile?.company_banner),
     company_name: profile?.company_name || null,
     gst_number: profile?.gst_number || null,
     pan_number: profile?.pan_number || null,
@@ -185,7 +186,7 @@ const formatUser = (data) => {
     ...base,
     company_name: profile?.company_name || null,
     gst_number: profile?.gst_number || null,
-    profile_image: profile?.profile_image || null,
+    profile_image: resolveMediaUrl(profile?.profile_image),
   };
 };
 
