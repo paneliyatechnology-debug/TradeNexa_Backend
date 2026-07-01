@@ -1,13 +1,8 @@
 const userModel = require('../models/userModel');
 const { AppError } = require('../utils/response');
 const { ROLE_CODES } = require('../constants');
+const { REQUIRED_IMAGE_FIELDS } = require('../constants/profileFields');
 const { replaceStoredImage } = require('../utils/media');
-
-const IMAGE_FIELDS_BY_ROLE = {
-  [ROLE_CODES.BUYER]: ['profile_image'],
-  [ROLE_CODES.SELLER]: ['company_logo', 'company_banner'],
-  [ROLE_CODES.BUYER_SELLER]: ['profile_image', 'company_logo', 'company_banner'],
-};
 
 const setImageField = async (companyUpdate, field, files, userId, existingValue) => {
   const newPath = await replaceStoredImage(files, field, userId, existingValue);
@@ -40,7 +35,7 @@ const updateProfile = async (userId, data, files = {}) => {
 
   const existingProfile = fullProfile.profile || {};
   const companyUpdate = { updated_by: userId };
-  const imageFields = IMAGE_FIELDS_BY_ROLE[roleCode] || [];
+  const imageFields = REQUIRED_IMAGE_FIELDS[roleCode] || [];
 
   for (const field of imageFields) {
     await setImageField(companyUpdate, field, files, userId, existingProfile[field]);

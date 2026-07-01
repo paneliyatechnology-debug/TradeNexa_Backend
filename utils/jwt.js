@@ -36,8 +36,6 @@ const generateAuthTokens = (user) => {
 };
 
 module.exports = {
-  signAccess,
-  signRefresh,
   signRegistration,
   verifyAccess,
   verifyRefresh,

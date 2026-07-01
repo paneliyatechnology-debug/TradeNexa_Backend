@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../database/knex');
 const { resolveMediaUrl } = require('../utils/media');
 const { hashToken, compareToken } = require('../utils/jwt');
+const { ROLE_CODES } = require('../constants');
 
 // ==========================================
 // User Operations
@@ -178,9 +179,9 @@ const formatUser = (data) => {
     business_description: profile?.business_description || null,
   };
 
-  if (roleCode === 'buyer') return { ...base, ...buyerFields };
-  if (roleCode === 'seller') return { ...base, ...sellerFields };
-  if (roleCode === 'buyer_seller') return { ...base, ...buyerFields, ...sellerFields };
+  if (roleCode === ROLE_CODES.BUYER) return { ...base, ...buyerFields };
+  if (roleCode === ROLE_CODES.SELLER) return { ...base, ...sellerFields };
+  if (roleCode === ROLE_CODES.BUYER_SELLER) return { ...base, ...buyerFields, ...sellerFields };
 
   return {
     ...base,
@@ -304,15 +305,8 @@ const revokeRefreshTokenByValue = async (userId, token) => {
 };
 
 // ==========================================
-// Roles & Languages Configuration
+// Languages
 // ==========================================
-
-/**
- * Find active role by its unique code.
- * @param {string} code - Role code (e.g. 'buyer')
- * @returns {Promise<Object>}
- */
-const findRoleByCode = (code) => db('roles').where({ code, is_active: true }).first();
 
 /**
  * Find active language by its code.
@@ -321,38 +315,16 @@ const findRoleByCode = (code) => db('roles').where({ code, is_active: true }).fi
  */
 const findLanguageByCode = (code) => db('languages').where({ code, is_active: true }).first();
 
-/**
- * Associate a language preference with a user.
- * @param {number} userId - User ID
- * @param {number} langId - Language ID
- * @param {Object} trx - Transaction object
- * @returns {Promise<void>}
- */
-const assignLanguage = (userId, langId, trx) => {
-  const q = trx ? trx('users') : db('users');
-  return q.where({ id: userId }).update({ language_id: langId });
-};
-
 // ==========================================
 // Profiles & Addresses
 // ==========================================
 
 /**
- * Create company details for a user.
- * @param {Object} data - Profile fields
- * @param {Object} trx - Transaction object
- * @returns {Promise<void>}
- */
-const createProfile = (data, trx) => trx('company_details').insert(data);
-
-/**
- * Update company details for a user.
+ * Fetch company details for a user.
  * @param {number} userId - User ID
- * @param {Object} data - Updated profile fields
- * @returns {Promise<void>}
+ * @returns {Promise<Object|null>}
  */
-const updateProfile = (userId, data) =>
-  db('company_details').where({ user_id: userId }).update(data);
+const getCompanyDetails = (userId) => db('company_details').where({ user_id: userId }).first();
 
 const upsertProfile = async (userId, data) => {
   const existing = await db('company_details').where({ user_id: userId }).first();
@@ -387,14 +359,6 @@ const findLocationIds = async (cityName, stateName, countryName) => {
     : null;
   return { country_id: country?.id, state_id: state?.id, city_id: city?.id };
 };
-
-/**
- * Create a new address entry for a user.
- * @param {Object} data - Address fields
- * @param {Object} trx - Transaction object
- * @returns {Promise<void>}
- */
-const createAddress = (data, trx) => trx('addresses').insert(data);
 
 /**
  * Update primary address, creating one if not exists.
@@ -490,14 +454,10 @@ module.exports = {
   revokeRefreshToken,
   revokeAllRefreshTokens,
   revokeRefreshTokenByValue,
-  findRoleByCode,
   findLanguageByCode,
-  assignLanguage,
-  createProfile,
-  updateProfile,
+  getCompanyDetails,
   upsertProfile,
   findLocationIds,
-  createAddress,
   updateAddress,
   createLoginLog,
   softDeleteUser,

@@ -14,9 +14,6 @@ const slugify = (text) => {
 const findCategoryById = (id) =>
   db('categories').where({ id }).whereNull('deleted_at').first();
 
-const findCategoryBySlug = (slug) =>
-  db('categories').where({ slug }).whereNull('deleted_at').first();
-
 const findCategories = async (filters = {}) => {
   const q = db('categories')
     .leftJoin('products', function () {
@@ -96,10 +93,8 @@ const deleteCategory = async (id, userId = null) => {
 
 module.exports = {
   findCategoryById,
-  findCategoryBySlug,
   findCategories,
   createCategory,
   updateCategory,
   deleteCategory,
-  slugify,
 };

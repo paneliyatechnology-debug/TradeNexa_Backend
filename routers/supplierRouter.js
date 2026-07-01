@@ -1,7 +1,7 @@
 const express = require('express');
 const supplierController = require('../controllers/supplierController');
-const { authenticate, authorize, validate } = require('../middleware/auth');
-const { idParam, supplierCreateRules, supplierUpdateRules, supplierNearbyRules, paginationQuery } = require('../middleware/resourceValidation');
+const { validate } = require('../middleware/auth');
+const { idParam, supplierNearbyRules, paginationQuery } = require('../middleware/resourceValidation');
 
 const router = express.Router();
 

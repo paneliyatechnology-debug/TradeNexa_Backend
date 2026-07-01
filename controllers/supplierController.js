@@ -41,16 +41,16 @@ const getVerifiedSuppliers = async (req, res, next) => {
     const data = await supplierModel.findSuppliers(filters);
     
     // Format output as per spec: id, company_name, logo, verified, rating, response_rate, years_in_business, city, state
-    const formatted = data.results.map(s => ({
+    const formatted = data.results.map((s) => ({
       id: s.id,
       company_name: s.company_name,
       logo: s.logo,
       verified: s.verified,
-      rating: parseFloat(s.rating),
-      response_rate: parseFloat(s.response_rate),
+      rating: s.rating,
+      response_rate: s.response_rate,
       years_in_business: s.years_in_business,
       city: s.city,
-      state: s.state
+      state: s.state,
     }));
 
     return success(res, 'Verified suppliers retrieved successfully', formatted);
@@ -68,13 +68,13 @@ const getNearbySuppliers = async (req, res, next) => {
     const data = await supplierModel.findNearbySuppliers(latitude, longitude, maxDist, filters);
     
     // Format output as per spec: id, company_name, distance, city, state, rating
-    const formatted = data.results.map(s => ({
+    const formatted = data.results.map((s) => ({
       id: s.id,
       company_name: s.company_name,
       distance: s.distance,
       city: s.city,
       state: s.state,
-      rating: parseFloat(s.rating)
+      rating: s.rating,
     }));
 
     return success(res, 'Nearby suppliers retrieved successfully', formatted);

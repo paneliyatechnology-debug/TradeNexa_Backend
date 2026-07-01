@@ -15,7 +15,6 @@ module.exports = {
     OTP_VERIFIED: 'OTP verified successfully',
     OTP_RESENT: 'OTP resent successfully',
     REGISTER_SUCCESS: 'Registration successful',
-    LOGIN_SUCCESS: 'Login successful',
     LOGOUT_SUCCESS: 'Logout successful',
     TOKEN_REFRESHED: 'Token refreshed successfully',
     PROFILE_UPDATED: 'Profile updated successfully',

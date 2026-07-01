@@ -65,7 +65,5 @@ exports.seed = async function (knex) {
   await knex('business_types').insert(rows);
 };
 
-module.exports.BUYER_TYPES = BUYER_TYPES;
-module.exports.SELLER_TYPES = SELLER_TYPES;
 module.exports.BUYER_SELLER_TYPES = BUYER_SELLER_TYPES;
 module.exports.slugify = slugify;

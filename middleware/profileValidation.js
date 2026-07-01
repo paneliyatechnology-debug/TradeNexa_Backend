@@ -2,6 +2,7 @@ const { body, validationResult } = require('express-validator');
 const userModel = require('../models/userModel');
 const { AppError } = require('../utils/response');
 const { ROLE_CODES } = require('../constants');
+const { REQUIRED_IMAGE_FIELDS } = require('../constants/profileFields');
 const { IMAGE_FIELD_LABELS } = require('../utils/media');
 
 const GST_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -117,54 +118,6 @@ const RULES_BY_ROLE = {
   [ROLE_CODES.BUYER_SELLER]: buyerSellerProfileRules,
 };
 
-const REQUIRED_BY_ROLE = {
-  [ROLE_CODES.BUYER]: [
-    'profile_image',
-    'company_name',
-    'industry',
-    'address_line_1',
-    'country',
-  ],
-  [ROLE_CODES.SELLER]: [
-    'company_logo',
-    'company_banner',
-    'company_name',
-    'gst_number',
-    'pan_number',
-    'business_description',
-  ],
-  [ROLE_CODES.BUYER_SELLER]: [
-    'profile_image',
-    'company_logo',
-    'company_banner',
-    'company_name',
-    'industry',
-    'gst_number',
-    'pan_number',
-    'business_description',
-    'address_line_1',
-    'country',
-  ],
-};
-
-const OPTIONAL_BY_ROLE = {
-  [ROLE_CODES.BUYER]: ['gst_number', 'address_line_2', 'state', 'city', 'pincode'],
-  [ROLE_CODES.SELLER]: ['cin', 'iec'],
-  [ROLE_CODES.BUYER_SELLER]: ['address_line_2', 'state', 'city', 'pincode', 'cin', 'iec'],
-};
-
-const getProfileFieldsForRole = (roleCode) => {
-  const required = REQUIRED_BY_ROLE[roleCode] || [];
-  const optional = OPTIONAL_BY_ROLE[roleCode] || [];
-  return [...required, ...optional];
-};
-
-const REQUIRED_IMAGE_FIELDS = {
-  [ROLE_CODES.BUYER]: ['profile_image'],
-  [ROLE_CODES.SELLER]: ['company_logo', 'company_banner'],
-  [ROLE_CODES.BUYER_SELLER]: ['profile_image', 'company_logo', 'company_banner'],
-};
-
 const validateRequiredImages = (roleCode, files = {}, existingProfile = {}) => {
   const requiredFields = REQUIRED_IMAGE_FIELDS[roleCode] || [];
   return requiredFields
@@ -179,10 +132,8 @@ const validateRequiredImages = (roleCode, files = {}, existingProfile = {}) => {
     }));
 };
 
-const getRequiredFieldsForRole = (roleCode) => REQUIRED_BY_ROLE[roleCode] || [];
-
 /**
- * Role-based profile validation — same style as register (all required fields must be sent).
+ * Role-based profile validation for multipart profile updates.
  */
 const validateProfileUpdate = async (req, _res, next) => {
   try {
@@ -207,9 +158,7 @@ const validateProfileUpdate = async (req, _res, next) => {
       );
     }
 
-    const existingProfile = await userModel.db('company_details')
-      .where({ user_id: req.user.id })
-      .first();
+    const existingProfile = await userModel.getCompanyDetails(req.user.id);
 
     const imageErrors = validateRequiredImages(roleCode, req.files, existingProfile);
     if (imageErrors.length) {
@@ -223,10 +172,4 @@ const validateProfileUpdate = async (req, _res, next) => {
   }
 };
 
-module.exports = {
-  validateProfileUpdate,
-  getProfileFieldsForRole,
-  getRequiredFieldsForRole,
-  GST_REGEX,
-  PAN_REGEX,
-};
+module.exports = { validateProfileUpdate };

@@ -80,10 +80,7 @@ module.exports = {
   IMAGE_FIELD_LABELS,
   buildProfileFileName,
   getProfileUploadDir,
-  buildRelativeProfilePath,
-  getUploadedProfilePath,
   resolveMediaUrl,
-  deleteStoredFile,
   replaceStoredImage,
   ensureDir,
 };

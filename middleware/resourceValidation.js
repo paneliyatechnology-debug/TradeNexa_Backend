@@ -57,35 +57,11 @@ const brandUpdateRules = [
 ];
 
 // Supplier validations
-const supplierCreateRules = [
-  body('company_name').trim().notEmpty().withMessage('Company name is required').isLength({ min: 2, max: 200 }).withMessage('Company name must be 2 to 200 chars'),
-  body('logo').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Logo URL too long'),
-  body('is_verified').optional().isBoolean().withMessage('is_verified must be a boolean'),
-  body('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5'),
-  body('response_rate').optional().isFloat({ min: 0, max: 100 }).withMessage('Response rate must be between 0 and 100'),
-  body('years_in_business').optional().isInt({ min: 0 }).withMessage('Years in business must be a positive integer'),
-  body('latitude').optional({ values: 'falsy' }).isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
-  body('longitude').optional({ values: 'falsy' }).isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180'),
-  body('user_id').optional({ values: 'falsy' }).isInt().withMessage('User ID must be an integer')
-];
-
-const supplierUpdateRules = [
-  body('company_name').optional().trim().isLength({ min: 2, max: 200 }).withMessage('Company name must be 2 to 200 chars'),
-  body('logo').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Logo URL too long'),
-  body('is_verified').optional().isBoolean().withMessage('is_verified must be a boolean'),
-  body('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5'),
-  body('response_rate').optional().isFloat({ min: 0, max: 100 }).withMessage('Response rate must be between 0 and 100'),
-  body('years_in_business').optional().isInt({ min: 0 }).withMessage('Years in business must be a positive integer'),
-  body('latitude').optional({ values: 'falsy' }).isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
-  body('longitude').optional({ values: 'falsy' }).isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180'),
-  body('user_id').optional({ values: 'falsy' }).isInt().withMessage('User ID must be an integer')
-];
-
 const supplierNearbyRules = [
   query('latitude').isFloat({ min: -90, max: 90 }).withMessage('Latitude is required and must be between -90 and 90'),
   query('longitude').isFloat({ min: -180, max: 180 }).withMessage('Longitude is required and must be between -180 and 180'),
   query('max_distance').optional().isFloat({ min: 0 }).withMessage('max_distance must be a positive number'),
-  ...paginationQuery
+  ...paginationQuery,
 ];
 
 // Product validations
@@ -225,8 +201,6 @@ module.exports = {
   bannerUpdateRules,
   brandCreateRules,
   brandUpdateRules,
-  supplierCreateRules,
-  supplierUpdateRules,
   supplierNearbyRules,
   productCreateRules,
   productUpdateRules,
