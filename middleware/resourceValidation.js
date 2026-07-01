@@ -1,8 +1,10 @@
 const { body, param, query } = require('express-validator');
 
 // Common parameters
-const idParam = [
-  param('id').isInt().withMessage('ID must be an integer')
+const idParam = [param('id').isInt().withMessage('ID must be an integer')];
+
+const categoryIdParam = [
+  param('categoryId').isInt({ min: 1 }).withMessage('Category ID must be a positive integer'),
 ];
 
 const paginationQuery = [
@@ -23,7 +25,24 @@ const categoryUpdateRules = [
   body('name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
   body('icon').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Icon URL too long'),
   body('image').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Image URL too long'),
-  body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format')
+  body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
+  body('is_active').optional().isBoolean().withMessage('is_active must be a boolean'),
+];
+
+const subcategoryCreateRules = [
+  body('name').trim().notEmpty().withMessage('Subcategory name is required').isLength({ min: 2, max: 100 }),
+  body('icon').optional({ values: 'falsy' }).trim().isLength({ max: 500 }),
+  body('image').optional({ values: 'falsy' }).trim().isLength({ max: 500 }),
+  body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
+  body('is_active').optional().isBoolean(),
+];
+
+const subcategoryUpdateRules = [
+  body('name').optional().trim().isLength({ min: 2, max: 100 }),
+  body('icon').optional({ values: 'falsy' }).trim().isLength({ max: 500 }),
+  body('image').optional({ values: 'falsy' }).trim().isLength({ max: 500 }),
+  body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
+  body('is_active').optional().isBoolean(),
 ];
 
 // Banner validations
@@ -73,7 +92,7 @@ const productCreateRules = [
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
   body('unit').optional().trim().isLength({ max: 50 }).withMessage('Unit string too long'),
   body('supplier_id').isInt().withMessage('Supplier ID is required and must be an integer'),
-  body('category_id').isInt().withMessage('Category ID is required and must be an integer'),
+  body('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required and must be an integer'),
   body('brand_id').optional({ values: 'falsy' }).isInt().withMessage('Brand ID must be an integer'),
   body('is_trending').optional().isBoolean().withMessage('is_trending must be a boolean'),
   body('is_recommended').optional().isBoolean().withMessage('is_recommended must be a boolean'),
@@ -89,7 +108,7 @@ const productUpdateRules = [
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
   body('unit').optional().trim().isLength({ max: 50 }).withMessage('Unit string too long'),
   body('supplier_id').optional().isInt().withMessage('Supplier ID must be an integer'),
-  body('category_id').optional().isInt().withMessage('Category ID must be an integer'),
+  body('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
   body('brand_id').optional({ values: 'falsy' }).isInt().withMessage('Brand ID must be an integer'),
   body('is_trending').optional().isBoolean().withMessage('is_trending must be a boolean'),
   body('is_recommended').optional().isBoolean().withMessage('is_recommended must be a boolean'),
@@ -98,7 +117,8 @@ const productUpdateRules = [
 ];
 
 const productListQuery = [
-  query('category_id').optional().isInt().withMessage('Category ID must be an integer'),
+  query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
+  query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
   query('brand_id').optional().isInt().withMessage('Brand ID must be an integer'),
   query('min_price').optional().isFloat({ min: 0 }).withMessage('Min price must be positive'),
   query('max_price').optional().isFloat({ min: 0 }).withMessage('Max price must be positive'),
@@ -194,9 +214,12 @@ const businessTypeUpdateRules = [
 
 module.exports = {
   idParam,
+  categoryIdParam,
   paginationQuery,
   categoryCreateRules,
   categoryUpdateRules,
+  subcategoryCreateRules,
+  subcategoryUpdateRules,
   bannerCreateRules,
   bannerUpdateRules,
   brandCreateRules,

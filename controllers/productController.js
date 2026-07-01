@@ -28,6 +28,7 @@ const getProducts = async (req, res, next) => {
     const filters = {
       q: req.query.q,
       category_id: req.query.category_id,
+      subcategory_id: req.query.subcategory_id,
       brand_id: req.query.brand_id,
       min_price: req.query.min_price,
       max_price: req.query.max_price,

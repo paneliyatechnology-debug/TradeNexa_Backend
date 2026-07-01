@@ -1,5 +1,6 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
+const categoryModel = require('./categoryModel');
 
 const slugify = (text) =>
   text
@@ -15,7 +16,8 @@ const findProductById = async (id) => {
   const result = await db('products')
     .leftJoin('users as suppliers', 'products.supplier_id', '=', 'suppliers.id')
     .leftJoin('company_details', 'suppliers.id', '=', 'company_details.user_id')
-    .leftJoin('categories', 'products.category_id', '=', 'categories.id')
+    .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
+    .leftJoin('categories', 'subcategories.parent_id', '=', 'categories.id')
     .leftJoin('brands', 'products.brand_id', '=', 'brands.id')
     .leftJoin('addresses', function () {
       this.on('suppliers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
@@ -29,6 +31,8 @@ const findProductById = async (id) => {
       'company_details.company_name as supplier_name',
       'suppliers.is_verified as verified',
       'categories.name as category_name',
+      'subcategories.id as subcategory_id',
+      'subcategories.name as subcategory_name',
       'brands.name as brand_name',
       'cities.name as city',
       'states.name as state'
@@ -48,6 +52,7 @@ const findProducts = async (filters = {}) => {
   const q = db('products')
     .leftJoin('users as suppliers', 'products.supplier_id', '=', 'suppliers.id')
     .leftJoin('company_details', 'suppliers.id', '=', 'company_details.user_id')
+    .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
     .leftJoin('addresses', function () {
       this.on('suppliers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
     })
@@ -78,7 +83,11 @@ const findProducts = async (filters = {}) => {
   }
 
   if (filters.category_id) {
-    q.where('products.category_id', filters.category_id);
+    q.where('subcategories.parent_id', filters.category_id);
+  }
+
+  if (filters.subcategory_id) {
+    q.where('products.subcategory_id', filters.subcategory_id);
   }
 
   if (filters.brand_id) {
@@ -130,6 +139,8 @@ const findProducts = async (filters = {}) => {
 };
 
 const createProduct = async (data, userId = null) => {
+  await categoryModel.validateSubcategoryForProduct(data.subcategory_id);
+
   const payload = {
     name: data.name,
     slug: data.slug ? slugify(data.slug) : slugify(data.name),
@@ -138,8 +149,8 @@ const createProduct = async (data, userId = null) => {
     currency: data.currency || 'INR',
     moq: data.moq !== undefined ? data.moq : 1,
     unit: data.unit || 'pcs',
-    supplier_id: data.supplier_id, // References users.id
-    category_id: data.category_id,
+    supplier_id: data.supplier_id,
+    subcategory_id: data.subcategory_id,
     brand_id: data.brand_id || null,
     is_trending: data.is_trending !== undefined ? data.is_trending : false,
     is_recommended: data.is_recommended !== undefined ? data.is_recommended : false,
@@ -165,7 +176,10 @@ const updateProduct = async (id, data, userId = null) => {
   if (data.moq !== undefined) payload.moq = data.moq;
   if (data.unit !== undefined) payload.unit = data.unit;
   if (data.supplier_id !== undefined) payload.supplier_id = data.supplier_id;
-  if (data.category_id !== undefined) payload.category_id = data.category_id;
+  if (data.subcategory_id !== undefined) {
+    await categoryModel.validateSubcategoryForProduct(data.subcategory_id);
+    payload.subcategory_id = data.subcategory_id;
+  }
   if (data.brand_id !== undefined) payload.brand_id = data.brand_id;
   if (data.is_trending !== undefined) payload.is_trending = data.is_trending;
   if (data.is_recommended !== undefined) payload.is_recommended = data.is_recommended;
