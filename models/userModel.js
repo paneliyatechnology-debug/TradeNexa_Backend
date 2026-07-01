@@ -71,9 +71,9 @@ const getUserRoles = (userId) =>
  * @returns {Promise<Array>}
  */
 const getUserLanguages = (userId) =>
-  db('user_languages')
-    .join('languages', 'user_languages.language_id', 'languages.id')
-    .where('user_languages.user_id', userId)
+  db('users')
+    .join('languages', 'users.language_id', 'languages.id')
+    .where('users.id', userId)
     .select('languages.code', 'languages.name');
 
 /**
@@ -90,6 +90,15 @@ const getFullProfile = async (userId) => {
   const languages = await getUserLanguages(userId);
   const address = await db('addresses').where({ user_id: userId, is_primary: true }).first();
 
+  let businessType = null;
+  if (user.business_type_id) {
+    businessType = await db('business_types')
+      .join('roles', 'business_types.role_id', 'roles.id')
+      .where('business_types.id', user.business_type_id)
+      .select('business_types.id', 'business_types.name', 'business_types.code', 'roles.code as role_code')
+      .first();
+  }
+
   let city = null,
     state = null,
     country = null;
@@ -105,6 +114,7 @@ const getFullProfile = async (userId) => {
     profile,
     roles,
     languages,
+    businessType,
     address: address ? { ...address, city, state, country } : null,
   };
 };
@@ -116,34 +126,66 @@ const getFullProfile = async (userId) => {
  */
 const formatUser = (data) => {
   if (!data) return null;
-  const { profile, roles, languages, address, ...user } = data;
-  return {
+  const { profile, roles, languages, businessType, address, ...user } = data;
+  const roleCode = roles?.[0]?.code || null;
+
+  const base = {
     uuid: user.uuid,
     full_name: user.full_name,
-    company_name: profile?.company_name,
     mobile_number: user.mobile_number,
     email: user.email,
-    gst_number: profile?.gst_number,
-    profile_image: profile?.profile_image,
-    business_category_id: profile?.business_category_id,
-    business_type_id: profile?.business_type_id,
-    language: languages?.[0]?.code || null,
-    role: roles?.[0]?.code || null,
-    address: address
-      ? {
-          address_line_1: address.address_line_1,
-          address_line_2: address.address_line_2,
-          city: address.city?.name,
-          state: address.state?.name,
-          country: address.country?.name,
-          pincode: address.pincode,
-        }
+    role_id: user.role_id,
+    role: roleCode,
+    business_type_id: user.business_type_id,
+    business_type: businessType
+      ? { id: businessType.id, name: businessType.name, code: businessType.code }
       : null,
+    language_id: user.language_id,
+    language: languages?.[0]?.code || null,
     is_verified: user.is_verified,
     is_active: user.is_active,
     last_login: user.last_login,
     created_at: user.created_at,
     updated_at: user.updated_at,
+  };
+
+  const buyerFields = {
+    profile_image: profile?.profile_image || null,
+    company_name: profile?.company_name || null,
+    industry: profile?.industry || null,
+    gst_number: profile?.gst_number || null,
+    address: address
+      ? {
+          address_line_1: address.address_line_1,
+          address_line_2: address.address_line_2,
+          city: address.city?.name || null,
+          state: address.state?.name || null,
+          country: address.country?.name || null,
+          pincode: address.pincode,
+        }
+      : null,
+  };
+
+  const sellerFields = {
+    company_logo: profile?.company_logo || null,
+    company_banner: profile?.company_banner || null,
+    company_name: profile?.company_name || null,
+    gst_number: profile?.gst_number || null,
+    pan_number: profile?.pan_number || null,
+    cin: profile?.cin || null,
+    iec: profile?.iec || null,
+    business_description: profile?.business_description || null,
+  };
+
+  if (roleCode === 'buyer') return { ...base, ...buyerFields };
+  if (roleCode === 'seller') return { ...base, ...sellerFields };
+  if (roleCode === 'buyer_seller') return { ...base, ...buyerFields, ...sellerFields };
+
+  return {
+    ...base,
+    company_name: profile?.company_name || null,
+    gst_number: profile?.gst_number || null,
+    profile_image: profile?.profile_image || null,
   };
 };
 
@@ -285,8 +327,10 @@ const findLanguageByCode = (code) => db('languages').where({ code, is_active: tr
  * @param {Object} trx - Transaction object
  * @returns {Promise<void>}
  */
-const assignLanguage = (userId, langId, trx) =>
-  trx('user_languages').insert({ user_id: userId, language_id: langId });
+const assignLanguage = (userId, langId, trx) => {
+  const q = trx ? trx('users') : db('users');
+  return q.where({ id: userId }).update({ language_id: langId });
+};
 
 // ==========================================
 // Profiles & Addresses
@@ -308,6 +352,16 @@ const createProfile = (data, trx) => trx('company_details').insert(data);
  */
 const updateProfile = (userId, data) =>
   db('company_details').where({ user_id: userId }).update(data);
+
+const upsertProfile = async (userId, data) => {
+  const existing = await db('company_details').where({ user_id: userId }).first();
+  if (existing) {
+    await db('company_details').where({ user_id: userId }).update(data);
+    return db('company_details').where({ user_id: userId }).first();
+  }
+  await db('company_details').insert({ user_id: userId, ...data });
+  return db('company_details').where({ user_id: userId }).first();
+};
 
 /**
  * Find IDs for a given city, state, and country.
@@ -394,6 +448,27 @@ const softDeleteUser = async (userId) => {
  */
 const deleteUserDevice = (userId) => db('devices').where({ user_id: userId }).del();
 
+/**
+ * Save or replace the user's active device (one device per user).
+ * @param {number} userId - User ID
+ * @param {string} deviceType - android | ios | web
+ * @param {string} deviceToken - Push notification token
+ * @returns {Promise<void>}
+ */
+const saveUserDevice = async (userId, deviceType, deviceToken) => {
+  if (!deviceToken) return;
+
+  await db.transaction(async (trx) => {
+    await trx('devices').where({ user_id: userId }).del();
+    await trx('devices').insert({
+      user_id: userId,
+      device_type: deviceType || null,
+      device_token: deviceToken,
+      last_active: trx.fn.now(),
+    });
+  });
+};
+
 module.exports = {
   uuidv4,
   findUserById,
@@ -419,11 +494,13 @@ module.exports = {
   assignLanguage,
   createProfile,
   updateProfile,
+  upsertProfile,
   findLocationIds,
   createAddress,
   updateAddress,
   createLoginLog,
   softDeleteUser,
   deleteUserDevice,
+  saveUserDevice,
   db,
 };

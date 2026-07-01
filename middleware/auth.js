@@ -56,16 +56,6 @@ const deviceRules = [
     .withMessage('Device token cannot be empty'),
 ];
 
-const registerDeviceRules = [
-  body('device').isObject().withMessage('Device must be an object'),
-  body('device.device_type')
-    .trim()
-    .notEmpty()
-    .isIn(['android', 'ios', 'web'])
-    .withMessage('Invalid device type'),
-  body('device.device_token').trim().notEmpty().withMessage('Device token is required'),
-];
-
 const sendOtpRules = [mobile(), body('recaptcha_token').optional()];
 const verifyOtpRules = [mobile(), otp(), verificationId(), ...deviceRules];
 const resendOtpRules = [mobile(), verificationId(), body('recaptcha_token').optional()];
@@ -74,56 +64,15 @@ const logoutRules = [body('refresh_token').optional()];
 
 /**
  * Validation rules for user registration.
- * business_type_id and business_category_id are optional integer IDs.
  */
 const registerRules = [
   mobile(),
   body('full_name').trim().notEmpty().isLength({ min: 2, max: 100 }),
-  body('company_name').trim().notEmpty().isLength({ min: 2, max: 200 }),
-  body('email').optional({ values: 'falsy' }).isEmail().normalizeEmail(),
-  body('gst_number')
-    .optional({ values: 'falsy' })
-    .matches(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/),
-  body('business_type_id')
-    .optional({ values: 'falsy' })
-    .isInt()
-    .withMessage('Invalid business type ID'),
-  body('business_category_id')
-    .optional({ values: 'falsy' })
-    .isInt()
-    .withMessage('Invalid business category ID'),
-  body('address_line_1').trim().notEmpty().isLength({ min: 3, max: 255 }),
-  body('address_line_2').optional({ values: 'falsy' }).trim(),
-  body('city').trim().notEmpty(),
-  body('state').trim().notEmpty(),
-  body('country').trim().notEmpty(),
-  body('pincode')
-    .trim()
-    .matches(/^[1-9][0-9]{5}$/),
-  body('language_id').notEmpty().isInt().withMessage('Invalid language ID'),
-  body('role_id').notEmpty().isInt().withMessage('Invalid role ID'),
-  ...registerDeviceRules,
-];
-
-/**
- * Validation rules for profile updates.
- */
-const updateProfileRules = [
-  body('full_name').optional().trim().isLength({ min: 2, max: 100 }),
-  body('company_name').optional().trim().isLength({ min: 2, max: 200 }),
-  body('email').optional({ values: 'falsy' }).isEmail().normalizeEmail(),
-  body('business_type_id')
-    .optional({ values: 'falsy' })
-    .isInt()
-    .withMessage('Invalid business type ID'),
-  body('business_category_id')
-    .optional({ values: 'falsy' })
-    .isInt()
-    .withMessage('Invalid business category ID'),
-  body('pincode')
-    .optional()
-    .matches(/^[1-9][0-9]{5}$/),
-  body('language_id').optional().isInt().withMessage('Invalid language ID'),
+  body('email').trim().notEmpty().isEmail().normalizeEmail(),
+  body('role_id').isInt({ min: 1 }).withMessage('role_id is required'),
+  body('business_type_id').isInt({ min: 1 }).withMessage('business_type_id is required'),
+  body('language_id').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Invalid language ID'),
+  ...deviceRules,
 ];
 
 /**
@@ -176,6 +125,29 @@ const verifyRegistration = (req, _res, next) => {
   }
 };
 
+/**
+ * Authorization middleware to check if user has required roles.
+ * @param {...string} allowedRoles - List of allowed role codes
+ */
+const authorize = (...allowedRoles) => {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return next(new AppError('Unauthorized', 401));
+      }
+      const roles = await userModel.getUserRoles(req.user.id);
+      const userRoleCode = roles?.[0]?.code;
+      if (!userRoleCode || !allowedRoles.includes(userRoleCode)) {
+        return next(new AppError('Forbidden: Access denied', 403));
+      }
+      req.user.role = userRoleCode;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+};
+
 module.exports = {
   validate,
   sendOtpRules,
@@ -184,7 +156,7 @@ module.exports = {
   registerRules,
   refreshRules,
   logoutRules,
-  updateProfileRules,
   authenticate,
   verifyRegistration,
+  authorize,
 };

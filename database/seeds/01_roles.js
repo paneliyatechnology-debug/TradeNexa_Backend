@@ -31,5 +31,17 @@ exports.seed = async function (knex) {
       description: 'Platform administrator',
       is_active: true,
     },
+    {
+      code: ROLE_CODES.SUPER_ADMIN,
+      name: 'Super Admin',
+      description: 'Full platform access with elevated privileges',
+      is_active: true,
+    },
+    {
+      code: ROLE_CODES.SUPPORTER,
+      name: 'Supporter',
+      description: 'Customer support staff for the admin panel',
+      is_active: true,
+    },
   ]);
 };

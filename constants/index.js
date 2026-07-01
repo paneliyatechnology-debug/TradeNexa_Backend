@@ -26,6 +26,8 @@ module.exports = {
     SELLER: 'seller',
     BUYER_SELLER: 'buyer_seller',
     ADMIN: 'admin',
+    SUPER_ADMIN: 'super_admin',
+    SUPPORTER: 'supporter',
   },
   LANGUAGE_CODES: {
     ENGLISH: 'en',

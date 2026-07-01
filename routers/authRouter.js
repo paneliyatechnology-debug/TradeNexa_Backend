@@ -8,10 +8,10 @@ const {
   registerRules,
   refreshRules,
   logoutRules,
-  updateProfileRules,
   authenticate,
   verifyRegistration,
 } = require('../middleware/auth');
+const { validateProfileUpdate } = require('../middleware/profileValidation');
 const { otpLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
@@ -23,7 +23,7 @@ router.post('/register', registerRules, validate, verifyRegistration, authContro
 router.post('/refresh-token', refreshRules, validate, authController.refreshToken);
 router.post('/logout', authenticate, logoutRules, validate, authController.logout);
 router.get('/profile', authenticate, authController.getProfile);
-router.put('/profile', authenticate, updateProfileRules, validate, authController.updateProfile);
+router.put('/profile', authenticate, validateProfileUpdate, authController.updateProfile);
 router.delete('/profile', authenticate, authController.deleteProfile);
 
 module.exports = router;

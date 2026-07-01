@@ -23,6 +23,24 @@ const addMinutes = (date, mins) => new Date(date.getTime() + mins * 60000);
 const isExpired = (date) => new Date(date) < new Date();
 
 /**
+ * Extract device info from request body (flat fields or nested device object).
+ * @param {Object} body - Request body
+ * @returns {{ device_type: string|null, device_token: string|null }|null}
+ */
+const getDeviceFromBody = (body) => {
+  if (body.device_type && body.device_token) {
+    return { device_type: body.device_type, device_token: body.device_token };
+  }
+  if (body.device?.device_token) {
+    return {
+      device_type: body.device.device_type || null,
+      device_token: body.device.device_token,
+    };
+  }
+  return null;
+};
+
+/**
  * Helper to verify OTP session state in local logs and validate via Firebase.
  * @param {string} mobile - Mobile number
  * @param {string} otp - Verification code
@@ -68,21 +86,11 @@ const issueTokens = async (user, req) => {
   });
 
   // Track and update the user's active device token
-  if (req.body.device && req.body.device.device_token) {
-    const trx = await userModel.db.transaction();
+  const device = getDeviceFromBody(req.body);
+  if (device?.device_token) {
     try {
-      // Keep only one active device token per user
-      await trx('devices').where({ user_id: user.id }).del();
-      await trx('devices').insert({
-        user_id: user.id,
-        device_type: req.body.device.device_type || null,
-        device_token: req.body.device.device_token,
-        last_active: userModel.db.fn.now(),
-      });
-      await trx.commit();
+      await userModel.saveUserDevice(user.id, device.device_type, device.device_token);
     } catch (error) {
-      await trx.rollback();
-      // Log failure but don't fail authentication since login/register succeeded
       console.error('Failed to update user device token:', error.message);
     }
   }
@@ -175,74 +183,46 @@ const resendOtp = async (mobileNumber, verificationId, recaptchaToken) => {
  * @returns {Promise<Object>}
  */
 const register = async (data, req) => {
-  // Enforce single registration per mobile number and email
   if (await userModel.findUserByMobile(data.mobile_number)) {
     throw new AppError('User already registered', 409);
   }
-  if (data.email && (await userModel.findUserByEmail(data.email))) {
+  if (await userModel.findUserByEmail(data.email)) {
     throw new AppError('Email already in use', 409);
   }
 
   const role = await userModel.db('roles').where({ id: data.role_id, is_active: true }).first();
-  const language = await userModel
-    .db('languages')
-    .where({ id: data.language_id, is_active: true })
-    .first();
   if (!role) throw new AppError('Invalid role ID', 400);
-  if (!language) throw new AppError('Invalid language ID', 400);
 
-  const locationIds = await userModel.findLocationIds(data.city, data.state, data.country);
-  const trx = await userModel.db.transaction();
-
-  try {
-    // Create direct user entry
-    const user = await userModel.createUser(
-      {
-        uuid: userModel.uuidv4(),
-        mobile_number: data.mobile_number,
-        email: data.email || null,
-        full_name: data.full_name,
-        role_id: role.id,
-        is_verified: true,
-        is_active: true,
-      },
-      trx,
-    );
-
-    // Create company details entry
-    await userModel.createProfile(
-      {
-        user_id: user.id,
-        company_name: data.company_name,
-        gst_number: data.gst_number || null,
-        business_type_id: data.business_type_id || null,
-        business_category_id: data.business_category_id || null,
-      },
-      trx,
-    );
-
-    // Assign language and address details
-    await userModel.assignLanguage(user.id, language.id, trx);
-    await userModel.createAddress(
-      {
-        user_id: user.id,
-        address_line_1: data.address_line_1,
-        address_line_2: data.address_line_2 || null,
-        city_id: locationIds.city_id,
-        state_id: locationIds.state_id,
-        country_id: locationIds.country_id,
-        pincode: data.pincode,
-        is_primary: true,
-      },
-      trx,
-    );
-
-    await trx.commit();
-    return issueTokens(await userModel.findUserById(user.id), req);
-  } catch (error) {
-    await trx.rollback();
-    throw error;
+  const businessTypeModel = require('../models/businessTypeModel');
+  const isValidType = await businessTypeModel.isValidForRole(data.business_type_id, role.id);
+  if (!isValidType) {
+    throw new AppError('Business type does not match selected role', 400);
   }
+
+  let languageId;
+  if (data.language_id) {
+    const language = await userModel.db('languages').where({ id: data.language_id, is_active: true }).first();
+    if (!language) throw new AppError('Invalid language ID', 400);
+    languageId = language.id;
+  } else {
+    const defaultLanguage = await userModel.findLanguageByCode('en');
+    if (!defaultLanguage) throw new AppError('Default language not found', 500);
+    languageId = defaultLanguage.id;
+  }
+
+  const user = await userModel.createUser({
+    uuid: userModel.uuidv4(),
+    mobile_number: data.mobile_number,
+    email: data.email,
+    full_name: data.full_name,
+    role_id: role.id,
+    business_type_id: data.business_type_id,
+    language_id: languageId,
+    is_verified: true,
+    is_active: true,
+  });
+
+  return issueTokens(await userModel.findUserById(user.id), req);
 };
 
 /**
@@ -287,77 +267,17 @@ const logout = async (userId, token) => {
   await userModel.deleteUserDevice(userId);
 };
 
+const profileService = require('./profileService');
+
 /**
  * Get profile data formatted for response.
- * @param {number} userId - User ID
- * @returns {Promise<Object>}
  */
-const getProfile = async (userId) => {
-  const profile = await userModel.getFullProfile(userId);
-  if (!profile) throw new AppError('User not found', 404);
-  return userModel.formatUser(profile);
-};
+const getProfile = (userId) => profileService.getProfile(userId);
 
 /**
- * Update user and company profile details.
- * @param {number} userId - User ID
- * @param {Object} data - Update data fields
- * @returns {Promise<Object>}
+ * Update user profile (role-based fields).
  */
-const updateProfile = async (userId, data) => {
-  const user = await userModel.findUserById(userId);
-  if (!user) throw new AppError('User not found', 404);
-
-  const userUpdate = {};
-  if (data.email && data.email !== user.email) {
-    if (await userModel.findUserByEmail(data.email)) throw new AppError('Email in use', 409);
-    userUpdate.email = data.email;
-  }
-  if (data.full_name && data.full_name !== user.full_name) {
-    userUpdate.full_name = data.full_name;
-  }
-  if (Object.keys(userUpdate).length) {
-    userUpdate.updated_by = userId;
-    await userModel.updateUser(userId, userUpdate);
-  }
-
-  const profileData = {};
-  if (data.company_name) profileData.company_name = data.company_name;
-  if (data.gst_number !== undefined) profileData.gst_number = data.gst_number;
-  if (data.business_type_id !== undefined) profileData.business_type_id = data.business_type_id;
-  if (data.business_category_id !== undefined)
-    profileData.business_category_id = data.business_category_id;
-  if (data.profile_image !== undefined) profileData.profile_image = data.profile_image;
-  if (Object.keys(profileData).length) {
-    profileData.updated_by = userId;
-    await userModel.updateProfile(userId, profileData);
-  }
-
-  if (data.language_id) {
-    const lang = await userModel
-      .db('languages')
-      .where({ id: data.language_id, is_active: true })
-      .first();
-    if (!lang) throw new AppError('Invalid language ID', 400);
-    await userModel.db('user_languages').where({ user_id: userId }).del();
-    await userModel.db('user_languages').insert({ user_id: userId, language_id: lang.id });
-  }
-
-  const hasAddress = data.address_line_1 || data.city || data.state || data.country || data.pincode;
-  if (hasAddress) {
-    const loc = await userModel.findLocationIds(data.city, data.state, data.country);
-    const addr = {};
-    if (data.address_line_1) addr.address_line_1 = data.address_line_1;
-    if (data.address_line_2 !== undefined) addr.address_line_2 = data.address_line_2;
-    if (data.pincode) addr.pincode = data.pincode;
-    if (loc.city_id) addr.city_id = loc.city_id;
-    if (loc.state_id) addr.state_id = loc.state_id;
-    if (loc.country_id) addr.country_id = loc.country_id;
-    await userModel.updateAddress(userId, addr);
-  }
-
-  return userModel.formatUser(await userModel.getFullProfile(userId));
-};
+const updateProfile = (userId, data) => profileService.updateProfile(userId, data);
 
 /**
  * Soft delete user profile and clean up active sessions.
