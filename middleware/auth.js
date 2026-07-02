@@ -98,17 +98,37 @@ const registerRules = [
 // ==========================================
 
 /**
+ * Extract JWT from Authorization header.
+ * Accepts both "Bearer <token>" and raw "<token>" (Bearer prefix optional).
+ * @param {string|undefined} header - Authorization header value
+ * @returns {string|null}
+ */
+const extractAuthToken = (header) => {
+  if (!header || typeof header !== 'string') return null;
+
+  const trimmed = header.trim();
+  if (!trimmed) return null;
+
+  const bearerMatch = trimmed.match(/^Bearer\s+(.+)$/i);
+  if (bearerMatch) {
+    return bearerMatch[1].trim() || null;
+  }
+
+  return trimmed;
+};
+
+/**
  * Authentication middleware to secure private endpoints.
  * Validates JWT access token in the Authorization header and attaches the user record to req.user.
  */
 const authenticate = async (req, _res, next) => {
   try {
-    const header = req.headers.authorization;
-    if (!header?.startsWith('Bearer ')) {
+    const token = extractAuthToken(req.headers.authorization);
+    if (!token) {
       return next(new AppError('Access token required', 401));
     }
 
-    const decoded = verifyAccess(header.split(' ')[1]);
+    const decoded = verifyAccess(token);
     if (decoded.type !== TOKEN_TYPES.ACCESS) {
       return next(new AppError('Invalid token type', 401));
     }
@@ -129,12 +149,12 @@ const authenticate = async (req, _res, next) => {
  */
 const verifyRegistration = (req, _res, next) => {
   try {
-    const header = req.headers.authorization;
-    if (!header?.startsWith('Bearer ')) {
+    const token = extractAuthToken(req.headers.authorization);
+    if (!token) {
       return next(new AppError('Registration access token required', 401));
     }
 
-    const decoded = verifyAccess(header.split(' ')[1]);
+    const decoded = verifyAccess(token);
     if (decoded.type !== TOKEN_TYPES.REGISTRATION || !decoded.verified) {
       return next(new AppError('Invalid registration access token', 401));
     }
