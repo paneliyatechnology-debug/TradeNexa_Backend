@@ -56,7 +56,7 @@ const findBrands = async (filters = {}) => {
     q.where('is_active', filters.is_active);
   }
 
-  q.orderBy('name', 'asc');
+  q.orderBy('brands.id', 'desc');
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;

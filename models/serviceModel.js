@@ -28,7 +28,7 @@ const findServices = async (filters = {}) => {
     q.where('is_active', filters.is_active);
   }
 
-  q.orderBy('name', 'asc');
+  q.orderBy('services.id', 'desc');
 
   return q;
 };

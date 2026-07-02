@@ -29,7 +29,7 @@ const findNewsList = async (filters = {}) => {
     q.where('is_active', filters.is_active);
   }
 
-  q.orderBy('published_at', 'desc');
+  q.orderBy('news.id', 'desc');
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;

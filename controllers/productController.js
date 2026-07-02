@@ -64,14 +64,13 @@ const getProducts = async (req, res, next) => {
 
 /**
  * GET /products/trending
- * List trending products ordered by most recently created.
+ * List trending products ordered by id desc (newest first).
  */
 const getTrendingProducts = async (req, res, next) => {
   try {
     const filters = {
       is_trending: true,
       is_active: true,
-      sort_by: 'created_at',
       page: req.query.page,
       limit: req.query.limit,
     };
@@ -103,7 +102,7 @@ const getTrendingProducts = async (req, res, next) => {
 
 /**
  * GET /products/recommended
- * List recommended products for a subcategory (ordered by created_at desc).
+ * List recommended products for a subcategory (ordered by id desc).
  * Optional product_id excludes that product from results (e.g. current product detail page).
  */
 const getRecommendedProducts = async (req, res, next) => {
@@ -111,7 +110,6 @@ const getRecommendedProducts = async (req, res, next) => {
     const filters = {
       subcategory_id: req.query.subcategory_id,
       is_active: true,
-      sort_by: 'created_at',
       page: req.query.page,
       limit: req.query.limit,
     };
@@ -150,7 +148,6 @@ const getLatestProducts = async (req, res, next) => {
   try {
     const filters = {
       is_active: true,
-      sort_by: 'created_at',
       page: req.query.page,
       limit: req.query.limit,
     };

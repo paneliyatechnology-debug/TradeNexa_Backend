@@ -56,7 +56,7 @@ const findByRoleId = async (roleId, isActive = true) => {
 
   const q = baseQuery()
     .where('business_types.role_id', roleId)
-    .orderBy('business_types.name', 'asc');
+    .orderBy('business_types.id', 'desc');
 
   if (isActive !== undefined) {
     q.where('business_types.is_active', isActive);

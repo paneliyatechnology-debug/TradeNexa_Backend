@@ -24,7 +24,7 @@ const findBanners = async (filters = {}) => {
     q.where({ is_active: filters.is_active });
   }
 
-  q.orderBy('priority', 'asc');
+  q.orderBy('banners.id', 'desc');
 
   return q;
 };

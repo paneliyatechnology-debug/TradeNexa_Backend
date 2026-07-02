@@ -95,7 +95,7 @@ const findSuppliers = async (filters = {}) => {
     q.where('users.is_active', filters.is_active);
   }
 
-  q.orderBy('company_details.company_name', 'asc');
+  q.orderBy('users.id', 'desc');
 
   const paginated = await paginate(q, filters.page, filters.limit);
   paginated.results = paginated.results.map(formatSupplierRow);
@@ -130,7 +130,8 @@ const findNearbySuppliers = async (latitude, longitude, maxDistance = 50, filter
       'states.name as state',
       db.raw(`round(${distanceSql}, 2) as distance`),
     )
-    .orderBy('distance', 'asc');
+    .orderBy('distance', 'asc')
+    .orderBy('users.id', 'desc');
 
   const paginated = await paginate(q, filters.page, filters.limit);
   paginated.results = paginated.results.map(formatSupplierRow);

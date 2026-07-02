@@ -30,7 +30,7 @@ const findOffers = async (filters = {}) => {
     q.where('expiry_date', '>', db.fn.now());
   }
 
-  q.orderBy('expiry_date', 'asc');
+  q.orderBy('offers.id', 'desc');
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;

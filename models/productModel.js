@@ -153,7 +153,7 @@ const findProducts = async (filters = {}) => {
   } else if (filters.sort_by === 'rating') {
     q.orderBy('products.rating', 'desc');
   } else {
-    q.orderBy('products.created_at', 'desc');
+    q.orderBy('products.id', 'desc');
   }
 
   const page = parseInt(filters.page, 10) || 1;

@@ -63,7 +63,7 @@ const findRfqs = async (filters = {}) => {
     q.where('rfqs.is_active', filters.is_active);
   }
 
-  q.orderBy('rfqs.created_at', 'desc');
+  q.orderBy('rfqs.id', 'desc');
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;

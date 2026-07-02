@@ -108,7 +108,7 @@ const findCategories = async (filters = {}) => {
   if (filters.q) q.where('categories.name', 'like', `%${filters.q}%`);
   if (filters.is_active !== undefined) q.where('categories.is_active', filters.is_active);
 
-  q.orderBy('categories.name', 'asc');
+  q.orderBy('categories.id', 'desc');
   const paginated = await paginate(q, filters.page, filters.limit);
   paginated.results = paginated.results.map(formatRow);
   return paginated;
@@ -139,7 +139,7 @@ const findSubcategories = async (parentId, filters = {}) => {
   if (filters.q) q.where('categories.name', 'like', `%${filters.q}%`);
   if (filters.is_active !== undefined) q.where('categories.is_active', filters.is_active);
 
-  q.orderBy('categories.name', 'asc');
+  q.orderBy('categories.id', 'desc');
   const paginated = await paginate(q, filters.page, filters.limit);
   paginated.results = paginated.results.map(formatRow);
   return paginated;
@@ -154,7 +154,7 @@ const getCategoryWithSubcategories = async (id) => {
     .where({ parent_id: id })
     .whereNull('deleted_at')
     .select('id', 'parent_id', 'name', 'icon', 'image', 'slug', 'is_active')
-    .orderBy('name', 'asc');
+    .orderBy('id', 'desc');
 
   return {
     ...formatRow(category),
