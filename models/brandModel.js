@@ -1,5 +1,24 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
+const { resolveMediaUrl } = require('../utils/media');
+
+// ==========================================
+// Formatting helpers
+// ==========================================
+
+/**
+ * Format a brand row for API responses.
+ * Resolves logo to a full URL.
+ */
+const formatRow = (row) => {
+  if (!row) return null;
+  return {
+    ...row,
+    logo: resolveMediaUrl(row.logo),
+    is_popular: row.is_popular !== undefined ? !!row.is_popular : undefined,
+    is_active: row.is_active !== undefined ? !!row.is_active : undefined,
+  };
+};
 
 // ==========================================
 // List & read queries
@@ -8,10 +27,14 @@ const { paginate } = require('../utils/pagination');
 /**
  * Find a brand by ID (non-deleted).
  * @param {number} id - Brand ID
+ * @param {{ raw?: boolean }} [options] - Return raw DB row when raw=true
  * @returns {Promise<Object|undefined>}
  */
-const findBrandById = (id) =>
-  db('brands').where({ id }).whereNull('deleted_at').first();
+const findBrandById = async (id, options = {}) => {
+  const row = await db('brands').where({ id }).whereNull('deleted_at').first();
+  if (!row || options.raw) return row;
+  return formatRow(row);
+};
 
 /**
  * Paginated list of brands with optional search and status filters.
@@ -37,7 +60,9 @@ const findBrands = async (filters = {}) => {
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;
-  return paginate(q, page, limit);
+  const paginated = await paginate(q, page, limit);
+  paginated.results = paginated.results.map(formatRow);
+  return paginated;
 };
 
 // ==========================================
@@ -60,7 +85,7 @@ const createBrand = async (data, userId = null) => {
   };
 
   const [id] = await db('brands').insert(payload);
-  return findBrandById(id);
+  return db('brands').where({ id }).whereNull('deleted_at').first();
 };
 
 /**
@@ -77,13 +102,32 @@ const updateBrand = async (id, data, userId = null) => {
   if (data.is_popular !== undefined) payload.is_popular = data.is_popular;
   if (data.is_active !== undefined) payload.is_active = data.is_active;
 
-  if (Object.keys(payload).length === 0) return findBrandById(id);
+  if (Object.keys(payload).length === 0) {
+    return findBrandById(id);
+  }
 
   payload.updated_by = userId;
   payload.updated_at = db.fn.now();
 
   await db('brands').where({ id }).update(payload);
   return findBrandById(id);
+};
+
+/** Apply logo path updates after file upload (used by brandService). */
+const applyBrandMediaUpdates = async (id, updates, userId = null) => {
+  if (!updates || !Object.keys(updates).length) {
+    return db('brands').where({ id }).whereNull('deleted_at').first();
+  }
+
+  await db('brands')
+    .where({ id })
+    .update({
+      ...updates,
+      updated_by: userId,
+      updated_at: db.fn.now(),
+    });
+
+  return db('brands').where({ id }).whereNull('deleted_at').first();
 };
 
 // ==========================================
@@ -106,9 +150,11 @@ const deleteBrand = async (id, userId = null) => {
 };
 
 module.exports = {
+  formatRow,
   findBrandById,
   findBrands,
   createBrand,
   updateBrand,
+  applyBrandMediaUpdates,
   deleteBrand,
 };

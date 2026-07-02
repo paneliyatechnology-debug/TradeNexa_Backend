@@ -18,6 +18,7 @@ const IMAGE_FIELD_LABELS = {
   company_banner: 'Company banner',
   icon: 'Icon',
   image: 'Image',
+  logo: 'Logo',
 };
 
 // ==========================================

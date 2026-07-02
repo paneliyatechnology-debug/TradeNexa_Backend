@@ -16,6 +16,12 @@ const uploadPaths = {
 
   /** Temporary inbox before record ID exists: uploads/categories/_inbox/{userId}/ */
   categoryInbox: (userId) => ['categories', '_inbox', String(userId)],
+
+  /** Brand logos: uploads/brands/{brandId}/ */
+  brand: (brandId) => ['brands', String(brandId)],
+
+  /** Temporary inbox before brand ID exists: uploads/brands/_inbox/{userId}/ */
+  brandInbox: (userId) => ['brands', '_inbox', String(userId)],
 };
 
 // ==========================================

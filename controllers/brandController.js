@@ -1,4 +1,7 @@
+// Brand CRUD handlers with multipart logo upload support.
+
 const brandModel = require('../models/brandModel');
+const brandService = require('../services/brandService');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
@@ -8,11 +11,11 @@ const { HTTP_STATUS } = require('../constants');
 
 /**
  * POST /brands
- * Create a new brand (admin only).
+ * Create a new brand with optional logo upload (admin only).
  */
 const createBrand = async (req, res, next) => {
   try {
-    const brand = await brandModel.createBrand(req.body, req.user?.id);
+    const brand = await brandService.createBrand(req.body, req.files, req.user?.id);
     return success(res, 'Brand created successfully', brand, HTTP_STATUS.CREATED);
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
@@ -40,7 +43,8 @@ const getBrand = async (req, res, next) => {
 
 /**
  * GET /brands
- * List brands with search, pagination, and filter options.
+ * List brands with search, pagination, and filters.
+ * Use is_popular=true to fetch popular brands only.
  */
 const getBrands = async (req, res, next) => {
   try {
@@ -52,34 +56,11 @@ const getBrands = async (req, res, next) => {
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
     };
     const data = await brandModel.findBrands(filters);
-    return success(res, 'Brands list retrieved successfully', data);
-  } catch (err) {
-    next(err);
-  }
-};
-
-/**
- * GET /brands/popular
- * List popular brands formatted for buyer home display.
- */
-const getPopularBrands = async (req, res, next) => {
-  try {
-    const filters = {
-      page: req.query.page,
-      limit: req.query.limit,
-      is_popular: true,
-      is_active: true,
-    };
-    const data = await brandModel.findBrands(filters);
-    
-    // As per B2B Marketplace Buyer Home documentation, GET /brands/popular returns flat structure
-    // Let's format the return output to match the specification fields: id, name, logo
-    const formatted = data.results.map(b => ({
-      id: b.id,
-      name: b.name,
-      logo: b.logo
-    }));
-    return success(res, 'Popular brands retrieved successfully', formatted);
+    const message =
+      filters.is_popular === true
+        ? 'Popular brands retrieved successfully'
+        : 'Brands list retrieved successfully';
+    return success(res, message, data);
   } catch (err) {
     next(err);
   }
@@ -87,7 +68,7 @@ const getPopularBrands = async (req, res, next) => {
 
 /**
  * PUT /brands/:id
- * Update an existing brand (admin only).
+ * Update an existing brand with optional logo upload (admin only).
  */
 const updateBrand = async (req, res, next) => {
   try {
@@ -95,7 +76,7 @@ const updateBrand = async (req, res, next) => {
     if (!existing) {
       return next(new AppError('Brand not found', HTTP_STATUS.NOT_FOUND));
     }
-    const brand = await brandModel.updateBrand(req.params.id, req.body, req.user?.id);
+    const brand = await brandService.updateBrand(req.params.id, req.body, req.files, req.user?.id);
     return success(res, 'Brand updated successfully', brand);
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
@@ -126,7 +107,6 @@ module.exports = {
   createBrand,
   getBrand,
   getBrands,
-  getPopularBrands,
   updateBrand,
   deleteBrand,
 };

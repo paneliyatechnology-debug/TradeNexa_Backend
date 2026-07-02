@@ -106,14 +106,28 @@ const bannerUpdateRules = [
 
 const brandCreateRules = [
   body('name').trim().notEmpty().withMessage('Brand name is required').isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
-  body('logo').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Logo URL too long'),
-  body('is_popular').optional().isBoolean().withMessage('is_popular must be a boolean')
+  blockedUploadField('logo', 'Logo'),
+  optionalBooleanField('is_popular'),
+  optionalBooleanField('is_active'),
 ];
 
 const brandUpdateRules = [
   body('name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
-  body('logo').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Logo URL too long'),
-  body('is_popular').optional().isBoolean().withMessage('is_popular must be a boolean')
+  blockedUploadField('logo', 'Logo'),
+  optionalBooleanField('is_popular'),
+  optionalBooleanField('is_active'),
+];
+
+const brandListQuery = [
+  ...paginationQuery,
+  query('is_popular')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_popular must be true or false'),
+  query('is_active')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_active must be true or false'),
 ];
 
 // ==========================================
@@ -287,6 +301,7 @@ module.exports = {
   bannerUpdateRules,
   brandCreateRules,
   brandUpdateRules,
+  brandListQuery,
   supplierNearbyRules,
   productCreateRules,
   productUpdateRules,

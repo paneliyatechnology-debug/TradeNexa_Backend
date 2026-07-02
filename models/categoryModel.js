@@ -162,6 +162,50 @@ const getCategoryWithSubcategories = async (id) => {
   };
 };
 
+/**
+ * Get a single subcategory by ID with parent category name and product count.
+ * @param {number} id - Subcategory ID
+ * @returns {Promise<Object|null>}
+ */
+const getSubcategoryDetail = async (id) => {
+  const row = await db('categories')
+    .where({ 'categories.id': id })
+    .whereNotNull('categories.parent_id')
+    .whereNull('categories.deleted_at')
+    .leftJoin('categories as parent', function () {
+      this.on('parent.id', '=', 'categories.parent_id').andOnNull('parent.deleted_at');
+    })
+    .leftJoin('products', function () {
+      this.on('products.subcategory_id', '=', 'categories.id').andOnNull('products.deleted_at');
+    })
+    .groupBy(
+      'categories.id',
+      'categories.parent_id',
+      'categories.name',
+      'categories.icon',
+      'categories.image',
+      'categories.slug',
+      'categories.is_active',
+      'parent.id',
+      'parent.name',
+    )
+    .select(
+      'categories.id',
+      'categories.parent_id',
+      'categories.name',
+      'categories.icon',
+      'categories.image',
+      'categories.slug',
+      'categories.is_active',
+      'parent.id as category_id',
+      'parent.name as category_name',
+      db.raw('count(products.id) as product_count'),
+    )
+    .first();
+
+  return formatRow(row);
+};
+
 // ==========================================
 // Create & update
 // ==========================================
@@ -354,6 +398,7 @@ module.exports = {
   findCategories,
   findSubcategories,
   getCategoryWithSubcategories,
+  getSubcategoryDetail,
   createCategory,
   createSubcategory,
   updateCategory,

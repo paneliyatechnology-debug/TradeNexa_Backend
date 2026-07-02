@@ -20,6 +20,9 @@ const CATEGORY_UPLOAD_FIELDS = [
   { name: 'image', maxCount: 1 },
 ];
 
+/** POST/PUT /brands */
+const BRAND_UPLOAD_FIELDS = [{ name: 'logo', maxCount: 1 }];
+
 // ==========================================
 // Exports
 // ==========================================
@@ -27,4 +30,5 @@ const CATEGORY_UPLOAD_FIELDS = [
 module.exports = {
   PROFILE_UPLOAD_FIELDS,
   CATEGORY_UPLOAD_FIELDS,
+  BRAND_UPLOAD_FIELDS,
 };

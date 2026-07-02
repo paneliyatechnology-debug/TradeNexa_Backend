@@ -121,22 +121,15 @@ const createSubcategory = async (req, res, next) => {
 
 /**
  * GET /categories/:categoryId/subcategories/:id
- * Retrieve a single subcategory by ID.
+ * Retrieve a single subcategory scoped to a parent category.
  */
 const getSubcategory = async (req, res, next) => {
   try {
-    const subcategory = await categoryModel.findSubcategoryById(
-      req.params.id,
-      req.params.categoryId,
-    );
-    if (!subcategory) {
+    const subcategory = await categoryModel.getSubcategoryDetail(req.params.id);
+    if (!subcategory || String(subcategory.parent_id) !== String(req.params.categoryId)) {
       return next(new AppError('Subcategory not found', HTTP_STATUS.NOT_FOUND));
     }
-    return success(
-      res,
-      'Subcategory details retrieved successfully',
-      categoryModel.formatRow(subcategory),
-    );
+    return success(res, 'Subcategory details retrieved successfully', subcategory);
   } catch (err) {
     next(err);
   }
