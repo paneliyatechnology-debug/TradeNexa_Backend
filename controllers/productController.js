@@ -141,37 +141,6 @@ const getRecommendedProducts = async (req, res, next) => {
 };
 
 /**
- * GET /products/latest
- * List the most recently added products formatted for buyer home display.
- */
-const getLatestProducts = async (req, res, next) => {
-  try {
-    const filters = {
-      is_active: true,
-      page: req.query.page,
-      limit: req.query.limit,
-    };
-    const data = await productModel.findProducts(filters);
-
-    const formatted = data.results.map((p) => ({
-      id: p.id,
-      name: p.name,
-      thumbnail: p.thumbnail,
-      price: p.price,
-      created_at: p.created_at,
-      supplier_name: p.supplier_name,
-    }));
-
-    return success(res, 'Latest products retrieved successfully', {
-      ...data,
-      results: formatted,
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-/**
  * PUT /products/:id
  * Update an existing product with optional thumbnail upload (seller or admin).
  */
@@ -216,7 +185,6 @@ module.exports = {
   getProducts,
   getTrendingProducts,
   getRecommendedProducts,
-  getLatestProducts,
   updateProduct,
   deleteProduct,
 };
