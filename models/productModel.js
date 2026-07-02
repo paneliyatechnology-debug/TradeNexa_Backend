@@ -1,5 +1,6 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
+const { resolveMediaUrl } = require('../utils/media');
 const categoryModel = require('./categoryModel');
 
 // ==========================================
@@ -11,11 +12,28 @@ const slugify = (text) =>
   text
     .toString()
     .toLowerCase()
-    .replace(/\s+/g, '-') // Replace spaces with -
-    .replace(/[^\w\-]+/g, '') // Remove all non-word chars
-    .replace(/\-\-+/g, '-') // Replace multiple - with single -
-    .replace(/^-+/, '') // Trim - from start
-    .replace(/-+$/, ''); // Trim - from end
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+
+/**
+ * Format a product row for API responses.
+ * Resolves thumbnail to a full URL.
+ */
+const formatRow = (row) => {
+  if (!row) return null;
+  return {
+    ...row,
+    thumbnail: resolveMediaUrl(row.thumbnail),
+    verified: row.verified !== undefined ? !!row.verified : undefined,
+    is_trending: row.is_trending !== undefined ? !!row.is_trending : undefined,
+    is_active: row.is_active !== undefined ? !!row.is_active : undefined,
+    price: row.price !== undefined ? parseFloat(row.price) : undefined,
+    rating: row.rating !== undefined ? parseFloat(row.rating) : undefined,
+  };
+};
 
 // ==========================================
 // List & read queries
@@ -24,9 +42,10 @@ const slugify = (text) =>
 /**
  * Find a product by ID with supplier, category, brand, and location joins.
  * @param {number} id - Product ID
+ * @param {{ raw?: boolean }} [options] - Return raw DB row when raw=true
  * @returns {Promise<Object|null>}
  */
-const findProductById = async (id) => {
+const findProductById = async (id, options = {}) => {
   const result = await db('products')
     .leftJoin('users as suppliers', 'products.supplier_id', '=', 'suppliers.id')
     .leftJoin('company_details', 'suppliers.id', '=', 'company_details.user_id')
@@ -49,17 +68,12 @@ const findProductById = async (id) => {
       'subcategories.name as subcategory_name',
       'brands.name as brand_name',
       'cities.name as city',
-      'states.name as state'
+      'states.name as state',
     )
     .first();
 
-  if (result) {
-    result.verified = !!result.verified;
-    result.is_trending = !!result.is_trending;
-    result.is_recommended = !!result.is_recommended;
-    result.is_active = !!result.is_active;
-  }
-  return result;
+  if (!result || options.raw) return result;
+  return formatRow(result);
 };
 
 /**
@@ -93,8 +107,7 @@ const findProducts = async (filters = {}) => {
       'cities.name as city',
       'states.name as state',
       'products.is_trending',
-      'products.is_recommended',
-      'products.created_at'
+      'products.created_at',
     );
 
   if (filters.q) {
@@ -117,10 +130,6 @@ const findProducts = async (filters = {}) => {
     q.where('products.is_trending', filters.is_trending);
   }
 
-  if (filters.is_recommended !== undefined) {
-    q.where('products.is_recommended', filters.is_recommended);
-  }
-
   if (filters.min_price) {
     q.where('products.price', '>=', filters.min_price);
   }
@@ -133,7 +142,10 @@ const findProducts = async (filters = {}) => {
     q.where('products.is_active', filters.is_active);
   }
 
-  // Sorting
+  if (filters.exclude_product_id) {
+    q.whereNot('products.id', filters.exclude_product_id);
+  }
+
   if (filters.sort_by === 'price_asc') {
     q.orderBy('products.price', 'asc');
   } else if (filters.sort_by === 'price_desc') {
@@ -148,12 +160,7 @@ const findProducts = async (filters = {}) => {
   const limit = parseInt(filters.limit, 10) || 10;
 
   const paginated = await paginate(q, page, limit);
-  paginated.results = paginated.results.map(r => ({
-    ...r,
-    verified: !!r.verified,
-    is_trending: !!r.is_trending,
-    is_recommended: !!r.is_recommended
-  }));
+  paginated.results = paginated.results.map(formatRow);
   return paginated;
 };
 
@@ -182,14 +189,13 @@ const createProduct = async (data, userId = null) => {
     subcategory_id: data.subcategory_id,
     brand_id: data.brand_id || null,
     is_trending: data.is_trending !== undefined ? data.is_trending : false,
-    is_recommended: data.is_recommended !== undefined ? data.is_recommended : false,
-    rating: data.rating !== undefined ? data.rating : 0.00,
+    rating: data.rating !== undefined ? data.rating : 0.0,
     is_active: data.is_active !== undefined ? data.is_active : true,
     created_by: userId,
   };
 
   const [id] = await db('products').insert(payload);
-  return findProductById(id);
+  return db('products').where({ id }).whereNull('deleted_at').first();
 };
 
 /**
@@ -218,7 +224,6 @@ const updateProduct = async (id, data, userId = null) => {
   }
   if (data.brand_id !== undefined) payload.brand_id = data.brand_id;
   if (data.is_trending !== undefined) payload.is_trending = data.is_trending;
-  if (data.is_recommended !== undefined) payload.is_recommended = data.is_recommended;
   if (data.rating !== undefined) payload.rating = data.rating;
   if (data.is_active !== undefined) payload.is_active = data.is_active;
 
@@ -229,6 +234,23 @@ const updateProduct = async (id, data, userId = null) => {
 
   await db('products').where({ id }).update(payload);
   return findProductById(id);
+};
+
+/** Apply thumbnail path updates after file upload (used by productService). */
+const applyProductMediaUpdates = async (id, updates, userId = null) => {
+  if (!updates || !Object.keys(updates).length) {
+    return db('products').where({ id }).whereNull('deleted_at').first();
+  }
+
+  await db('products')
+    .where({ id })
+    .update({
+      ...updates,
+      updated_by: userId,
+      updated_at: db.fn.now(),
+    });
+
+  return db('products').where({ id }).whereNull('deleted_at').first();
 };
 
 // ==========================================
@@ -251,9 +273,11 @@ const deleteProduct = async (id, userId = null) => {
 };
 
 module.exports = {
+  formatRow,
   findProductById,
   findProducts,
   createProduct,
   updateProduct,
+  applyProductMediaUpdates,
   deleteProduct,
 };

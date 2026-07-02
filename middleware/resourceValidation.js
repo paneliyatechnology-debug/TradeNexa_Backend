@@ -147,7 +147,7 @@ const supplierNearbyRules = [
 
 const productCreateRules = [
   body('name').trim().notEmpty().withMessage('Product name is required').isLength({ min: 2, max: 200 }).withMessage('Product name must be 2 to 200 chars'),
-  body('thumbnail').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Thumbnail URL too long'),
+  blockedUploadField('thumbnail', 'Thumbnail'),
   body('price').isFloat({ min: 0 }).withMessage('Price is required and must be a positive number'),
   body('currency').optional().trim().isLength({ max: 10 }).withMessage('Currency code too long'),
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
@@ -155,15 +155,15 @@ const productCreateRules = [
   body('supplier_id').isInt().withMessage('Supplier ID is required and must be an integer'),
   body('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required and must be an integer'),
   body('brand_id').optional({ values: 'falsy' }).isInt().withMessage('Brand ID must be an integer'),
-  body('is_trending').optional().isBoolean().withMessage('is_trending must be a boolean'),
-  body('is_recommended').optional().isBoolean().withMessage('is_recommended must be a boolean'),
+  optionalBooleanField('is_trending'),
+  optionalBooleanField('is_active'),
   body('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5'),
-  body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format')
+  body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
 ];
 
 const productUpdateRules = [
   body('name').optional().trim().isLength({ min: 2, max: 200 }).withMessage('Product name must be 2 to 200 chars'),
-  body('thumbnail').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Thumbnail URL too long'),
+  blockedUploadField('thumbnail', 'Thumbnail'),
   body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a positive number'),
   body('currency').optional().trim().isLength({ max: 10 }).withMessage('Currency code too long'),
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
@@ -171,10 +171,10 @@ const productUpdateRules = [
   body('supplier_id').optional().isInt().withMessage('Supplier ID must be an integer'),
   body('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
   body('brand_id').optional({ values: 'falsy' }).isInt().withMessage('Brand ID must be an integer'),
-  body('is_trending').optional().isBoolean().withMessage('is_trending must be a boolean'),
-  body('is_recommended').optional().isBoolean().withMessage('is_recommended must be a boolean'),
+  optionalBooleanField('is_trending'),
+  optionalBooleanField('is_active'),
   body('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5'),
-  body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format')
+  body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
 ];
 
 const productListQuery = [
@@ -183,7 +183,15 @@ const productListQuery = [
   query('brand_id').optional().isInt().withMessage('Brand ID must be an integer'),
   query('min_price').optional().isFloat({ min: 0 }).withMessage('Min price must be positive'),
   query('max_price').optional().isFloat({ min: 0 }).withMessage('Max price must be positive'),
-  ...paginationQuery
+  ...paginationQuery,
+];
+
+const productTrendingQuery = [...paginationQuery];
+
+const productRecommendedQuery = [
+  query('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required'),
+  query('product_id').optional().isInt({ min: 1 }).withMessage('Product ID must be a positive integer'),
+  ...paginationQuery,
 ];
 
 // ==========================================
@@ -306,6 +314,8 @@ module.exports = {
   productCreateRules,
   productUpdateRules,
   productListQuery,
+  productTrendingQuery,
+  productRecommendedQuery,
   offerCreateRules,
   offerUpdateRules,
   rfqCreateRules,

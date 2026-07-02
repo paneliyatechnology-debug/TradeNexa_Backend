@@ -19,6 +19,7 @@ const IMAGE_FIELD_LABELS = {
   icon: 'Icon',
   image: 'Image',
   logo: 'Logo',
+  thumbnail: 'Thumbnail',
 };
 
 // ==========================================

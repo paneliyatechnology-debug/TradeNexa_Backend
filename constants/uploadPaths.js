@@ -22,6 +22,12 @@ const uploadPaths = {
 
   /** Temporary inbox before brand ID exists: uploads/brands/_inbox/{userId}/ */
   brandInbox: (userId) => ['brands', '_inbox', String(userId)],
+
+  /** Product thumbnails: uploads/products/{productId}/ */
+  product: (productId) => ['products', String(productId)],
+
+  /** Temporary inbox before product ID exists: uploads/products/_inbox/{userId}/ */
+  productInbox: (userId) => ['products', '_inbox', String(userId)],
 };
 
 // ==========================================

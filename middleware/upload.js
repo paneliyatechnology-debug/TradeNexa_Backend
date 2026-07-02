@@ -1,5 +1,5 @@
 /**
- * Pre-configured upload middleware for profile, category, and brand modules.
+ * Pre-configured upload middleware for profile, category, brand, and product modules.
  * Uses the shared upload service — add new module handlers here.
  */
 const { AppError } = require('../utils/response');
@@ -10,6 +10,7 @@ const {
   PROFILE_UPLOAD_FIELDS,
   CATEGORY_UPLOAD_FIELDS,
   BRAND_UPLOAD_FIELDS,
+  PRODUCT_UPLOAD_FIELDS,
 } = require('../constants/uploadFields');
 
 // ==========================================
@@ -84,6 +85,31 @@ const handleBrandUpdateUpload = createUploadMiddleware({
   },
 });
 
+// ==========================================
+// Product uploads
+// ==========================================
+
+/**
+ * POST /products.
+ * Files land in inbox first, then move to products/{id}/ after record creation.
+ */
+const handleProductCreateUpload = createUploadMiddleware({
+  fields: PRODUCT_UPLOAD_FIELDS,
+  getDestination: (req) => getAbsoluteUploadDir(...uploadPaths.productInbox(req.user.id)),
+});
+
+/** PUT /products/:id */
+const handleProductUpdateUpload = createUploadMiddleware({
+  fields: PRODUCT_UPLOAD_FIELDS,
+  getDestination: (req) => {
+    const productId = req.params.id;
+    if (!productId) {
+      throw new AppError('Product ID is required for thumbnail upload', 400);
+    }
+    return getAbsoluteUploadDir(...uploadPaths.product(productId));
+  },
+});
+
 module.exports = {
   createUploadMiddleware,
   handleProfileUpload,
@@ -92,4 +118,6 @@ module.exports = {
   handleSubcategoryUpdateUpload,
   handleBrandCreateUpload,
   handleBrandUpdateUpload,
+  handleProductCreateUpload,
+  handleProductUpdateUpload,
 };

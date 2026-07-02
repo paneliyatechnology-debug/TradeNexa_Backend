@@ -23,6 +23,9 @@ const CATEGORY_UPLOAD_FIELDS = [
 /** POST/PUT /brands */
 const BRAND_UPLOAD_FIELDS = [{ name: 'logo', maxCount: 1 }];
 
+/** POST/PUT /products */
+const PRODUCT_UPLOAD_FIELDS = [{ name: 'thumbnail', maxCount: 1 }];
+
 // ==========================================
 // Exports
 // ==========================================
@@ -31,4 +34,5 @@ module.exports = {
   PROFILE_UPLOAD_FIELDS,
   CATEGORY_UPLOAD_FIELDS,
   BRAND_UPLOAD_FIELDS,
+  PRODUCT_UPLOAD_FIELDS,
 };

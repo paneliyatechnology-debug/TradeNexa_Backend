@@ -1,4 +1,7 @@
+// Product CRUD handlers with multipart thumbnail upload support.
+
 const productModel = require('../models/productModel');
+const productService = require('../services/productService');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
@@ -8,11 +11,11 @@ const { HTTP_STATUS } = require('../constants');
 
 /**
  * POST /products
- * Create a new product listing (seller or admin).
+ * Create a new product listing with optional thumbnail upload (seller or admin).
  */
 const createProduct = async (req, res, next) => {
   try {
-    const product = await productModel.createProduct(req.body, req.user?.id);
+    const product = await productService.createProduct(req.body, req.files, req.user?.id);
     return success(res, 'Product created successfully', product, HTTP_STATUS.CREATED);
   } catch (err) {
     next(err);
@@ -61,35 +64,38 @@ const getProducts = async (req, res, next) => {
 
 /**
  * GET /products/trending
- * List trending products formatted for buyer home display.
+ * List trending products ordered by most recently created.
  */
 const getTrendingProducts = async (req, res, next) => {
   try {
     const filters = {
       is_trending: true,
       is_active: true,
+      sort_by: 'created_at',
       page: req.query.page,
       limit: req.query.limit,
     };
     const data = await productModel.findProducts(filters);
-    
-    // Format output as per spec: id, name, thumbnail, price, currency, moq, unit, supplier_name, verified, rating, city, state
-    const formatted = data.results.map(p => ({
+
+    const formatted = data.results.map((p) => ({
       id: p.id,
       name: p.name,
       thumbnail: p.thumbnail,
-      price: parseFloat(p.price),
+      price: p.price,
       currency: p.currency,
       moq: p.moq,
       unit: p.unit,
       supplier_name: p.supplier_name,
       verified: p.verified,
-      rating: parseFloat(p.rating),
+      rating: p.rating,
       city: p.city,
-      state: p.state
+      state: p.state,
     }));
 
-    return success(res, 'Trending products retrieved successfully', formatted);
+    return success(res, 'Trending products retrieved successfully', {
+      ...data,
+      results: formatted,
+    });
   } catch (err) {
     next(err);
   }
@@ -97,31 +103,40 @@ const getTrendingProducts = async (req, res, next) => {
 
 /**
  * GET /products/recommended
- * List recommended products formatted for buyer home display.
+ * List recommended products for a subcategory (ordered by created_at desc).
+ * Optional product_id excludes that product from results (e.g. current product detail page).
  */
 const getRecommendedProducts = async (req, res, next) => {
   try {
     const filters = {
-      is_recommended: true,
+      subcategory_id: req.query.subcategory_id,
       is_active: true,
+      sort_by: 'created_at',
       page: req.query.page,
       limit: req.query.limit,
     };
+
+    if (req.query.product_id) {
+      filters.exclude_product_id = req.query.product_id;
+    }
+
     const data = await productModel.findProducts(filters);
 
-    // Format output as per spec: id, name, thumbnail, price, moq, unit, supplier_name, verified
-    const formatted = data.results.map(p => ({
+    const formatted = data.results.map((p) => ({
       id: p.id,
       name: p.name,
       thumbnail: p.thumbnail,
-      price: parseFloat(p.price),
+      price: p.price,
       moq: p.moq,
       unit: p.unit,
       supplier_name: p.supplier_name,
-      verified: p.verified
+      verified: p.verified,
     }));
 
-    return success(res, 'Recommended products retrieved successfully', formatted);
+    return success(res, 'Recommended products retrieved successfully', {
+      ...data,
+      results: formatted,
+    });
   } catch (err) {
     next(err);
   }
@@ -135,22 +150,25 @@ const getLatestProducts = async (req, res, next) => {
   try {
     const filters = {
       is_active: true,
+      sort_by: 'created_at',
       page: req.query.page,
       limit: req.query.limit,
     };
     const data = await productModel.findProducts(filters);
 
-    // Format output as per spec: id, name, thumbnail, price, created_at, supplier_name
-    const formatted = data.results.map(p => ({
+    const formatted = data.results.map((p) => ({
       id: p.id,
       name: p.name,
       thumbnail: p.thumbnail,
-      price: parseFloat(p.price),
+      price: p.price,
       created_at: p.created_at,
-      supplier_name: p.supplier_name
+      supplier_name: p.supplier_name,
     }));
 
-    return success(res, 'Latest products retrieved successfully', formatted);
+    return success(res, 'Latest products retrieved successfully', {
+      ...data,
+      results: formatted,
+    });
   } catch (err) {
     next(err);
   }
@@ -158,7 +176,7 @@ const getLatestProducts = async (req, res, next) => {
 
 /**
  * PUT /products/:id
- * Update an existing product (seller or admin).
+ * Update an existing product with optional thumbnail upload (seller or admin).
  */
 const updateProduct = async (req, res, next) => {
   try {
@@ -166,7 +184,12 @@ const updateProduct = async (req, res, next) => {
     if (!existing) {
       return next(new AppError('Product not found', HTTP_STATUS.NOT_FOUND));
     }
-    const product = await productModel.updateProduct(req.params.id, req.body, req.user?.id);
+    const product = await productService.updateProduct(
+      req.params.id,
+      req.body,
+      req.files,
+      req.user?.id,
+    );
     return success(res, 'Product updated successfully', product);
   } catch (err) {
     next(err);
