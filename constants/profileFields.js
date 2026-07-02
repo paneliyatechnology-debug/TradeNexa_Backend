@@ -1,10 +1,27 @@
-const { ROLE_CODES } = require('./index');
+/**
+ * Profile image field names by storage location.
+ * Used by profileService and profileValidation.
+ */
 
-/** Required image upload fields per marketplace role (shared by validation + profile service). */
-const REQUIRED_IMAGE_FIELDS = {
-  [ROLE_CODES.BUYER]: ['profile_image'],
-  [ROLE_CODES.SELLER]: ['company_logo', 'company_banner'],
-  [ROLE_CODES.BUYER_SELLER]: ['profile_image', 'company_logo', 'company_banner'],
+// ==========================================
+// Image field groups
+// ==========================================
+
+/** Stored on users table */
+const USER_IMAGE_FIELDS = ['profile_image'];
+
+/** Stored on company_details table */
+const COMPANY_IMAGE_FIELDS = ['company_logo', 'company_banner'];
+
+/** All profile image fields — optional on update */
+const PROFILE_IMAGE_FIELDS = [...USER_IMAGE_FIELDS, ...COMPANY_IMAGE_FIELDS];
+
+// ==========================================
+// Exports
+// ==========================================
+
+module.exports = {
+  USER_IMAGE_FIELDS,
+  COMPANY_IMAGE_FIELDS,
+  PROFILE_IMAGE_FIELDS,
 };
-
-module.exports = { REQUIRED_IMAGE_FIELDS };

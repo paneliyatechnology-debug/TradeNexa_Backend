@@ -2,6 +2,14 @@ const bannerModel = require('../models/bannerModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
+// ==========================================
+// Banner Operations
+// ==========================================
+
+/**
+ * POST /banners
+ * Create a new banner (admin only).
+ */
 const createBanner = async (req, res, next) => {
   try {
     const banner = await bannerModel.createBanner(req.body, req.user?.id);
@@ -11,6 +19,10 @@ const createBanner = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /banners/:id
+ * Retrieve a single banner by ID.
+ */
 const getBanner = async (req, res, next) => {
   try {
     const banner = await bannerModel.findBannerById(req.params.id);
@@ -23,6 +35,10 @@ const getBanner = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /banners
+ * List banners with optional active-status filter.
+ */
 const getBanners = async (req, res, next) => {
   try {
     const filters = {
@@ -35,6 +51,10 @@ const getBanners = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /banners/:id
+ * Update an existing banner (admin only).
+ */
 const updateBanner = async (req, res, next) => {
   try {
     const existing = await bannerModel.findBannerById(req.params.id);
@@ -48,6 +68,10 @@ const updateBanner = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /banners/:id
+ * Soft-delete a banner (admin only).
+ */
 const deleteBanner = async (req, res, next) => {
   try {
     const existing = await bannerModel.findBannerById(req.params.id);

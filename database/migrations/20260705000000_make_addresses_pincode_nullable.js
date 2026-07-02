@@ -1,4 +1,12 @@
 /**
+ * Make addresses.pincode nullable.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -6,6 +14,10 @@ exports.up = async function (knex) {
     table.string('pincode', 10).nullable().alter();
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

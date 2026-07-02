@@ -1,4 +1,12 @@
 /**
+ * Create cities table linked to states.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -13,6 +21,10 @@ exports.up = async function (knex) {
     table.index(['state_id', 'name']);
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

@@ -2,6 +2,14 @@ const businessTypeModel = require('../models/businessTypeModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
+// ==========================================
+// Business Type Operations
+// ==========================================
+
+/**
+ * POST /business-types
+ * Create a new business type for a role (admin only).
+ */
 const createBusinessType = async (req, res, next) => {
   try {
     const type = await businessTypeModel.create(req.body);
@@ -25,6 +33,10 @@ const createBusinessType = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /business-types/:id
+ * Retrieve a single business type by ID.
+ */
 const getBusinessType = async (req, res, next) => {
   try {
     const type = await businessTypeModel.findById(req.params.id);
@@ -35,6 +47,10 @@ const getBusinessType = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /business-types
+ * List business types filtered by role and active status.
+ */
 const getBusinessTypes = async (req, res, next) => {
   try {
     const roleId = parseInt(req.query.role_id, 10);
@@ -49,6 +65,10 @@ const getBusinessTypes = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /business-types/:id
+ * Update an existing business type (admin only).
+ */
 const updateBusinessType = async (req, res, next) => {
   try {
     const existing = await businessTypeModel.findById(req.params.id);
@@ -72,6 +92,10 @@ const updateBusinessType = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /business-types/:id
+ * Soft-delete a business type (admin only).
+ */
 const deleteBusinessType = async (req, res, next) => {
   try {
     const existing = await businessTypeModel.findById(req.params.id);

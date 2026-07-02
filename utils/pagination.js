@@ -1,9 +1,19 @@
 /**
+ * Knex query pagination utility.
+ *
+ * Applies limit/offset and returns results with total count metadata.
+ */
+
+// ==========================================
+// Pagination
+// ==========================================
+
+/**
  * Paginate a Knex query builder.
  * @param {Object} queryBuilder - Knex query builder
  * @param {number} [page] - Current page number
  * @param {number} [limit] - Number of records per page
- * @returns {Promise<Object>}
+ * @returns {Promise<{ results: Array, pagination: { total: number, page: number, limit: number, totalPages: number } }>}
  */
 const paginate = async (queryBuilder, page = 1, limit = 10) => {
   const p = Math.max(1, parseInt(page, 10) || 1);

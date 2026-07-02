@@ -2,6 +2,11 @@ const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const categoryModel = require('./categoryModel');
 
+// ==========================================
+// Formatting helpers
+// ==========================================
+
+/** Convert a product name to a URL-safe slug. */
 const slugify = (text) =>
   text
     .toString()
@@ -12,6 +17,15 @@ const slugify = (text) =>
     .replace(/^-+/, '') // Trim - from start
     .replace(/-+$/, ''); // Trim - from end
 
+// ==========================================
+// List & read queries
+// ==========================================
+
+/**
+ * Find a product by ID with supplier, category, brand, and location joins.
+ * @param {number} id - Product ID
+ * @returns {Promise<Object|null>}
+ */
 const findProductById = async (id) => {
   const result = await db('products')
     .leftJoin('users as suppliers', 'products.supplier_id', '=', 'suppliers.id')
@@ -48,6 +62,11 @@ const findProductById = async (id) => {
   return result;
 };
 
+/**
+ * Paginated list of products with optional filters and sorting.
+ * @param {Object} [filters] - Query filters (q, category_id, subcategory_id, brand_id, price range, sort)
+ * @returns {Promise<Object>}
+ */
 const findProducts = async (filters = {}) => {
   const q = db('products')
     .leftJoin('users as suppliers', 'products.supplier_id', '=', 'suppliers.id')
@@ -138,6 +157,16 @@ const findProducts = async (filters = {}) => {
   return paginated;
 };
 
+// ==========================================
+// Create & update
+// ==========================================
+
+/**
+ * Insert a new product after validating its subcategory.
+ * @param {Object} data - Product creation payload
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const createProduct = async (data, userId = null) => {
   await categoryModel.validateSubcategoryForProduct(data.subcategory_id);
 
@@ -163,6 +192,13 @@ const createProduct = async (data, userId = null) => {
   return findProductById(id);
 };
 
+/**
+ * Update an existing product by ID.
+ * @param {number} id - Product ID
+ * @param {Object} data - Fields to update
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const updateProduct = async (id, data, userId = null) => {
   const payload = {};
   if (data.name !== undefined) {
@@ -195,6 +231,16 @@ const updateProduct = async (id, data, userId = null) => {
   return findProductById(id);
 };
 
+// ==========================================
+// Delete (soft)
+// ==========================================
+
+/**
+ * Soft-delete a product by ID.
+ * @param {number} id - Product ID
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<void>}
+ */
 const deleteProduct = async (id, userId = null) => {
   await db('products')
     .where({ id })

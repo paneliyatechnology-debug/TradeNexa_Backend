@@ -1,4 +1,12 @@
 /**
+ * Add industry field to company_details.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -6,6 +14,10 @@ exports.up = async function (knex) {
     table.string('industry', 200).nullable();
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

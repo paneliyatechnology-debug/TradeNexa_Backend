@@ -2,6 +2,14 @@ const offerModel = require('../models/offerModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
+// ==========================================
+// Offer Operations
+// ==========================================
+
+/**
+ * POST /offers
+ * Create a new promotional offer (admin only).
+ */
 const createOffer = async (req, res, next) => {
   try {
     const offer = await offerModel.createOffer(req.body, req.user?.id);
@@ -11,6 +19,10 @@ const createOffer = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /offers/:id
+ * Retrieve a single offer by ID.
+ */
 const getOffer = async (req, res, next) => {
   try {
     const offer = await offerModel.findOfferById(req.params.id);
@@ -23,6 +35,10 @@ const getOffer = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /offers
+ * List offers with pagination and formatted summary fields.
+ */
 const getOffers = async (req, res, next) => {
   try {
     const filters = {
@@ -51,6 +67,10 @@ const getOffers = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /offers/:id
+ * Update an existing offer (admin only).
+ */
 const updateOffer = async (req, res, next) => {
   try {
     const existing = await offerModel.findOfferById(req.params.id);
@@ -64,6 +84,10 @@ const updateOffer = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /offers/:id
+ * Soft-delete an offer (admin only).
+ */
 const deleteOffer = async (req, res, next) => {
   try {
     const existing = await offerModel.findOfferById(req.params.id);

@@ -2,13 +2,20 @@ const { body, validationResult } = require('express-validator');
 const userModel = require('../models/userModel');
 const { AppError } = require('../utils/response');
 const { ROLE_CODES } = require('../constants');
-const { REQUIRED_IMAGE_FIELDS } = require('../constants/profileFields');
-const { IMAGE_FIELD_LABELS } = require('../utils/media');
+
+// ==========================================
+// Validation patterns
+// ==========================================
 
 const GST_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
 const PINCODE_REGEX = /^[1-9][0-9]{5}$/;
 
+// ==========================================
+// Blocked body fields (must use file upload or cannot be changed)
+// ==========================================
+
+/** Reject a field if it appears in req.body. */
 const blockedField = (field, label) =>
   body(field).custom((val) => {
     if (val !== undefined) throw new Error(`${label} cannot be updated`);
@@ -27,7 +34,12 @@ const blockedRules = [
   blockedField('device_token', 'Device token'),
   blockedField('device', 'Device'),
   blockedField('complete_profile', 'complete_profile'),
+  blockedField('is_completed_profile', 'is_completed_profile'),
 ];
+
+// ==========================================
+// Role-specific text field rules
+// ==========================================
 
 const industryRules = [
   body('industry')
@@ -118,22 +130,13 @@ const RULES_BY_ROLE = {
   [ROLE_CODES.BUYER_SELLER]: buyerSellerProfileRules,
 };
 
-const validateRequiredImages = (roleCode, files = {}, existingProfile = {}) => {
-  const requiredFields = REQUIRED_IMAGE_FIELDS[roleCode] || [];
-  return requiredFields
-    .filter((field) => {
-      const hasNewFile = Boolean(files[field]?.[0]);
-      const hasExisting = Boolean(existingProfile?.[field]);
-      return !hasNewFile && !hasExisting;
-    })
-    .map((field) => ({
-      field,
-      message: `${IMAGE_FIELD_LABELS[field] || field} is required`,
-    }));
-};
+// ==========================================
+// Middleware
+// ==========================================
 
 /**
  * Role-based profile validation for multipart profile updates.
+ * Image fields are optional — only text fields are enforced per role.
  */
 const validateProfileUpdate = async (req, _res, next) => {
   try {
@@ -156,13 +159,6 @@ const validateProfileUpdate = async (req, _res, next) => {
           errors.array().map((e) => ({ field: e.path, message: e.msg })),
         ),
       );
-    }
-
-    const existingProfile = await userModel.getCompanyDetails(req.user.id);
-
-    const imageErrors = validateRequiredImages(roleCode, req.files, existingProfile);
-    if (imageErrors.length) {
-      return next(new AppError('Validation failed', 400, imageErrors));
     }
 
     req.userRoleCode = roleCode;

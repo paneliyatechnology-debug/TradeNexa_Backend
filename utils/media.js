@@ -1,19 +1,34 @@
+/**
+ * Shared media/file path utilities.
+ * Used by upload service, profile, categories, and API response formatting.
+ */
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 const uploadConfig = require('../config/upload');
 
+// ==========================================
+// Constants
+// ==========================================
+
+/** Human-readable labels for image field validation messages. */
 const IMAGE_FIELD_LABELS = {
   profile_image: 'Profile image',
   company_logo: 'Company logo',
   company_banner: 'Company banner',
+  icon: 'Icon',
+  image: 'Image',
 };
 
+// ==========================================
+// Path helpers
+// ==========================================
+
 /**
- * Build a numeric timestamp-based filename.
+ * Build a unique timestamp-based filename for uploads.
  * Example: 1730284732123456.jpg
  */
-const buildProfileFileName = (_fieldName, originalName) => {
+const buildStoredFileName = (_fieldName, originalName) => {
   const ext = path.extname(originalName).toLowerCase();
   const timestamp = Date.now();
   const unique = Math.floor(Math.random() * 1000)
@@ -22,20 +37,35 @@ const buildProfileFileName = (_fieldName, originalName) => {
   return `${timestamp}${unique}${ext}`;
 };
 
-const getProfileUploadDir = (userId) =>
-  path.join(uploadConfig.rootDir, uploadConfig.profileSubDir, String(userId));
-
-const buildRelativeProfilePath = (userId, fileName) =>
-  `${uploadConfig.profileSubDir}/${userId}/${fileName}`;
-
-const getUploadedProfilePath = (files, field, userId) => {
-  const file = files?.[field]?.[0];
-  if (!file) return null;
-  return buildRelativeProfilePath(userId, file.filename);
+/** Create directory recursively if it does not exist. */
+const ensureDir = (dir) => {
+  fs.mkdirSync(dir, { recursive: true });
 };
 
+/** Absolute filesystem path under uploads/. */
+const getAbsoluteUploadDir = (...segments) =>
+  path.join(uploadConfig.rootDir, ...segments.map(String));
+
+/** Relative path stored in DB (e.g. profiles/12/1730284732123456.jpg). */
+const buildRelativeStoredPath = (...segments) => segments.map(String).join('/');
+
 /**
- * Convert stored relative path to a public URL. External URLs are returned as-is.
+ * Build relative path from a multer file already saved in the target folder.
+ * @returns {string|null}
+ */
+const getUploadedRelativePath = (files, field, ...pathSegments) => {
+  const file = files?.[field]?.[0];
+  if (!file) return null;
+  return buildRelativeStoredPath(...pathSegments, file.filename);
+};
+
+// ==========================================
+// URL resolution
+// ==========================================
+
+/**
+ * Convert a stored relative path to a public URL.
+ * External URLs (legacy data) are returned unchanged.
  */
 const resolveMediaUrl = (storedValue) => {
   if (!storedValue) return null;
@@ -46,6 +76,11 @@ const resolveMediaUrl = (storedValue) => {
   return `${baseUrl}${uploadConfig.publicPath}/${normalized}`;
 };
 
+// ==========================================
+// File operations
+// ==========================================
+
+/** Delete a previously stored file from disk (skips external URLs). */
 const deleteStoredFile = async (storedValue) => {
   if (!storedValue || /^https?:\/\//i.test(storedValue)) return;
 
@@ -58,29 +93,50 @@ const deleteStoredFile = async (storedValue) => {
 };
 
 /**
- * Assign a new uploaded image: delete the previous file and return the new stored path.
- * Returns null when no new file was uploaded.
+ * Handle a direct upload on update: delete old file and return new relative path.
+ * @returns {Promise<string|null>}
  */
-const replaceStoredImage = async (files, field, userId, existingStoredPath) => {
-  const newPath = getUploadedProfilePath(files, field, userId);
-  if (!newPath) return null;
+const replaceUploadedFile = async (files, field, pathSegments, existingStoredPath) => {
+  const relativePath = getUploadedRelativePath(files, field, ...pathSegments);
+  if (!relativePath) return null;
 
-  if (existingStoredPath && existingStoredPath !== newPath) {
+  if (existingStoredPath && existingStoredPath !== relativePath) {
     await deleteStoredFile(existingStoredPath);
   }
 
-  return newPath;
+  return relativePath;
 };
 
-const ensureDir = (dir) => {
-  fs.mkdirSync(dir, { recursive: true });
+/**
+ * Move a file from the inbox folder to the final record folder (create flow).
+ * @returns {Promise<string|null>}
+ */
+const finalizeInboxUpload = async (files, field, destSegments) => {
+  const file = files?.[field]?.[0];
+  if (!file) return null;
+
+  const destDir = getAbsoluteUploadDir(...destSegments);
+  ensureDir(destDir);
+
+  const fileName = file.filename || path.basename(file.path);
+  const destPath = path.join(destDir, fileName);
+
+  if (file.path !== destPath) {
+    await fs.promises.rename(file.path, destPath);
+  }
+
+  return buildRelativeStoredPath(...destSegments, fileName);
 };
 
 module.exports = {
   IMAGE_FIELD_LABELS,
-  buildProfileFileName,
-  getProfileUploadDir,
-  resolveMediaUrl,
-  replaceStoredImage,
+  buildStoredFileName,
   ensureDir,
+  getAbsoluteUploadDir,
+  buildRelativeStoredPath,
+  getUploadedRelativePath,
+  resolveMediaUrl,
+  deleteStoredFile,
+  replaceUploadedFile,
+  finalizeInboxUpload,
 };

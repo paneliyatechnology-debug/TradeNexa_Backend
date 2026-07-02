@@ -1,9 +1,23 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 
+// ==========================================
+// List & read queries
+// ==========================================
+
+/**
+ * Find a news article by ID (non-deleted).
+ * @param {number} id - News ID
+ * @returns {Promise<Object|undefined>}
+ */
 const findNewsById = (id) =>
   db('news').where({ id }).whereNull('deleted_at').first();
 
+/**
+ * Paginated list of news articles with optional search and status filters.
+ * @param {Object} [filters] - Query filters (q, is_active, page, limit)
+ * @returns {Promise<Object>}
+ */
 const findNewsList = async (filters = {}) => {
   const q = db('news').whereNull('deleted_at');
 
@@ -22,6 +36,16 @@ const findNewsList = async (filters = {}) => {
   return paginate(q, page, limit);
 };
 
+// ==========================================
+// Create & update
+// ==========================================
+
+/**
+ * Insert a new news article.
+ * @param {Object} data - News creation payload
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const createNews = async (data, userId = null) => {
   const payload = {
     title: data.title,
@@ -36,6 +60,13 @@ const createNews = async (data, userId = null) => {
   return findNewsById(id);
 };
 
+/**
+ * Update an existing news article by ID.
+ * @param {number} id - News ID
+ * @param {Object} data - Fields to update
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const updateNews = async (id, data, userId = null) => {
   const payload = {};
   if (data.title !== undefined) payload.title = data.title;
@@ -53,6 +84,16 @@ const updateNews = async (id, data, userId = null) => {
   return findNewsById(id);
 };
 
+// ==========================================
+// Delete (soft)
+// ==========================================
+
+/**
+ * Soft-delete a news article by ID.
+ * @param {number} id - News ID
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<void>}
+ */
 const deleteNews = async (id, userId = null) => {
   await db('news')
     .where({ id })

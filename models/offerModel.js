@@ -1,9 +1,23 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 
+// ==========================================
+// List & read queries
+// ==========================================
+
+/**
+ * Find an offer by ID (non-deleted).
+ * @param {number} id - Offer ID
+ * @returns {Promise<Object|undefined>}
+ */
 const findOfferById = (id) =>
   db('offers').where({ id }).whereNull('deleted_at').first();
 
+/**
+ * Paginated list of offers; excludes expired offers unless include_expired is set.
+ * @param {Object} [filters] - Query filters (is_active, include_expired, page, limit)
+ * @returns {Promise<Object>}
+ */
 const findOffers = async (filters = {}) => {
   const q = db('offers').whereNull('deleted_at');
 
@@ -23,6 +37,16 @@ const findOffers = async (filters = {}) => {
   return paginate(q, page, limit);
 };
 
+// ==========================================
+// Create & update
+// ==========================================
+
+/**
+ * Insert a new offer.
+ * @param {Object} data - Offer creation payload
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const createOffer = async (data, userId = null) => {
   const payload = {
     title: data.title,
@@ -37,6 +61,13 @@ const createOffer = async (data, userId = null) => {
   return findOfferById(id);
 };
 
+/**
+ * Update an existing offer by ID.
+ * @param {number} id - Offer ID
+ * @param {Object} data - Fields to update
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const updateOffer = async (id, data, userId = null) => {
   const payload = {};
   if (data.title !== undefined) payload.title = data.title;
@@ -54,6 +85,16 @@ const updateOffer = async (id, data, userId = null) => {
   return findOfferById(id);
 };
 
+// ==========================================
+// Delete (soft)
+// ==========================================
+
+/**
+ * Soft-delete an offer by ID.
+ * @param {number} id - Offer ID
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<void>}
+ */
 const deleteOffer = async (id, userId = null) => {
   await db('offers')
     .where({ id })

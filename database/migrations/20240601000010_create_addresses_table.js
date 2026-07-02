@@ -1,4 +1,12 @@
 /**
+ * Create user addresses table.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -22,6 +30,10 @@ exports.up = async function (knex) {
     table.index('pincode');
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

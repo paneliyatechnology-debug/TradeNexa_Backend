@@ -2,6 +2,14 @@ const supplierModel = require('../models/supplierModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
+// ==========================================
+// Supplier Queries
+// ==========================================
+
+/**
+ * GET /suppliers/:id
+ * Retrieve a single supplier profile by ID.
+ */
 const getSupplier = async (req, res, next) => {
   try {
     const supplier = await supplierModel.findSupplierById(req.params.id);
@@ -14,6 +22,10 @@ const getSupplier = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /suppliers
+ * List suppliers with search, filters, and pagination.
+ */
 const getSuppliers = async (req, res, next) => {
   try {
     const filters = {
@@ -30,6 +42,10 @@ const getSuppliers = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /suppliers/verified
+ * List verified suppliers formatted for buyer home display.
+ */
 const getVerifiedSuppliers = async (req, res, next) => {
   try {
     const filters = {
@@ -59,6 +75,10 @@ const getVerifiedSuppliers = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /suppliers/nearby
+ * List suppliers near the given coordinates formatted for buyer home display.
+ */
 const getNearbySuppliers = async (req, res, next) => {
   try {
     const { latitude, longitude, max_distance, page, limit } = req.query;

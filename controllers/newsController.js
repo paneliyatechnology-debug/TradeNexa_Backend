@@ -2,6 +2,14 @@ const newsModel = require('../models/newsModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
+// ==========================================
+// News Operations
+// ==========================================
+
+/**
+ * POST /news
+ * Create a new news article (admin only).
+ */
 const createNews = async (req, res, next) => {
   try {
     const news = await newsModel.createNews(req.body, req.user?.id);
@@ -11,6 +19,10 @@ const createNews = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /news/:id
+ * Retrieve a single news article by ID.
+ */
 const getNewsDetails = async (req, res, next) => {
   try {
     const news = await newsModel.findNewsById(req.params.id);
@@ -23,6 +35,10 @@ const getNewsDetails = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /news
+ * List news articles with search, pagination, and formatted summary fields.
+ */
 const getNewsList = async (req, res, next) => {
   try {
     const filters = {
@@ -50,6 +66,10 @@ const getNewsList = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /news/:id
+ * Update an existing news article (admin only).
+ */
 const updateNews = async (req, res, next) => {
   try {
     const existing = await newsModel.findNewsById(req.params.id);
@@ -63,6 +83,10 @@ const updateNews = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /news/:id
+ * Soft-delete a news article (admin only).
+ */
 const deleteNews = async (req, res, next) => {
   try {
     const existing = await newsModel.findNewsById(req.params.id);

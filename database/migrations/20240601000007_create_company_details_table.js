@@ -1,4 +1,12 @@
 /**
+ * Create company profile details table.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -19,6 +27,10 @@ exports.up = async function (knex) {
     table.index('company_name');
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

@@ -1,4 +1,12 @@
 /**
+ * Create B2B buyer home module tables (categories, products, banners, etc.).
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -245,6 +253,10 @@ exports.up = async function (knex) {
     table.index('deleted_at');
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

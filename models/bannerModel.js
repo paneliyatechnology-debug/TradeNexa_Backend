@@ -1,8 +1,22 @@
 const db = require('../database/knex');
 
+// ==========================================
+// List & read queries
+// ==========================================
+
+/**
+ * Find a banner by ID (non-deleted).
+ * @param {number} id - Banner ID
+ * @returns {Promise<Object|undefined>}
+ */
 const findBannerById = (id) =>
   db('banners').where({ id }).whereNull('deleted_at').first();
 
+/**
+ * List banners with optional active filter, ordered by priority.
+ * @param {Object} [filters] - Query filters (is_active)
+ * @returns {Promise<Object>}
+ */
 const findBanners = async (filters = {}) => {
   const q = db('banners').whereNull('deleted_at');
 
@@ -15,6 +29,16 @@ const findBanners = async (filters = {}) => {
   return q;
 };
 
+// ==========================================
+// Create & update
+// ==========================================
+
+/**
+ * Insert a new banner.
+ * @param {Object} data - Banner creation payload
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const createBanner = async (data, userId = null) => {
   const payload = {
     title: data.title,
@@ -30,6 +54,13 @@ const createBanner = async (data, userId = null) => {
   return findBannerById(id);
 };
 
+/**
+ * Update an existing banner by ID.
+ * @param {number} id - Banner ID
+ * @param {Object} data - Fields to update
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const updateBanner = async (id, data, userId = null) => {
   const payload = {};
   if (data.title !== undefined) payload.title = data.title;
@@ -48,6 +79,16 @@ const updateBanner = async (id, data, userId = null) => {
   return findBannerById(id);
 };
 
+// ==========================================
+// Delete (soft)
+// ==========================================
+
+/**
+ * Soft-delete a banner by ID.
+ * @param {number} id - Banner ID
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<void>}
+ */
 const deleteBanner = async (id, userId = null) => {
   await db('banners')
     .where({ id })

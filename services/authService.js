@@ -1,3 +1,8 @@
+/**
+ * User authentication service.
+ *
+ * OTP-based login/registration, token management, and profile delegation.
+ */
 const jwt = require('jsonwebtoken');
 const userModel = require('../models/userModel');
 const firebase = require('../utils/firebase');
@@ -6,6 +11,10 @@ const { AppError } = require('../utils/response');
 const { TOKEN_TYPES, OTP_STATUS } = require('../constants');
 
 const OTP_EXPIRY_MINUTES = 10;
+
+// ==========================================
+// Internal helpers
+// ==========================================
 
 /**
  * Add specified minutes to a date object.
@@ -66,6 +75,15 @@ const verifyOtpSession = async (mobile, otp, verificationId) => {
 };
 
 /**
+ * Resolve is_completed_profile from a users-table row.
+ * Returns false when the user record is missing.
+ */
+const resolveIsCompletedProfile = (user) => {
+  if (!user) return false;
+  return Boolean(user.is_completed_profile);
+};
+
+/**
  * Helper to issue access/refresh tokens and fetch formatting information for response.
  * @param {Object} user - User record
  * @param {Object} req - Request context
@@ -95,14 +113,21 @@ const issueTokens = async (user, req) => {
     }
   }
 
-  const profile = await userModel.getFullProfile(user.id);
+  const freshUser = await userModel.findUserById(user.id);
+  const profile = await userModel.getFullProfile(freshUser.id);
+
   return {
     is_registered: true,
+    is_completed_profile: resolveIsCompletedProfile(freshUser),
     user: userModel.formatUser(profile),
     access_token: tokens.accessToken,
     refresh_token: tokens.refreshToken,
   };
 };
+
+// ==========================================
+// OTP flow
+// ==========================================
 
 /**
  * Send OTP verification code to a mobile number.
@@ -134,13 +159,13 @@ const sendOtp = async (mobileNumber, recaptchaToken) => {
  */
 const verifyOtp = async (mobileNumber, otp, verificationId, req) => {
   await verifyOtpSession(mobileNumber, otp, verificationId);
-  const user = await userModel.findUserByMobile(mobileNumber);
 
+  const user = await userModel.findUserByMobile(mobileNumber);
   if (user) return issueTokens(user, req);
 
-  // Return access_token (formerly registration_token) for registration flow
   return {
     is_registered: false,
+    is_completed_profile: resolveIsCompletedProfile(null),
     mobile_number: mobileNumber,
     access_token: signRegistration({
       mobileNumber,
@@ -175,6 +200,10 @@ const resendOtp = async (mobileNumber, verificationId, recaptchaToken) => {
     mobile_number: mobileNumber,
   };
 };
+
+// ==========================================
+// Registration & session management
+// ==========================================
 
 /**
  * Register a new user and create their profile & address details in a single transaction.
@@ -267,15 +296,25 @@ const logout = async (userId, token) => {
   await userModel.deleteUserDevice(userId);
 };
 
+// ==========================================
+// Profile (delegated to profileService)
+// ==========================================
+
 const profileService = require('./profileService');
 
 /**
  * Get profile data formatted for response.
+ * @param {number} userId - Authenticated user ID
+ * @returns {Promise<Object>}
  */
 const getProfile = (userId) => profileService.getProfile(userId);
 
 /**
  * Update user profile (role-based fields).
+ * @param {number} userId - Authenticated user ID
+ * @param {Object} data - Profile update payload
+ * @param {Object} files - Uploaded file map from multer
+ * @returns {Promise<Object>}
  */
 const updateProfile = (userId, data, files) => profileService.updateProfile(userId, data, files);
 

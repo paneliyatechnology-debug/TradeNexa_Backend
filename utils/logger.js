@@ -1,5 +1,14 @@
+/**
+ * Winston logger configuration.
+ *
+ * Writes JSON logs to files; adds colorized console output in non-production environments.
+ */
 const winston = require('winston');
 const path = require('path');
+
+// ==========================================
+// Logger instance
+// ==========================================
 
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
@@ -9,6 +18,10 @@ const logger = winston.createLogger({
     new winston.transports.File({ filename: path.join('logs', 'app.log') }),
   ],
 });
+
+// ==========================================
+// Development console transport
+// ==========================================
 
 if (process.env.NODE_ENV !== 'production') {
   logger.add(

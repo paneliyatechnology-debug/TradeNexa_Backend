@@ -1,3 +1,8 @@
+/**
+ * Product routes.
+ *
+ * Public read endpoints (list, trending, recommended, latest) and role-based write operations.
+ */
 const express = require('express');
 const productController = require('../controllers/productController');
 const { authenticate, authorize, validate } = require('../middleware/auth');
@@ -5,13 +10,20 @@ const { idParam, productCreateRules, productUpdateRules, productListQuery } = re
 
 const router = express.Router();
 
+// ==========================================
+// Public read routes
+// ==========================================
+
 router.get('/', productListQuery, validate, productController.getProducts);
 router.get('/trending', productController.getTrendingProducts);
 router.get('/recommended', productController.getRecommendedProducts);
 router.get('/latest', productController.getLatestProducts);
 router.get('/:id', idParam, validate, productController.getProduct);
 
-// Write/update/delete endpoints (Admin, Seller, Buyer+Seller roles)
+// ==========================================
+// Write routes — seller, buyer_seller, admin
+// ==========================================
+
 router.post('/', authenticate, authorize('seller', 'buyer_seller', 'admin'), productCreateRules, validate, productController.createProduct);
 router.put('/:id', authenticate, authorize('seller', 'buyer_seller', 'admin'), idParam, productUpdateRules, validate, productController.updateProduct);
 router.delete('/:id', authenticate, authorize('seller', 'buyer_seller', 'admin'), idParam, validate, productController.deleteProduct);

@@ -1,9 +1,23 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 
+// ==========================================
+// List & read queries
+// ==========================================
+
+/**
+ * Find a brand by ID (non-deleted).
+ * @param {number} id - Brand ID
+ * @returns {Promise<Object|undefined>}
+ */
 const findBrandById = (id) =>
   db('brands').where({ id }).whereNull('deleted_at').first();
 
+/**
+ * Paginated list of brands with optional search and status filters.
+ * @param {Object} [filters] - Query filters (q, is_popular, is_active, page, limit)
+ * @returns {Promise<Object>}
+ */
 const findBrands = async (filters = {}) => {
   const q = db('brands').whereNull('deleted_at');
 
@@ -26,6 +40,16 @@ const findBrands = async (filters = {}) => {
   return paginate(q, page, limit);
 };
 
+// ==========================================
+// Create & update
+// ==========================================
+
+/**
+ * Insert a new brand.
+ * @param {Object} data - Brand creation payload
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const createBrand = async (data, userId = null) => {
   const payload = {
     name: data.name,
@@ -39,6 +63,13 @@ const createBrand = async (data, userId = null) => {
   return findBrandById(id);
 };
 
+/**
+ * Update an existing brand by ID.
+ * @param {number} id - Brand ID
+ * @param {Object} data - Fields to update
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const updateBrand = async (id, data, userId = null) => {
   const payload = {};
   if (data.name !== undefined) payload.name = data.name;
@@ -55,6 +86,16 @@ const updateBrand = async (id, data, userId = null) => {
   return findBrandById(id);
 };
 
+// ==========================================
+// Delete (soft)
+// ==========================================
+
+/**
+ * Soft-delete a brand by ID.
+ * @param {number} id - Brand ID
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<void>}
+ */
 const deleteBrand = async (id, userId = null) => {
   await db('brands')
     .where({ id })

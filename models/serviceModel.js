@@ -1,8 +1,22 @@
 const db = require('../database/knex');
 
+// ==========================================
+// List & read queries
+// ==========================================
+
+/**
+ * Find a service by ID (non-deleted).
+ * @param {number} id - Service ID
+ * @returns {Promise<Object|undefined>}
+ */
 const findServiceById = (id) =>
   db('services').where({ id }).whereNull('deleted_at').first();
 
+/**
+ * List services with optional search and status filters, ordered by name.
+ * @param {Object} [filters] - Query filters (q, is_active)
+ * @returns {Promise<Object>}
+ */
 const findServices = async (filters = {}) => {
   const q = db('services').whereNull('deleted_at');
 
@@ -19,6 +33,16 @@ const findServices = async (filters = {}) => {
   return q;
 };
 
+// ==========================================
+// Create & update
+// ==========================================
+
+/**
+ * Insert a new service.
+ * @param {Object} data - Service creation payload
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const createService = async (data, userId = null) => {
   const payload = {
     name: data.name,
@@ -32,6 +56,13 @@ const createService = async (data, userId = null) => {
   return findServiceById(id);
 };
 
+/**
+ * Update an existing service by ID.
+ * @param {number} id - Service ID
+ * @param {Object} data - Fields to update
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const updateService = async (id, data, userId = null) => {
   const payload = {};
   if (data.name !== undefined) payload.name = data.name;
@@ -48,6 +79,16 @@ const updateService = async (id, data, userId = null) => {
   return findServiceById(id);
 };
 
+// ==========================================
+// Delete (soft)
+// ==========================================
+
+/**
+ * Soft-delete a service by ID.
+ * @param {number} id - Service ID
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<void>}
+ */
 const deleteService = async (id, userId = null) => {
   await db('services')
     .where({ id })

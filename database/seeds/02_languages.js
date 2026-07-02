@@ -1,4 +1,11 @@
+/**
+ * Seed supported application languages.
+ */
 const { LANGUAGE_CODES } = require('../../constants');
+
+// ==========================================
+// Seed data
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

@@ -2,7 +2,11 @@ const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl } = require('../utils/media');
 
-/** Suppliers are users with seller or buyer_seller role — not a separate table. */
+// ==========================================
+// Query helpers
+// ==========================================
+
+/** Base query for seller/buyer_seller users with company and address joins. */
 const getSupplierQuery = () =>
   db('users')
     .join('roles', 'users.role_id', '=', 'roles.id')
@@ -15,6 +19,12 @@ const getSupplierQuery = () =>
     .whereIn('roles.code', ['seller', 'buyer_seller'])
     .whereNull('users.deleted_at');
 
+/**
+ * Format a supplier row for API responses.
+ * Resolves logo URL and normalizes boolean/numeric fields.
+ * @param {Object} row - Raw supplier query row
+ * @returns {Object}
+ */
 const formatSupplierRow = (row) => ({
   ...row,
   logo: resolveMediaUrl(row.logo),
@@ -25,13 +35,22 @@ const formatSupplierRow = (row) => ({
   distance: row.distance !== undefined ? parseFloat(row.distance || 0) : undefined,
 });
 
+// ==========================================
+// List & read queries
+// ==========================================
+
+/**
+ * Find a single supplier by user ID.
+ * @param {number} id - Supplier (user) ID
+ * @returns {Promise<Object|null>}
+ */
 const findSupplierById = async (id) => {
   const result = await getSupplierQuery()
     .where('users.id', id)
     .select(
       'users.id',
       'company_details.company_name',
-      db.raw('COALESCE(company_details.company_logo, company_details.profile_image) as logo'),
+      db.raw('COALESCE(company_details.company_logo, users.profile_image) as logo'),
       'users.is_verified as verified',
       'company_details.rating',
       'company_details.response_rate',
@@ -47,12 +66,17 @@ const findSupplierById = async (id) => {
   return result ? formatSupplierRow(result) : null;
 };
 
+/**
+ * Paginated list of suppliers with optional search and status filters.
+ * @param {Object} [filters] - Query filters (q, is_verified, is_active, page, limit)
+ * @returns {Promise<Object>}
+ */
 const findSuppliers = async (filters = {}) => {
   const q = getSupplierQuery()
     .select(
       'users.id',
       'company_details.company_name',
-      db.raw('COALESCE(company_details.company_logo, company_details.profile_image) as logo'),
+      db.raw('COALESCE(company_details.company_logo, users.profile_image) as logo'),
       'users.is_verified as verified',
       'company_details.rating',
       'company_details.response_rate',
@@ -78,6 +102,14 @@ const findSuppliers = async (filters = {}) => {
   return paginated;
 };
 
+/**
+ * Paginated list of suppliers within a geographic radius (Haversine formula).
+ * @param {number|string} latitude - Reference latitude
+ * @param {number|string} longitude - Reference longitude
+ * @param {number} [maxDistance=50] - Maximum distance in km
+ * @param {Object} [filters] - Pagination filters (page, limit)
+ * @returns {Promise<Object>}
+ */
 const findNearbySuppliers = async (latitude, longitude, maxDistance = 50, filters = {}) => {
   const lat = parseFloat(latitude);
   const lng = parseFloat(longitude);
@@ -89,7 +121,7 @@ const findNearbySuppliers = async (latitude, longitude, maxDistance = 50, filter
     .select(
       'users.id',
       'company_details.company_name',
-      db.raw('COALESCE(company_details.company_logo, company_details.profile_image) as logo'),
+      db.raw('COALESCE(company_details.company_logo, users.profile_image) as logo'),
       'users.is_verified as verified',
       'company_details.rating',
       'company_details.response_rate',

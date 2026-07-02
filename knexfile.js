@@ -1,4 +1,13 @@
+/**
+ * Knex database configuration.
+ *
+ * MySQL connection settings for development and production environments.
+ */
 require('dotenv').config();
+
+// ==========================================
+// Shared connection config
+// ==========================================
 
 const baseConfig = {
   client: 'mysql2',
@@ -19,6 +28,10 @@ const baseConfig = {
     directory: './database/seeds',
   },
 };
+
+// ==========================================
+// Environment exports
+// ==========================================
 
 module.exports = {
   development: { ...baseConfig },

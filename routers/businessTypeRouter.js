@@ -1,3 +1,8 @@
+/**
+ * Business type routes.
+ *
+ * Public read endpoints filtered by role; admin-only create/update/delete.
+ */
 const express = require('express');
 const businessTypeController = require('../controllers/businessTypeController');
 const { authenticate, authorize, validate } = require('../middleware/auth');
@@ -10,8 +15,16 @@ const {
 
 const router = express.Router();
 
+// ==========================================
+// Public read routes
+// ==========================================
+
 router.get('/', businessTypeListQuery, validate, businessTypeController.getBusinessTypes);
 router.get('/:id', idParam, validate, businessTypeController.getBusinessType);
+
+// ==========================================
+// Admin write routes
+// ==========================================
 
 router.post(
   '/',

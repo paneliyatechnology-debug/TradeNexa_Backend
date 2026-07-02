@@ -1,4 +1,12 @@
 /**
+ * Add category parent_id and rename products.category_id to subcategory_id.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -28,6 +36,10 @@ exports.up = async function (knex) {
       .onDelete('RESTRICT');
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

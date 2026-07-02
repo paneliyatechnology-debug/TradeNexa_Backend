@@ -1,4 +1,12 @@
 /**
+ * Add role_id to business_types for role-scoped business types.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -32,6 +40,10 @@ exports.up = async function (knex) {
     });
   }
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

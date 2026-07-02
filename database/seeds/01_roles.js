@@ -1,4 +1,11 @@
+/**
+ * Seed marketplace roles (buyer, seller, buyer_seller, admin panel roles).
+ */
 const { ROLE_CODES } = require('../../constants');
+
+// ==========================================
+// Seed data
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

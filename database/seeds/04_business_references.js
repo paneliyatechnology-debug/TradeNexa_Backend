@@ -1,4 +1,12 @@
 /**
+ * Seed business category reference data.
+ */
+
+// ==========================================
+// Seed data
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.seed = async function (knex) {

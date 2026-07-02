@@ -1,3 +1,11 @@
+/**
+ * Seed business types mapped to marketplace roles.
+ */
+
+// ==========================================
+// Helpers & type lists
+// ==========================================
+
 const slugify = (name) =>
   name
     .toLowerCase()
@@ -38,6 +46,10 @@ const buildRows = (names, roleId) =>
     role_id: roleId,
     is_active: true,
   }));
+
+// ==========================================
+// Seed data
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

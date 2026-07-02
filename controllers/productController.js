@@ -2,6 +2,14 @@ const productModel = require('../models/productModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
+// ==========================================
+// Product Operations
+// ==========================================
+
+/**
+ * POST /products
+ * Create a new product listing (seller or admin).
+ */
 const createProduct = async (req, res, next) => {
   try {
     const product = await productModel.createProduct(req.body, req.user?.id);
@@ -11,6 +19,10 @@ const createProduct = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /products/:id
+ * Retrieve a single product by ID.
+ */
 const getProduct = async (req, res, next) => {
   try {
     const product = await productModel.findProductById(req.params.id);
@@ -23,6 +35,10 @@ const getProduct = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /products
+ * List products with search, filters, and pagination.
+ */
 const getProducts = async (req, res, next) => {
   try {
     const filters = {
@@ -43,6 +59,10 @@ const getProducts = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /products/trending
+ * List trending products formatted for buyer home display.
+ */
 const getTrendingProducts = async (req, res, next) => {
   try {
     const filters = {
@@ -75,6 +95,10 @@ const getTrendingProducts = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /products/recommended
+ * List recommended products formatted for buyer home display.
+ */
 const getRecommendedProducts = async (req, res, next) => {
   try {
     const filters = {
@@ -103,6 +127,10 @@ const getRecommendedProducts = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /products/latest
+ * List the most recently added products formatted for buyer home display.
+ */
 const getLatestProducts = async (req, res, next) => {
   try {
     const filters = {
@@ -128,6 +156,10 @@ const getLatestProducts = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /products/:id
+ * Update an existing product (seller or admin).
+ */
 const updateProduct = async (req, res, next) => {
   try {
     const existing = await productModel.findProductById(req.params.id);
@@ -141,6 +173,10 @@ const updateProduct = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /products/:id
+ * Soft-delete a product (seller or admin).
+ */
 const deleteProduct = async (req, res, next) => {
   try {
     const existing = await productModel.findProductById(req.params.id);

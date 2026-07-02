@@ -1,3 +1,7 @@
+/**
+ * Add admin panel roles (admin, super_admin, supporter).
+ */
+
 const { ROLE_CODES } = require('../../constants');
 
 const ADMIN_PANEL_ROLES = [
@@ -21,6 +25,10 @@ const ADMIN_PANEL_ROLES = [
   },
 ];
 
+// ==========================================
+// Migration — up
+// ==========================================
+
 /**
  * @param { import("knex").Knex } knex
  */
@@ -32,6 +40,10 @@ exports.up = async function (knex) {
     }
   }
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

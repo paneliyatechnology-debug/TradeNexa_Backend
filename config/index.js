@@ -1,4 +1,11 @@
+/**
+ * Application configuration loaded from environment variables.
+ */
 require('dotenv').config();
+
+// ==========================================
+// Config export
+// ==========================================
 
 module.exports = {
   env: process.env.NODE_ENV || 'development',

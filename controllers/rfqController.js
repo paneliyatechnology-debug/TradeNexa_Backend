@@ -2,6 +2,14 @@ const rfqModel = require('../models/rfqModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
+// ==========================================
+// RFQ Operations
+// ==========================================
+
+/**
+ * POST /rfqs
+ * Create a new request for quotation (buyer or admin).
+ */
 const createRfq = async (req, res, next) => {
   try {
     const rfq = await rfqModel.createRfq(req.body, req.user.id);
@@ -11,6 +19,10 @@ const createRfq = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /rfqs/:id
+ * Retrieve a single RFQ by ID.
+ */
 const getRfq = async (req, res, next) => {
   try {
     const rfq = await rfqModel.findRfqById(req.params.id);
@@ -23,6 +35,10 @@ const getRfq = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /rfqs
+ * List RFQs with search, filters, and pagination.
+ */
 const getRfqs = async (req, res, next) => {
   try {
     const filters = {
@@ -41,6 +57,10 @@ const getRfqs = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /rfqs/latest
+ * List the most recent RFQs formatted for buyer home display.
+ */
 const getLatestRfqs = async (req, res, next) => {
   try {
     const filters = {
@@ -65,6 +85,10 @@ const getLatestRfqs = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /rfqs/:id
+ * Update an RFQ (creator or admin only).
+ */
 const updateRfq = async (req, res, next) => {
   try {
     const existing = await rfqModel.findRfqById(req.params.id);
@@ -85,6 +109,10 @@ const updateRfq = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /rfqs/:id
+ * Soft-delete an RFQ (creator or admin only).
+ */
 const deleteRfq = async (req, res, next) => {
   try {
     const existing = await rfqModel.findRfqById(req.params.id);

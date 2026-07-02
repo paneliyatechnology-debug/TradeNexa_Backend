@@ -1,4 +1,12 @@
 /**
+ * Create states table linked to countries.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -15,6 +23,10 @@ exports.up = async function (knex) {
     table.index('code');
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

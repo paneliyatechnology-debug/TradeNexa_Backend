@@ -1,11 +1,26 @@
+/**
+ * Global Express error handler.
+ *
+ * Maps operational AppErrors and MySQL constraint violations to consistent JSON responses.
+ */
 const logger = require('../utils/logger');
 
+/**
+ * Express error-handling middleware (4-argument signature).
+ * @param {Error} err - Thrown or passed error
+ * @param {import('express').Request} req - Express request
+ * @param {import('express').Response} res - Express response
+ * @param {import('express').NextFunction} _next - Express next (unused)
+ */
 const errorHandler = (err, req, res, _next) => {
   let statusCode = err.statusCode || 500;
   let message = err.message || 'Internal server error';
   let errors = err.errors || [];
 
-  // Handle MySQL Duplicate Entry Errors (e.g. Email/Mobile duplicate)
+  // ==========================================
+  // MySQL duplicate entry (ER_DUP_ENTRY)
+  // ==========================================
+
   if (err.code === 'ER_DUP_ENTRY' || err.errno === 1062) {
     statusCode = 409;
     message = 'Duplicate entry found';
@@ -33,17 +48,25 @@ const errorHandler = (err, req, res, _next) => {
     }
   }
 
-  // Handle MySQL Foreign Key Constraints (Insert/Update references invalid row)
+  // ==========================================
+  // MySQL foreign key constraints
+  // ==========================================
+
+  // Insert/update references a non-existent row
   if (err.code === 'ER_NO_REFERENCED_ROW_2' || err.errno === 1452) {
     statusCode = 400;
     message = 'Invalid reference ID. Associated record does not exist.';
   }
 
-  // Handle MySQL Foreign Key Constraints (Delete row referenced by others)
+  // Delete/update blocked because row is referenced elsewhere
   if (err.code === 'ER_ROW_IS_REFERENCED_2' || err.errno === 1451) {
     statusCode = 409;
     message = 'Cannot delete or modify record. It is referenced by other items.';
   }
+
+  // ==========================================
+  // Server errors — log and sanitize in production
+  // ==========================================
 
   if (statusCode >= 500) {
     logger.error(message, { stack: err.stack, path: req.originalUrl });

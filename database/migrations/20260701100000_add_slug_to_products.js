@@ -1,3 +1,7 @@
+/**
+ * Add slug column to products for URL-friendly identifiers.
+ */
+
 const slugify = (text) =>
   text
     .toString()
@@ -7,6 +11,10 @@ const slugify = (text) =>
     .replace(/\-\-+/g, '-') // Replace multiple - with single -
     .replace(/^-+/, '') // Trim - from start
     .replace(/-+$/, ''); // Trim - from end
+
+// ==========================================
+// Migration — up
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex
@@ -27,6 +35,10 @@ exports.up = async function (knex) {
     table.index('slug');
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

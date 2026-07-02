@@ -1,4 +1,12 @@
 /**
+ * Remove user_languages table and related feature.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -12,6 +20,10 @@ exports.up = async function (knex) {
     table.index('language_id');
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

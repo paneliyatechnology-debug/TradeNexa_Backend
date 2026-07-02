@@ -1,7 +1,13 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { AppError } = require('../utils/response');
+const { resolveMediaUrl } = require('../utils/media');
 
+// ==========================================
+// Formatting helpers
+// ==========================================
+
+/** Convert a name to a URL-safe slug. */
 const slugify = (text) =>
   text
     .toString()
@@ -11,10 +17,16 @@ const slugify = (text) =>
     .replace(/[^\w-]+/g, '')
     .replace(/-+/g, '-');
 
+/**
+ * Format a category/subcategory row for API responses.
+ * Resolves icon/image to full URLs and normalizes counts.
+ */
 const formatRow = (row) => {
   if (!row) return null;
   return {
     ...row,
+    icon: resolveMediaUrl(row.icon),
+    image: resolveMediaUrl(row.image),
     is_active: row.is_active !== undefined ? !!row.is_active : undefined,
     product_count: row.product_count !== undefined ? parseInt(row.product_count, 10) || 0 : undefined,
     subcategory_count:
@@ -22,21 +34,29 @@ const formatRow = (row) => {
   };
 };
 
+// ==========================================
+// Lookups & guards
+// ==========================================
+
+/** Find a main category by ID (parent_id must be null). */
 const findCategoryById = (id) =>
   db('categories').where({ id }).whereNull('parent_id').whereNull('deleted_at').first();
 
+/** Find a subcategory by ID, optionally scoped to a parent category. */
 const findSubcategoryById = (id, parentId = null) => {
   const q = db('categories').where({ id }).whereNotNull('parent_id').whereNull('deleted_at');
   if (parentId) q.where({ parent_id: parentId });
   return q.first();
 };
 
+/** Throw 404 if the record is not a valid main category. */
 const assertMainCategory = async (id) => {
   const category = await findCategoryById(id);
   if (!category) throw new AppError('Category not found', 404);
   return category;
 };
 
+/** Throw 404 if the record is not a valid subcategory under the given parent. */
 const assertSubcategory = async (subcategoryId, parentId) => {
   const parent = await assertMainCategory(parentId);
   const subcategory = await findSubcategoryById(subcategoryId, parentId);
@@ -44,6 +64,7 @@ const assertSubcategory = async (subcategoryId, parentId) => {
   return { parent, subcategory };
 };
 
+/** Check name uniqueness within the same parent scope. */
 const nameExists = async (name, parentId = null, excludeId = null) => {
   const q = db('categories')
     .where({ name })
@@ -57,6 +78,11 @@ const nameExists = async (name, parentId = null, excludeId = null) => {
   return Boolean(row);
 };
 
+// ==========================================
+// List & read queries
+// ==========================================
+
+/** Paginated list of main categories with subcategory and product counts. */
 const findCategories = async (filters = {}) => {
   const q = db('categories')
     .whereNull('categories.parent_id')
@@ -88,6 +114,7 @@ const findCategories = async (filters = {}) => {
   return paginated;
 };
 
+/** Paginated list of subcategories under a main category. */
 const findSubcategories = async (parentId, filters = {}) => {
   await assertMainCategory(parentId);
 
@@ -118,6 +145,7 @@ const findSubcategories = async (parentId, filters = {}) => {
   return paginated;
 };
 
+/** Get a main category with its nested subcategories array. */
 const getCategoryWithSubcategories = async (id) => {
   const category = await findCategoryById(id);
   if (!category) return null;
@@ -134,6 +162,11 @@ const getCategoryWithSubcategories = async (id) => {
   };
 };
 
+// ==========================================
+// Create & update
+// ==========================================
+
+/** Insert a new main category (parent_id = null). */
 const createCategory = async (data, userId = null) => {
   if (await nameExists(data.name, null)) {
     const err = new Error('Duplicate category name');
@@ -155,6 +188,7 @@ const createCategory = async (data, userId = null) => {
   return findCategoryById(id);
 };
 
+/** Insert a new subcategory under a main category. Slug = {parent.slug}-{child.slug}. */
 const createSubcategory = async (parentId, data, userId = null) => {
   const parent = await assertMainCategory(parentId);
 
@@ -180,16 +214,19 @@ const createSubcategory = async (parentId, data, userId = null) => {
   return findSubcategoryById(id, parentId);
 };
 
+/** Update a main category. */
 const updateCategory = async (id, data, userId = null) => {
   await assertMainCategory(id);
   return updateCategoryRow(id, data, userId, null);
 };
 
+/** Update a subcategory under a main category. */
 const updateSubcategory = async (parentId, id, data, userId = null) => {
   await assertSubcategory(id, parentId);
   return updateCategoryRow(id, data, userId, parentId);
 };
 
+/** Shared update logic for both main categories and subcategories. */
 const updateCategoryRow = async (id, data, userId, parentId) => {
   const payload = {};
 
@@ -230,6 +267,28 @@ const updateCategoryRow = async (id, data, userId, parentId) => {
   return parentId ? findSubcategoryById(id, parentId) : findCategoryById(id);
 };
 
+/** Apply icon/image path updates after file upload (used by categoryService). */
+const applyCategoryMediaUpdates = async (id, updates, userId = null) => {
+  if (!updates || !Object.keys(updates).length) {
+    return db('categories').where({ id }).whereNull('deleted_at').first();
+  }
+
+  await db('categories')
+    .where({ id })
+    .update({
+      ...updates,
+      updated_by: userId,
+      updated_at: db.fn.now(),
+    });
+
+  return db('categories').where({ id }).whereNull('deleted_at').first();
+};
+
+// ==========================================
+// Delete (soft)
+// ==========================================
+
+/** Soft-delete a main category. Fails if active subcategories exist. */
 const deleteCategory = async (id, userId = null) => {
   await assertMainCategory(id);
 
@@ -249,6 +308,7 @@ const deleteCategory = async (id, userId = null) => {
   });
 };
 
+/** Soft-delete a subcategory. Fails if linked to active products. */
 const deleteSubcategory = async (parentId, id, userId = null) => {
   await assertSubcategory(id, parentId);
 
@@ -268,6 +328,11 @@ const deleteSubcategory = async (parentId, id, userId = null) => {
   });
 };
 
+// ==========================================
+// Product validation
+// ==========================================
+
+/** Ensure subcategory exists, is active, and has a parent (used by product create). */
 const validateSubcategoryForProduct = async (subcategoryId) => {
   const subcategory = await db('categories')
     .where({ id: subcategoryId })
@@ -293,7 +358,9 @@ module.exports = {
   createSubcategory,
   updateCategory,
   updateSubcategory,
+  applyCategoryMediaUpdates,
   deleteCategory,
   deleteSubcategory,
   validateSubcategoryForProduct,
+  formatRow,
 };

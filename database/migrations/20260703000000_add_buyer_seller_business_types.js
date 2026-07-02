@@ -1,7 +1,15 @@
+/**
+ * Seed buyer_seller business type reference data.
+ */
+
 const {
   BUYER_SELLER_TYPES,
   slugify,
 } = require('../seeds/05_business_types_by_role');
+
+// ==========================================
+// Migration — up
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex
@@ -26,6 +34,10 @@ exports.up = async function (knex) {
     }
   }
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

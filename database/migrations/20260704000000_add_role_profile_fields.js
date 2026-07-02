@@ -1,4 +1,12 @@
 /**
+ * Add role-specific profile fields to users and company_details.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -15,6 +23,10 @@ exports.up = async function (knex) {
     table.string('company_name', 200).nullable().alter();
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

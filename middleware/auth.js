@@ -1,8 +1,18 @@
+/**
+ * Authentication and authorization middleware.
+ *
+ * Request validation rules, JWT authentication, registration token verification,
+ * and role-based access control.
+ */
 const { validationResult, body } = require('express-validator');
 const { AppError } = require('../utils/response');
 const { verifyAccess } = require('../utils/jwt');
 const { TOKEN_TYPES } = require('../constants');
 const userModel = require('../models/userModel');
+
+// ==========================================
+// Validation middleware
+// ==========================================
 
 /**
  * Express middleware to validate request inputs using express-validator schema.
@@ -21,6 +31,10 @@ const validate = (req, _res, next) => {
   }
   next();
 };
+
+// ==========================================
+// Reusable field validators
+// ==========================================
 
 /**
  * Mobile number validator requiring country code prefix (e.g. +919876543210).
@@ -56,6 +70,10 @@ const deviceRules = [
     .withMessage('Device token cannot be empty'),
 ];
 
+// ==========================================
+// Route validation rules
+// ==========================================
+
 const sendOtpRules = [mobile(), body('recaptcha_token').optional()];
 const verifyOtpRules = [mobile(), otp(), verificationId(), ...deviceRules];
 const resendOtpRules = [mobile(), verificationId(), body('recaptcha_token').optional()];
@@ -74,6 +92,10 @@ const registerRules = [
   body('language_id').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Invalid language ID'),
   ...deviceRules,
 ];
+
+// ==========================================
+// Authentication & authorization
+// ==========================================
 
 /**
  * Authentication middleware to secure private endpoints.

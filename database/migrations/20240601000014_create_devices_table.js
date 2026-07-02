@@ -1,4 +1,12 @@
 /**
+ * Create user devices table.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -15,6 +23,10 @@ exports.up = async function (knex) {
     table.index('device_token');
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

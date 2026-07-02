@@ -2,6 +2,14 @@ const brandModel = require('../models/brandModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
+// ==========================================
+// Brand Operations
+// ==========================================
+
+/**
+ * POST /brands
+ * Create a new brand (admin only).
+ */
 const createBrand = async (req, res, next) => {
   try {
     const brand = await brandModel.createBrand(req.body, req.user?.id);
@@ -14,6 +22,10 @@ const createBrand = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /brands/:id
+ * Retrieve a single brand by ID.
+ */
 const getBrand = async (req, res, next) => {
   try {
     const brand = await brandModel.findBrandById(req.params.id);
@@ -26,6 +38,10 @@ const getBrand = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /brands
+ * List brands with search, pagination, and filter options.
+ */
 const getBrands = async (req, res, next) => {
   try {
     const filters = {
@@ -42,6 +58,10 @@ const getBrands = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /brands/popular
+ * List popular brands formatted for buyer home display.
+ */
 const getPopularBrands = async (req, res, next) => {
   try {
     const filters = {
@@ -65,6 +85,10 @@ const getPopularBrands = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /brands/:id
+ * Update an existing brand (admin only).
+ */
 const updateBrand = async (req, res, next) => {
   try {
     const existing = await brandModel.findBrandById(req.params.id);
@@ -81,6 +105,10 @@ const updateBrand = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /brands/:id
+ * Soft-delete a brand (admin only).
+ */
 const deleteBrand = async (req, res, next) => {
   try {
     const existing = await brandModel.findBrandById(req.params.id);

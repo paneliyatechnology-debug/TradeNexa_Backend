@@ -1,6 +1,15 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 
+// ==========================================
+// List & read queries
+// ==========================================
+
+/**
+ * Find an RFQ by ID with category, city, and creator joins.
+ * @param {number} id - RFQ ID
+ * @returns {Promise<Object|undefined>}
+ */
 const findRfqById = (id) =>
   db('rfqs')
     .leftJoin('categories', 'rfqs.category_id', '=', 'categories.id')
@@ -16,6 +25,11 @@ const findRfqById = (id) =>
     )
     .first();
 
+/**
+ * Paginated list of RFQs with optional filters.
+ * @param {Object} [filters] - Query filters (q, category_id, city_id, user_id, is_active, page, limit)
+ * @returns {Promise<Object>}
+ */
 const findRfqs = async (filters = {}) => {
   const q = db('rfqs')
     .leftJoin('categories', 'rfqs.category_id', '=', 'categories.id')
@@ -56,6 +70,16 @@ const findRfqs = async (filters = {}) => {
   return paginate(q, page, limit);
 };
 
+// ==========================================
+// Create & update
+// ==========================================
+
+/**
+ * Insert a new RFQ for the authenticated user.
+ * @param {Object} data - RFQ creation payload
+ * @param {number} userId - Creator user ID
+ * @returns {Promise<Object>}
+ */
 const createRfq = async (data, userId) => {
   const payload = {
     title: data.title,
@@ -73,6 +97,13 @@ const createRfq = async (data, userId) => {
   return findRfqById(id);
 };
 
+/**
+ * Update an existing RFQ by ID.
+ * @param {number} id - RFQ ID
+ * @param {Object} data - Fields to update
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<Object>}
+ */
 const updateRfq = async (id, data, userId = null) => {
   const payload = {};
   if (data.title !== undefined) payload.title = data.title;
@@ -94,6 +125,16 @@ const updateRfq = async (id, data, userId = null) => {
   return findRfqById(id);
 };
 
+// ==========================================
+// Delete (soft)
+// ==========================================
+
+/**
+ * Soft-delete an RFQ by ID.
+ * @param {number} id - RFQ ID
+ * @param {number|null} [userId] - Acting user ID for audit fields
+ * @returns {Promise<void>}
+ */
 const deleteRfq = async (id, userId = null) => {
   const updatePayload = {
     deleted_at: db.fn.now(),

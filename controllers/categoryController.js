@@ -1,10 +1,21 @@
+// Category and subcategory CRUD handlers with multipart upload support.
+
+const categoryService = require('../services/categoryService');
 const categoryModel = require('../models/categoryModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
+// ==========================================
+// Main categories
+// ==========================================
+
+/**
+ * POST /categories
+ * Create a new main category with optional icon and image uploads.
+ */
 const createCategory = async (req, res, next) => {
   try {
-    const category = await categoryModel.createCategory(req.body, req.user?.id);
+    const category = await categoryService.createCategory(req.body, req.files, req.user?.id);
     return success(res, 'Category created successfully', category, HTTP_STATUS.CREATED);
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
@@ -14,6 +25,10 @@ const createCategory = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /categories/:id
+ * Retrieve a category with its subcategories.
+ */
 const getCategory = async (req, res, next) => {
   try {
     const category = await categoryModel.getCategoryWithSubcategories(req.params.id);
@@ -26,6 +41,10 @@ const getCategory = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /categories
+ * List main categories with search and pagination.
+ */
 const getCategories = async (req, res, next) => {
   try {
     const filters = {
@@ -41,9 +60,18 @@ const getCategories = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /categories/:id
+ * Update a main category with optional icon and image uploads.
+ */
 const updateCategory = async (req, res, next) => {
   try {
-    const category = await categoryModel.updateCategory(req.params.id, req.body, req.user?.id);
+    const category = await categoryService.updateCategory(
+      req.params.id,
+      req.body,
+      req.files,
+      req.user?.id,
+    );
     return success(res, 'Category updated successfully', category);
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
@@ -53,6 +81,10 @@ const updateCategory = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /categories/:id
+ * Soft-delete a main category (admin only).
+ */
 const deleteCategory = async (req, res, next) => {
   try {
     await categoryModel.deleteCategory(req.params.id, req.user?.id);
@@ -62,11 +94,20 @@ const deleteCategory = async (req, res, next) => {
   }
 };
 
+// ==========================================
+// Subcategories
+// ==========================================
+
+/**
+ * POST /categories/:categoryId/subcategories
+ * Create a subcategory under a main category with optional uploads.
+ */
 const createSubcategory = async (req, res, next) => {
   try {
-    const subcategory = await categoryModel.createSubcategory(
+    const subcategory = await categoryService.createSubcategory(
       req.params.categoryId,
       req.body,
+      req.files,
       req.user?.id,
     );
     return success(res, 'Subcategory created successfully', subcategory, HTTP_STATUS.CREATED);
@@ -78,6 +119,10 @@ const createSubcategory = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /categories/:categoryId/subcategories/:id
+ * Retrieve a single subcategory by ID.
+ */
 const getSubcategory = async (req, res, next) => {
   try {
     const subcategory = await categoryModel.findSubcategoryById(
@@ -87,12 +132,20 @@ const getSubcategory = async (req, res, next) => {
     if (!subcategory) {
       return next(new AppError('Subcategory not found', HTTP_STATUS.NOT_FOUND));
     }
-    return success(res, 'Subcategory details retrieved successfully', subcategory);
+    return success(
+      res,
+      'Subcategory details retrieved successfully',
+      categoryModel.formatRow(subcategory),
+    );
   } catch (err) {
     next(err);
   }
 };
 
+/**
+ * GET /categories/:categoryId/subcategories
+ * List subcategories for a main category with search and pagination.
+ */
 const getSubcategories = async (req, res, next) => {
   try {
     const filters = {
@@ -108,12 +161,17 @@ const getSubcategories = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /categories/:categoryId/subcategories/:id
+ * Update a subcategory with optional uploads.
+ */
 const updateSubcategory = async (req, res, next) => {
   try {
-    const subcategory = await categoryModel.updateSubcategory(
+    const subcategory = await categoryService.updateSubcategory(
       req.params.categoryId,
       req.params.id,
       req.body,
+      req.files,
       req.user?.id,
     );
     return success(res, 'Subcategory updated successfully', subcategory);
@@ -125,6 +183,10 @@ const updateSubcategory = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /categories/:categoryId/subcategories/:id
+ * Soft-delete a subcategory (admin only).
+ */
 const deleteSubcategory = async (req, res, next) => {
   try {
     await categoryModel.deleteSubcategory(req.params.categoryId, req.params.id, req.user?.id);

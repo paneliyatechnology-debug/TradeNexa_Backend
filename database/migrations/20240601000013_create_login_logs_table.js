@@ -1,4 +1,12 @@
 /**
+ * Create login activity logs table.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -14,6 +22,10 @@ exports.up = async function (knex) {
     table.index('login_at');
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex

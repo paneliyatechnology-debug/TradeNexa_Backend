@@ -2,6 +2,14 @@ const serviceModel = require('../models/serviceModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
+// ==========================================
+// Service Operations
+// ==========================================
+
+/**
+ * POST /services
+ * Create a new platform service (admin only).
+ */
 const createService = async (req, res, next) => {
   try {
     const service = await serviceModel.createService(req.body, req.user?.id);
@@ -11,6 +19,10 @@ const createService = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /services/:id
+ * Retrieve a single service by ID.
+ */
 const getService = async (req, res, next) => {
   try {
     const service = await serviceModel.findServiceById(req.params.id);
@@ -23,6 +35,10 @@ const getService = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /services
+ * List services with optional search and formatted summary fields.
+ */
 const getServices = async (req, res, next) => {
   try {
     const filters = {
@@ -45,6 +61,10 @@ const getServices = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /services/:id
+ * Update an existing service (admin only).
+ */
 const updateService = async (req, res, next) => {
   try {
     const existing = await serviceModel.findServiceById(req.params.id);
@@ -58,6 +78,10 @@ const updateService = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /services/:id
+ * Soft-delete a service (admin only).
+ */
 const deleteService = async (req, res, next) => {
   try {
     const existing = await serviceModel.findServiceById(req.params.id);

@@ -1,18 +1,18 @@
 const userModel = require('../models/userModel');
 const { AppError } = require('../utils/response');
 const { ROLE_CODES } = require('../constants');
-const { REQUIRED_IMAGE_FIELDS } = require('../constants/profileFields');
-const { replaceStoredImage } = require('../utils/media');
+const { USER_IMAGE_FIELDS, COMPANY_IMAGE_FIELDS } = require('../constants/profileFields');
+const { uploadPaths } = require('../constants/uploadPaths');
+const { processUploadedFiles } = require('../services/uploadService');
 
-const setImageField = async (companyUpdate, field, files, userId, existingValue) => {
-  const newPath = await replaceStoredImage(files, field, userId, existingValue);
-  if (newPath) {
-    companyUpdate[field] = newPath;
-  }
-};
+// ==========================================
+// Profile read
+// ==========================================
 
 /**
- * Get profile data formatted for response.
+ * Get the authenticated user's profile formatted for API response.
+ * @param {number} userId
+ * @returns {Promise<Object>}
  */
 const getProfile = async (userId) => {
   const profile = await userModel.getFullProfile(userId);
@@ -21,8 +21,21 @@ const getProfile = async (userId) => {
   return userModel.formatUser(profile);
 };
 
+// ==========================================
+// Profile update
+// ==========================================
+
 /**
- * Update user profile — all required role fields must be sent (validated in middleware).
+ * Update user profile for buyer, seller, or buyer_seller roles.
+ *
+ * - Text fields are validated in middleware (role-specific rules).
+ * - Image fields are optional on update (multipart file uploads).
+ * - Sets is_completed_profile = true on successful update.
+ *
+ * @param {number} userId
+ * @param {Object} data - Validated text fields from req.body
+ * @param {Object} [files] - Multer files from req.files
+ * @returns {Promise<Object>}
  */
 const updateProfile = async (userId, data, files = {}) => {
   const fullProfile = await userModel.getFullProfile(userId);
@@ -34,19 +47,34 @@ const updateProfile = async (userId, data, files = {}) => {
   }
 
   const existingProfile = fullProfile.profile || {};
-  const companyUpdate = { updated_by: userId };
-  const imageFields = REQUIRED_IMAGE_FIELDS[roleCode] || [];
+  const profilePath = uploadPaths.userProfile(userId);
 
-  for (const field of imageFields) {
-    await setImageField(companyUpdate, field, files, userId, existingProfile[field]);
-  }
+  // profile_image → users table; company_logo/banner → company_details
+  const userImageUpdates = await processUploadedFiles({
+    files,
+    fields: USER_IMAGE_FIELDS,
+    pathSegments: profilePath,
+    existing: { profile_image: fullProfile.profile_image },
+  });
 
+  const companyImageUpdates = await processUploadedFiles({
+    files,
+    fields: COMPANY_IMAGE_FIELDS,
+    pathSegments: profilePath,
+    existing: existingProfile,
+  });
+
+  const userUpdate = { updated_by: userId, ...userImageUpdates };
+  const companyUpdate = { updated_by: userId, ...companyImageUpdates };
+
+  // Buyer / buyer_seller company fields
   if ([ROLE_CODES.BUYER, ROLE_CODES.BUYER_SELLER].includes(roleCode)) {
     companyUpdate.company_name = data.company_name;
     companyUpdate.industry = data.industry;
     companyUpdate.gst_number = data.gst_number || null;
   }
 
+  // Seller / buyer_seller business fields
   if ([ROLE_CODES.SELLER, ROLE_CODES.BUYER_SELLER].includes(roleCode)) {
     companyUpdate.company_name = data.company_name;
     companyUpdate.gst_number = data.gst_number;
@@ -56,8 +84,11 @@ const updateProfile = async (userId, data, files = {}) => {
     companyUpdate.business_description = data.business_description;
   }
 
+  userUpdate.is_completed_profile = true;
+  await userModel.updateUser(userId, userUpdate);
   await userModel.upsertProfile(userId, companyUpdate);
 
+  // Buyer / buyer_seller primary address
   if ([ROLE_CODES.BUYER, ROLE_CODES.BUYER_SELLER].includes(roleCode)) {
     const loc = await userModel.findLocationIds(data.city, data.state, data.country);
     await userModel.updateAddress(userId, {

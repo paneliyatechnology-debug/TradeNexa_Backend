@@ -34,6 +34,34 @@ const findUserByEmail = (email) => {
 };
 
 /**
+ * Find user by email including role details.
+ * @param {string} email
+ * @returns {Promise<Object|null>}
+ */
+const findUserWithRoleByEmail = (email) => {
+  if (!email) return null;
+  return db('users')
+    .join('roles', 'users.role_id', 'roles.id')
+    .where('users.email', email)
+    .whereNull('users.deleted_at')
+    .select('users.*', 'roles.code as role_code', 'roles.name as role_name')
+    .first();
+};
+
+/**
+ * Find user by ID including role details.
+ * @param {number} id
+ * @returns {Promise<Object|null>}
+ */
+const findUserWithRoleById = (id) =>
+  db('users')
+    .join('roles', 'users.role_id', 'roles.id')
+    .where('users.id', id)
+    .whereNull('users.deleted_at')
+    .select('users.*', 'roles.code as role_code', 'roles.name as role_name')
+    .first();
+
+/**
  * Insert a new user record.
  * @param {Object} data - User creation data
  * @param {Object} [trx] - Optional transaction object
@@ -146,13 +174,14 @@ const formatUser = (data) => {
     language: languages?.[0]?.code || null,
     is_verified: user.is_verified,
     is_active: user.is_active,
+    is_completed_profile: !!user.is_completed_profile,
     last_login: user.last_login,
     created_at: user.created_at,
     updated_at: user.updated_at,
   };
 
   const buyerFields = {
-    profile_image: resolveMediaUrl(profile?.profile_image),
+    profile_image: resolveMediaUrl(user.profile_image),
     company_name: profile?.company_name || null,
     industry: profile?.industry || null,
     gst_number: profile?.gst_number || null,
@@ -187,7 +216,32 @@ const formatUser = (data) => {
     ...base,
     company_name: profile?.company_name || null,
     gst_number: profile?.gst_number || null,
-    profile_image: resolveMediaUrl(profile?.profile_image),
+    profile_image: resolveMediaUrl(user.profile_image),
+  };
+};
+
+/**
+ * Format admin panel user for API responses (never exposes password).
+ * @param {Object} user - User row with optional role_code and role_name
+ * @returns {Object|null}
+ */
+const formatAdminUser = (user) => {
+  if (!user) return null;
+
+  return {
+    id: user.id,
+    uuid: user.uuid,
+    full_name: user.full_name,
+    email: user.email,
+    mobile_number: user.mobile_number,
+    role_id: user.role_id,
+    role: user.role_code ? { code: user.role_code, name: user.role_name } : null,
+    is_verified: !!user.is_verified,
+    is_active: !!user.is_active,
+    is_completed_profile: !!user.is_completed_profile,
+    last_login: user.last_login,
+    created_at: user.created_at,
+    updated_at: user.updated_at,
   };
 };
 
@@ -326,6 +380,12 @@ const findLanguageByCode = (code) => db('languages').where({ code, is_active: tr
  */
 const getCompanyDetails = (userId) => db('company_details').where({ user_id: userId }).first();
 
+/**
+ * Create or update company profile details for a user.
+ * @param {number} userId - User ID
+ * @param {Object} data - Company profile fields
+ * @returns {Promise<Object>}
+ */
 const upsertProfile = async (userId, data) => {
   const existing = await db('company_details').where({ user_id: userId }).first();
   if (existing) {
@@ -439,11 +499,14 @@ module.exports = {
   findUserById,
   findUserByMobile,
   findUserByEmail,
+  findUserWithRoleByEmail,
+  findUserWithRoleById,
   createUser,
   updateUser,
   getUserRoles,
   getFullProfile,
   formatUser,
+  formatAdminUser,
   createOtpLog,
   findOtpByVerificationId,
   markOtpVerified,

@@ -1,7 +1,17 @@
+// User authentication, OTP verification, and profile management handlers.
+
 const authService = require('../services/authService');
 const { success } = require('../utils/response');
 const { MESSAGES, HTTP_STATUS } = require('../constants');
 
+// ==========================================
+// OTP Authentication
+// ==========================================
+
+/**
+ * POST /auth/send-otp
+ * Send OTP verification code to the user's mobile number.
+ */
 const sendOtp = async (req, res, next) => {
   try {
     const data = await authService.sendOtp(req.body.mobile_number, req.body.recaptcha_token);
@@ -11,6 +21,10 @@ const sendOtp = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /auth/verify-otp
+ * Verify OTP and return authentication tokens.
+ */
 const verifyOtp = async (req, res, next) => {
   try {
     const data = await authService.verifyOtp(
@@ -25,6 +39,10 @@ const verifyOtp = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /auth/resend-otp
+ * Resend OTP to the user's mobile number.
+ */
 const resendOtp = async (req, res, next) => {
   try {
     const data = await authService.resendOtp(
@@ -38,6 +56,14 @@ const resendOtp = async (req, res, next) => {
   }
 };
 
+// ==========================================
+// Registration & Session
+// ==========================================
+
+/**
+ * POST /auth/register
+ * Register a new user account after OTP verification.
+ */
 const register = async (req, res, next) => {
   try {
     const data = await authService.register(req.body, req);
@@ -47,6 +73,10 @@ const register = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /auth/refresh-token
+ * Exchange a refresh token for a new access token.
+ */
 const refreshToken = async (req, res, next) => {
   try {
     const data = await authService.refreshToken(req.body.refresh_token);
@@ -56,6 +86,10 @@ const refreshToken = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /auth/logout
+ * Invalidate the user's refresh token and end the session.
+ */
 const logout = async (req, res, next) => {
   try {
     await authService.logout(req.user.id, req.body.refresh_token);
@@ -65,6 +99,14 @@ const logout = async (req, res, next) => {
   }
 };
 
+// ==========================================
+// Profile
+// ==========================================
+
+/**
+ * GET /auth/profile
+ * Retrieve the authenticated user's profile.
+ */
 const getProfile = async (req, res, next) => {
   try {
     const data = await authService.getProfile(req.user.id);
@@ -74,6 +116,10 @@ const getProfile = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /auth/profile
+ * Update the authenticated user's profile and optional uploads.
+ */
 const updateProfile = async (req, res, next) => {
   try {
     const data = await authService.updateProfile(req.user.id, req.body, req.files);
@@ -83,6 +129,10 @@ const updateProfile = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /auth/profile
+ * Soft-delete the authenticated user's account.
+ */
 const deleteProfile = async (req, res, next) => {
   try {
     await authService.deleteProfile(req.user.id);

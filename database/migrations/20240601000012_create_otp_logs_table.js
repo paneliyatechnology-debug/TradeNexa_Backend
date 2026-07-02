@@ -1,4 +1,12 @@
 /**
+ * Create OTP verification logs table.
+ */
+
+// ==========================================
+// Migration — up
+// ==========================================
+
+/**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
@@ -16,6 +24,10 @@ exports.up = async function (knex) {
     table.index(['mobile_number', 'status']);
   });
 };
+
+// ==========================================
+// Migration — down
+// ==========================================
 
 /**
  * @param { import("knex").Knex } knex
