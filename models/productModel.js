@@ -1,5 +1,4 @@
 const db = require('../database/knex');
-const config = require('../config');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl, deleteStoredFile } = require('../utils/media');
 const categoryModel = require('./categoryModel');
@@ -39,9 +38,6 @@ const formatRow = (row) => {
 /** Build nested product detail response; null for fields not stored in DB. */
 const formatProductDetail = (row, images = [], videos = []) => {
   if (!row) return null;
-
-  const baseUrl = (config.app.url || '').replace(/\/$/, '');
-  const shareUrl = row.slug ? `${baseUrl}/product/${row.slug}` : null;
 
   return {
     id: row.id,
@@ -135,7 +131,7 @@ const formatProductDetail = (row, images = [], videos = []) => {
       is_featured: null,
       is_trending: row.is_trending !== undefined ? !!row.is_trending : null,
       is_recommended: null,
-      share_url: shareUrl,
+      share_url: null,
     },
     user_actions: {
       is_favourite: null,
