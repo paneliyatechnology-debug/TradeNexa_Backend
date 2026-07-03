@@ -2,13 +2,13 @@ const multer = require('multer');
 const path = require('path');
 const { AppError } = require('../utils/response');
 const uploadConfig = require('../config/upload');
+const s3Service = require('./s3Service');
 const {
   buildStoredFileName,
+  assignStoredFileNames,
   ensureDir,
-  replaceUploadedFile,
-  finalizeInboxUpload,
-  finalizeInboxUploads,
-  getMultipleUploadedRelativePaths,
+  storeUploadedFile,
+  storeMultipleUploadedFiles,
 } = require('../utils/media');
 
 // ==========================================
@@ -23,7 +23,7 @@ const {
 const formatMulterError = (err) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return new AppError('Image size must not exceed 5MB', 400);
+      return new AppError('File size exceeds the allowed limit', 400);
     }
     if (err.code === 'LIMIT_UNEXPECTED_FILE') {
       return new AppError(`Unexpected file field: ${err.field}`, 400);
@@ -49,7 +49,7 @@ const createFileFilter = () => (_req, file, cb) => {
   cb(null, true);
 };
 
-/** Product uploads: images for thumbnail/gallery, videos for videos field. */
+/** Product uploads: images for thumbnail/image, videos for video field. */
 const createProductFileFilter = () => (_req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
@@ -73,18 +73,12 @@ const createProductFileFilter = () => (_req, file, cb) => {
   cb(null, true);
 };
 
-// ==========================================
-// Public API
-// ==========================================
+const buildMulterStorage = (getDestination) => {
+  if (s3Service.isEnabled()) {
+    return multer.memoryStorage();
+  }
 
-/**
- * Create reusable multer middleware for one or more file fields.
- *
- * @param {{ fields: Array, getDestination: Function, maxFileSize?: number }} options
- * @returns {Function} Express middleware
- */
-const createUploadMiddleware = ({ fields, getDestination, maxFileSize = uploadConfig.maxFileSize, fileFilter = createFileFilter() }) => {
-  const storage = multer.diskStorage({
+  return multer.diskStorage({
     destination: (req, _file, cb) => {
       try {
         const dir = getDestination(req);
@@ -98,27 +92,45 @@ const createUploadMiddleware = ({ fields, getDestination, maxFileSize = uploadCo
       cb(null, buildStoredFileName(file.fieldname, file.originalname));
     },
   });
+};
 
+// ==========================================
+// Public API
+// ==========================================
+
+/**
+ * Create reusable multer middleware for one or more file fields.
+ * Files are stored in S3 when configured; otherwise saved to local uploads/.
+ *
+ * @param {{ fields: Array, getDestination: Function, maxFileSize?: number, fileFilter?: Function }} options
+ * @returns {Function} Express middleware
+ */
+const createUploadMiddleware = ({
+  fields,
+  getDestination,
+  maxFileSize = uploadConfig.maxFileSize,
+  fileFilter = createFileFilter(),
+}) => {
   const upload = multer({
-    storage,
+    storage: buildMulterStorage(getDestination),
     limits: { fileSize: maxFileSize },
     fileFilter,
   });
 
   return (req, res, next) => {
     upload.fields(fields)(req, res, (err) => {
-      if (!err) return next();
-      return next(formatMulterError(err));
+      if (err) return next(formatMulterError(err));
+      if (s3Service.isEnabled()) {
+        assignStoredFileNames(req.files);
+      }
+      return next();
     });
   };
 };
 
 /**
  * Process uploaded files and return stored path updates.
- *
- * Modes:
- * - direct: file already saved in final folder (update flow)
- * - inbox: move file from inbox to final folder (create flow)
+ * Uploads to S3 (or local disk) at pathSegments.
  *
  * @param {{ files: Object, fields: string[], pathSegments: string[], existing?: Object, mode?: 'direct'|'inbox' }} options
  * @returns {Promise<Object>} Map of field name → relative stored path
@@ -128,19 +140,17 @@ const processUploadedFiles = async ({
   fields = [],
   pathSegments = [],
   existing = {},
-  mode = 'direct',
+  mode: _mode = 'direct',
 }) => {
   const updates = {};
 
   for (const field of fields) {
-    let storedPath = null;
-
-    if (mode === 'inbox') {
-      storedPath = await finalizeInboxUpload(files, field, pathSegments);
-    } else {
-      storedPath = await replaceUploadedFile(files, field, pathSegments, existing[field]);
-    }
-
+    const storedPath = await storeUploadedFile(
+      files,
+      field,
+      pathSegments,
+      existing[field] || null,
+    );
     if (storedPath) {
       updates[field] = storedPath;
     }
@@ -151,20 +161,14 @@ const processUploadedFiles = async ({
 
 /**
  * Collect relative paths for multiple uploaded files in one field.
- * @param {{ files: Object, field: string, pathSegments: string[], mode?: 'direct'|'inbox' }} options
  * @returns {Promise<string[]>}
  */
 const processMultipleUploadedFiles = async ({
   files = {},
   field,
   pathSegments = [],
-  mode = 'direct',
-}) => {
-  if (mode === 'inbox') {
-    return finalizeInboxUploads(files, field, pathSegments);
-  }
-  return getMultipleUploadedRelativePaths(files, field, ...pathSegments);
-};
+  mode: _mode = 'direct',
+}) => storeMultipleUploadedFiles(files, field, pathSegments);
 
 module.exports = {
   createUploadMiddleware,

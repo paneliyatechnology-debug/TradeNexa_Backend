@@ -1,7 +1,8 @@
 /**
  * File upload configuration.
  *
- * Storage paths, size limits, and allowed image MIME types/extensions.
+ * Size limits and allowed MIME types/extensions.
+ * Files are stored in Railway S3 when bucket env vars are configured.
  */
 const path = require('path');
 

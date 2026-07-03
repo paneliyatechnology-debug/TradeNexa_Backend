@@ -10,6 +10,7 @@ const compression = require('compression');
 const morgan = require('morgan');
 const config = require('./config');
 const uploadConfig = require('./config/upload');
+const s3Service = require('./services/s3Service');
 const routers = require('./routers');
 const errorHandler = require('./middleware/errorHandler');
 const { apiLimiter } = require('./middleware/rateLimiter');
@@ -35,10 +36,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ==========================================
-// Static files & health check
+// Static files (local dev only — production uses S3)
 // ==========================================
 
-app.use(uploadConfig.publicPath, express.static(uploadConfig.rootDir));
+if (!s3Service.isEnabled()) {
+  app.use(uploadConfig.publicPath, express.static(uploadConfig.rootDir));
+}
 
 app.get('/health', (_req, res) => {
   res.json({ success: true, message: 'Server is running' });
