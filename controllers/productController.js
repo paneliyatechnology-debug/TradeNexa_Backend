@@ -28,7 +28,7 @@ const createProduct = async (req, res, next) => {
  */
 const getProduct = async (req, res, next) => {
   try {
-    const product = await productModel.findProductById(req.params.id);
+    const product = await productModel.findProductDetailById(req.params.id);
     if (!product) {
       return next(new AppError('Product not found', HTTP_STATUS.NOT_FOUND));
     }
@@ -45,7 +45,7 @@ const getProduct = async (req, res, next) => {
 const getProducts = async (req, res, next) => {
   try {
     const filters = {
-      q: req.query.q,
+      search: req.query.search,
       category_id: req.query.category_id,
       subcategory_id: req.query.subcategory_id,
       brand_id: req.query.brand_id,
@@ -53,6 +53,8 @@ const getProducts = async (req, res, next) => {
       max_price: req.query.max_price,
       page: req.query.page,
       limit: req.query.limit,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
     };
     const data = await productModel.findProducts(filters);
@@ -142,14 +144,31 @@ const getRecommendedProducts = async (req, res, next) => {
 
 /**
  * PUT /products/:id
- * Update an existing product with optional thumbnail upload (seller or admin).
+ * Update an existing product with optional thumbnail upload.
+ * Only the assigned supplier or admin may update the product.
  */
 const updateProduct = async (req, res, next) => {
   try {
-    const existing = await productModel.findProductById(req.params.id);
+    const existing = await productModel.findProductById(req.params.id, { raw: true });
     if (!existing) {
       return next(new AppError('Product not found', HTTP_STATUS.NOT_FOUND));
     }
+
+    const isAdmin = req.user.role === 'admin';
+    if (!isAdmin && String(existing.supplier_id) !== String(req.user.id)) {
+      return next(
+        new AppError('Forbidden: You can only update your own products', HTTP_STATUS.FORBIDDEN),
+      );
+    }
+
+    if (
+      !isAdmin &&
+      req.body.supplier_id !== undefined &&
+      String(req.body.supplier_id) !== String(existing.supplier_id)
+    ) {
+      return next(new AppError('Forbidden: Cannot change product supplier', HTTP_STATUS.FORBIDDEN));
+    }
+
     const product = await productService.updateProduct(
       req.params.id,
       req.body,

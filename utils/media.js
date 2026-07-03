@@ -20,6 +20,8 @@ const IMAGE_FIELD_LABELS = {
   image: 'Image',
   logo: 'Logo',
   thumbnail: 'Thumbnail',
+  image: 'Image',
+  video: 'Video',
 };
 
 // ==========================================
@@ -130,6 +132,37 @@ const finalizeInboxUpload = async (files, field, destSegments) => {
   return buildRelativeStoredPath(...destSegments, fileName);
 };
 
+/** Move multiple inbox files to the final record folder (create flow). */
+const finalizeInboxUploads = async (files, field, destSegments) => {
+  const fileList = files?.[field] || [];
+  if (!fileList.length) return [];
+
+  const destDir = getAbsoluteUploadDir(...destSegments);
+  ensureDir(destDir);
+  const paths = [];
+
+  for (const file of fileList) {
+    const fileName = file.filename || path.basename(file.path);
+    const destPath = path.join(destDir, fileName);
+
+    if (file.path !== destPath) {
+      await fs.promises.rename(file.path, destPath);
+    }
+
+    paths.push(buildRelativeStoredPath(...destSegments, fileName));
+  }
+
+  return paths;
+};
+
+/** Build relative paths for multiple files already saved in the target folder. */
+const getMultipleUploadedRelativePaths = (files, field, ...pathSegments) => {
+  const fileList = files?.[field] || [];
+  return fileList.map((file) =>
+    buildRelativeStoredPath(...pathSegments, file.filename || path.basename(file.path)),
+  );
+};
+
 module.exports = {
   IMAGE_FIELD_LABELS,
   buildStoredFileName,
@@ -141,4 +174,6 @@ module.exports = {
   deleteStoredFile,
   replaceUploadedFile,
   finalizeInboxUpload,
+  finalizeInboxUploads,
+  getMultipleUploadedRelativePaths,
 };

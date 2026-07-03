@@ -189,6 +189,8 @@ const supplierNearbyRules = [
 const productCreateRules = [
   body('name').trim().notEmpty().withMessage('Product name is required').isLength({ min: 2, max: 200 }).withMessage('Product name must be 2 to 200 chars'),
   blockedUploadField('thumbnail', 'Thumbnail'),
+  blockedUploadField('image', 'Image'),
+  blockedUploadField('video', 'Video'),
   body('price').isFloat({ min: 0 }).withMessage('Price is required and must be a positive number'),
   body('currency').optional().trim().isLength({ max: 10 }).withMessage('Currency code too long'),
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
@@ -205,6 +207,8 @@ const productCreateRules = [
 const productUpdateRules = [
   body('name').optional().trim().isLength({ min: 2, max: 200 }).withMessage('Product name must be 2 to 200 chars'),
   blockedUploadField('thumbnail', 'Thumbnail'),
+  blockedUploadField('image', 'Image'),
+  blockedUploadField('video', 'Video'),
   body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a positive number'),
   body('currency').optional().trim().isLength({ max: 10 }).withMessage('Currency code too long'),
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
@@ -218,13 +222,39 @@ const productUpdateRules = [
   body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
 ];
 
+const PRODUCT_SORT_BY_VALUES = [
+  'id',
+  'name',
+  'slug',
+  'price',
+  'moq',
+  'rating',
+  'is_trending',
+  'created_at',
+  'supplier_name',
+];
+
 const productListQuery = [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('search').optional().trim(),
   query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
   query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
   query('brand_id').optional().isInt().withMessage('Brand ID must be an integer'),
   query('min_price').optional().isFloat({ min: 0 }).withMessage('Min price must be positive'),
   query('max_price').optional().isFloat({ min: 0 }).withMessage('Max price must be positive'),
-  ...paginationQuery,
+  query('is_active')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_active must be true or false'),
+  query('sort_by')
+    .optional()
+    .isIn(PRODUCT_SORT_BY_VALUES)
+    .withMessage(`sort_by must be one of: ${PRODUCT_SORT_BY_VALUES.join(', ')}`),
+  query('sort_order')
+    .optional()
+    .isIn(['asc', 'desc'])
+    .withMessage('sort_order must be asc or desc'),
 ];
 
 const productTrendingQuery = [...paginationQuery];

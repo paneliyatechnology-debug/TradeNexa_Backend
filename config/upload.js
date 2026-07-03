@@ -16,4 +16,7 @@ module.exports = {
   maxFileSize: parseInt(process.env.UPLOAD_MAX_FILE_SIZE, 10) || 5 * 1024 * 1024,
   allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
   allowedExtensions: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
+  allowedVideoMimeTypes: ['video/mp4', 'video/webm', 'video/quicktime'],
+  allowedVideoExtensions: ['.mp4', '.webm', '.mov'],
+  maxVideoFileSize: parseInt(process.env.UPLOAD_MAX_VIDEO_FILE_SIZE, 10) || 50 * 1024 * 1024,
 };

@@ -3,8 +3,9 @@
  * Uses the shared upload service — add new module handlers here.
  */
 const { AppError } = require('../utils/response');
-const { createUploadMiddleware } = require('../services/uploadService');
+const { createUploadMiddleware, createProductFileFilter } = require('../services/uploadService');
 const { getAbsoluteUploadDir } = require('../utils/media');
+const uploadConfig = require('../config/upload');
 const { uploadPaths } = require('../constants/uploadPaths');
 const {
   PROFILE_UPLOAD_FIELDS,
@@ -96,6 +97,8 @@ const handleBrandUpdateUpload = createUploadMiddleware({
 const handleProductCreateUpload = createUploadMiddleware({
   fields: PRODUCT_UPLOAD_FIELDS,
   getDestination: (req) => getAbsoluteUploadDir(...uploadPaths.productInbox(req.user.id)),
+  fileFilter: createProductFileFilter(),
+  maxFileSize: uploadConfig.maxVideoFileSize,
 });
 
 /** PUT /products/:id */
@@ -108,6 +111,8 @@ const handleProductUpdateUpload = createUploadMiddleware({
     }
     return getAbsoluteUploadDir(...uploadPaths.product(productId));
   },
+  fileFilter: createProductFileFilter(),
+  maxFileSize: uploadConfig.maxVideoFileSize,
 });
 
 /**

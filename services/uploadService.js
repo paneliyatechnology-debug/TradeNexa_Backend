@@ -7,6 +7,8 @@ const {
   ensureDir,
   replaceUploadedFile,
   finalizeInboxUpload,
+  finalizeInboxUploads,
+  getMultipleUploadedRelativePaths,
 } = require('../utils/media');
 
 // ==========================================
@@ -47,6 +49,30 @@ const createFileFilter = () => (_req, file, cb) => {
   cb(null, true);
 };
 
+/** Product uploads: images for thumbnail/gallery, videos for videos field. */
+const createProductFileFilter = () => (_req, file, cb) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+
+  if (file.fieldname === 'video') {
+    if (!uploadConfig.allowedVideoMimeTypes.includes(file.mimetype)) {
+      return cb(new AppError('Only MP4, WEBM, and MOV videos are allowed', 400), false);
+    }
+    if (!uploadConfig.allowedVideoExtensions.includes(ext)) {
+      return cb(new AppError('Invalid video file extension', 400), false);
+    }
+    return cb(null, true);
+  }
+
+  if (!uploadConfig.allowedMimeTypes.includes(file.mimetype)) {
+    return cb(new AppError('Only JPEG, PNG, WEBP, and GIF images are allowed', 400), false);
+  }
+  if (!uploadConfig.allowedExtensions.includes(ext)) {
+    return cb(new AppError('Invalid image file extension', 400), false);
+  }
+
+  cb(null, true);
+};
+
 // ==========================================
 // Public API
 // ==========================================
@@ -57,7 +83,7 @@ const createFileFilter = () => (_req, file, cb) => {
  * @param {{ fields: Array, getDestination: Function, maxFileSize?: number }} options
  * @returns {Function} Express middleware
  */
-const createUploadMiddleware = ({ fields, getDestination, maxFileSize = uploadConfig.maxFileSize }) => {
+const createUploadMiddleware = ({ fields, getDestination, maxFileSize = uploadConfig.maxFileSize, fileFilter = createFileFilter() }) => {
   const storage = multer.diskStorage({
     destination: (req, _file, cb) => {
       try {
@@ -76,7 +102,7 @@ const createUploadMiddleware = ({ fields, getDestination, maxFileSize = uploadCo
   const upload = multer({
     storage,
     limits: { fileSize: maxFileSize },
-    fileFilter: createFileFilter(),
+    fileFilter,
   });
 
   return (req, res, next) => {
@@ -123,7 +149,26 @@ const processUploadedFiles = async ({
   return updates;
 };
 
+/**
+ * Collect relative paths for multiple uploaded files in one field.
+ * @param {{ files: Object, field: string, pathSegments: string[], mode?: 'direct'|'inbox' }} options
+ * @returns {Promise<string[]>}
+ */
+const processMultipleUploadedFiles = async ({
+  files = {},
+  field,
+  pathSegments = [],
+  mode = 'direct',
+}) => {
+  if (mode === 'inbox') {
+    return finalizeInboxUploads(files, field, pathSegments);
+  }
+  return getMultipleUploadedRelativePaths(files, field, ...pathSegments);
+};
+
 module.exports = {
   createUploadMiddleware,
   processUploadedFiles,
+  processMultipleUploadedFiles,
+  createProductFileFilter,
 };

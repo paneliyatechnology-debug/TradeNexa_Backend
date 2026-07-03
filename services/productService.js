@@ -1,9 +1,10 @@
 const productModel = require('../models/productModel');
 const { uploadPaths } = require('../constants/uploadPaths');
-const { PRODUCT_UPLOAD_FIELDS } = require('../constants/uploadFields');
-const { processUploadedFiles } = require('../services/uploadService');
+const { processUploadedFiles, processMultipleUploadedFiles } = require('../services/uploadService');
 
-const PRODUCT_IMAGE_FIELDS = PRODUCT_UPLOAD_FIELDS.map((field) => field.name);
+const THUMBNAIL_FIELD = 'thumbnail';
+const IMAGE_FIELD = 'image';
+const VIDEO_FIELD = 'video';
 
 // ==========================================
 // Request parsing helpers
@@ -45,7 +46,7 @@ const parseProductBody = (body = {}) => ({
 });
 
 // ==========================================
-// Thumbnail upload helpers
+// Upload helpers
 // ==========================================
 
 /**
@@ -55,7 +56,7 @@ const parseProductBody = (body = {}) => ({
 const applyCreateThumbnail = async (productId, files = {}) => {
   const updates = await processUploadedFiles({
     files,
-    fields: PRODUCT_IMAGE_FIELDS,
+    fields: [THUMBNAIL_FIELD],
     pathSegments: uploadPaths.product(productId),
     mode: 'inbox',
   });
@@ -64,38 +65,68 @@ const applyCreateThumbnail = async (productId, files = {}) => {
   return productModel.applyProductMediaUpdates(productId, updates, null);
 };
 
-/** Process direct uploads on update (files saved to products/{id}/). */
+/** Process direct thumbnail upload on update. */
 const applyUpdateThumbnail = async (productId, files = {}, existing = {}) =>
   processUploadedFiles({
     files,
-    fields: PRODUCT_IMAGE_FIELDS,
+    fields: [THUMBNAIL_FIELD],
     pathSegments: uploadPaths.product(productId),
     existing,
     mode: 'direct',
   });
+
+/** Save optional gallery images for a product (create or update). */
+const applyImageUploads = async (productId, files = {}, mode = 'direct') => {
+  const paths = await processMultipleUploadedFiles({
+    files,
+    field: IMAGE_FIELD,
+    pathSegments: uploadPaths.product(productId),
+    mode,
+  });
+
+  if (!paths.length) return [];
+  return productModel.insertProductImages(productId, paths);
+};
+
+/** Save optional videos for a product (create or update). */
+const applyVideoUploads = async (productId, files = {}, mode = 'direct') => {
+  const paths = await processMultipleUploadedFiles({
+    files,
+    field: VIDEO_FIELD,
+    pathSegments: uploadPaths.product(productId),
+    mode,
+  });
+
+  if (!paths.length) return [];
+  return productModel.insertProductVideos(productId, paths);
+};
 
 // ==========================================
 // Product operations
 // ==========================================
 
 /**
- * Create a product with optional thumbnail upload.
+ * Create a product with optional thumbnail, gallery images, and videos.
  */
 const createProduct = async (data, files = {}, userId = null) => {
   const payload = parseProductBody(data);
   const product = await productModel.createProduct(payload, userId);
   await applyCreateThumbnail(product.id, files);
+  await applyImageUploads(product.id, files, 'inbox');
+  await applyVideoUploads(product.id, files, 'inbox');
   return productModel.findProductById(product.id);
 };
 
 /**
- * Update a product. Text fields and thumbnail upload are all optional.
+ * Update a product. Text fields and media uploads are all optional.
  */
 const updateProduct = async (id, data, files = {}, userId = null) => {
   const payload = parseProductBody(data);
   const existing = await productModel.findProductById(id, { raw: true });
   const thumbnailUpdates = await applyUpdateThumbnail(id, files, existing || {});
   await productModel.updateProduct(id, { ...payload, ...thumbnailUpdates }, userId);
+  await applyImageUploads(id, files, 'direct');
+  await applyVideoUploads(id, files, 'direct');
   return productModel.findProductById(id);
 };
 

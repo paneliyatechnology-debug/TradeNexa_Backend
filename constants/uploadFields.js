@@ -24,7 +24,14 @@ const CATEGORY_UPLOAD_FIELDS = [
 const BRAND_UPLOAD_FIELDS = [{ name: 'logo', maxCount: 1 }];
 
 /** POST/PUT /products */
-const PRODUCT_UPLOAD_FIELDS = [{ name: 'thumbnail', maxCount: 1 }];
+const PRODUCT_UPLOAD_FIELDS = [
+  { name: 'thumbnail', maxCount: 1 },
+  { name: 'image', maxCount: 10 },
+  { name: 'video', maxCount: 5 },
+];
+
+const PRODUCT_IMAGE_FIELD_NAMES = ['thumbnail', 'image'];
+const PRODUCT_VIDEO_FIELD_NAMES = ['video'];
 
 // ==========================================
 // Exports
@@ -35,4 +42,6 @@ module.exports = {
   CATEGORY_UPLOAD_FIELDS,
   BRAND_UPLOAD_FIELDS,
   PRODUCT_UPLOAD_FIELDS,
+  PRODUCT_IMAGE_FIELD_NAMES,
+  PRODUCT_VIDEO_FIELD_NAMES,
 };

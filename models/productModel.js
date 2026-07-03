@@ -1,4 +1,5 @@
 const db = require('../database/knex');
+const config = require('../config');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl } = require('../utils/media');
 const categoryModel = require('./categoryModel');
@@ -35,9 +36,147 @@ const formatRow = (row) => {
   };
 };
 
+/** Build nested product detail response; null for fields not stored in DB. */
+const formatProductDetail = (row, images = [], videos = []) => {
+  if (!row) return null;
+
+  const baseUrl = (config.app.url || '').replace(/\/$/, '');
+  const shareUrl = row.slug ? `${baseUrl}/product/${row.slug}` : null;
+
+  return {
+    id: row.id,
+    slug: row.slug,
+    basic_details: {
+      name: row.name,
+      short_description: null,
+      description: null,
+      brand: row.brand_id
+        ? { id: row.brand_id, name: row.brand_name || null }
+        : null,
+      category: row.category_id
+        ? { id: row.category_id, name: row.category_name || null }
+        : null,
+      subcategory: row.subcategory_id
+        ? { id: row.subcategory_id, name: row.subcategory_name || null }
+        : null,
+      country_of_origin: null,
+    },
+    pricing: {
+      price: row.price !== undefined ? parseFloat(row.price) : null,
+      price_type: null,
+      minimum_order_quantity: row.moq !== undefined ? parseInt(row.moq, 10) : null,
+      unit: row.unit || null,
+      gst_percentage: null,
+      gst_included: null,
+      hsn_code: null,
+    },
+    images: {
+      thumbnail: resolveMediaUrl(row.thumbnail),
+      gallery: images.map((image) => ({
+        id: image.id,
+        url: resolveMediaUrl(image.path),
+        is_primary: !!image.is_primary,
+      })),
+    },
+    videos: videos.map((video) => ({
+      id: video.id,
+      url: resolveMediaUrl(video.path),
+    })),
+    seller: row.supplier_id
+      ? {
+          id: row.supplier_id,
+          company: {
+            name: row.supplier_name || null,
+            logo: resolveMediaUrl(row.company_logo),
+            business_type: row.business_type_name || null,
+            year_established: null,
+            experience_years:
+              row.years_in_business !== undefined && row.years_in_business !== null
+                ? parseInt(row.years_in_business, 10)
+                : null,
+          },
+          rating: {
+            average:
+              row.supplier_rating !== undefined && row.supplier_rating !== null
+                ? parseFloat(row.supplier_rating)
+                : null,
+            total_reviews: null,
+          },
+          contact: {
+            show_phone: null,
+            show_email: null,
+            phone: row.supplier_phone || null,
+            whatsapp: null,
+            email: row.supplier_email || null,
+            website: null,
+          },
+          location: {
+            address: row.address_line_1 || null,
+            city: row.city || null,
+            state: row.state || null,
+            country: row.country || null,
+            postal_code: row.pincode || null,
+            latitude:
+              row.latitude !== undefined && row.latitude !== null
+                ? parseFloat(row.latitude)
+                : null,
+            longitude:
+              row.longitude !== undefined && row.longitude !== null
+                ? parseFloat(row.longitude)
+                : null,
+          },
+          social_links: {
+            website: null,
+            facebook: null,
+          },
+        }
+      : null,
+    marketplace: {
+      is_featured: null,
+      is_trending: row.is_trending !== undefined ? !!row.is_trending : null,
+      is_recommended: null,
+      share_url: shareUrl,
+    },
+    user_actions: {
+      is_favourite: null,
+      is_inquiry_sent: null,
+      can_contact_seller: null,
+      can_buy: null,
+    },
+    ratings: {
+      average: row.rating !== undefined ? parseFloat(row.rating) : null,
+      total_reviews: null,
+      breakdown: null,
+    },
+    reviews: null,
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
+  };
+};
+
 // ==========================================
 // List & read queries
 // ==========================================
+
+const PRODUCT_SORT_FIELDS = {
+  id: 'products.id',
+  name: 'products.name',
+  slug: 'products.slug',
+  price: 'products.price',
+  moq: 'products.moq',
+  rating: 'products.rating',
+  is_trending: 'products.is_trending',
+  created_at: 'products.created_at',
+  supplier_name: 'company_details.company_name',
+};
+
+/** Apply field-wise sort (default: id desc). */
+const applyProductListSort = (q, filters) => {
+  const sortBy =
+    filters.sort_by && PRODUCT_SORT_FIELDS[filters.sort_by] ? filters.sort_by : 'id';
+  const sortOrder = filters.sort_order === 'asc' ? 'asc' : 'desc';
+  q.orderBy(PRODUCT_SORT_FIELDS[sortBy], sortOrder);
+};
 
 /**
  * Find a product by ID with supplier, category, brand, and location joins.
@@ -76,9 +215,125 @@ const findProductById = async (id, options = {}) => {
   return formatRow(result);
 };
 
+/** Base product detail query with seller, category, brand, and address joins. */
+const buildProductDetailQuery = () =>
+  db('products')
+    .leftJoin('users as suppliers', 'products.supplier_id', '=', 'suppliers.id')
+    .leftJoin('company_details', 'suppliers.id', '=', 'company_details.user_id')
+    .leftJoin('business_types', 'company_details.business_type_id', '=', 'business_types.id')
+    .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
+    .leftJoin('categories', 'subcategories.parent_id', '=', 'categories.id')
+    .leftJoin('brands', 'products.brand_id', '=', 'brands.id')
+    .leftJoin('addresses', function () {
+      this.on('suppliers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
+    })
+    .leftJoin('cities', 'addresses.city_id', '=', 'cities.id')
+    .leftJoin('states', 'addresses.state_id', '=', 'states.id')
+    .leftJoin('countries', 'addresses.country_id', '=', 'countries.id')
+    .whereNull('products.deleted_at');
+
+/**
+ * Find a product by ID with full detail for the single-product API response.
+ * @param {number} id - Product ID
+ * @returns {Promise<Object|null>}
+ */
+const findProductDetailById = async (id) => {
+  const row = await buildProductDetailQuery()
+    .where('products.id', id)
+    .select(
+      'products.*',
+      'company_details.company_name as supplier_name',
+      'company_details.company_logo',
+      'company_details.years_in_business',
+      'company_details.rating as supplier_rating',
+      'suppliers.mobile_number as supplier_phone',
+      'suppliers.email as supplier_email',
+      'categories.id as category_id',
+      'categories.name as category_name',
+      'subcategories.name as subcategory_name',
+      'brands.name as brand_name',
+      'business_types.name as business_type_name',
+      'addresses.address_line_1',
+      'addresses.pincode',
+      'addresses.latitude',
+      'addresses.longitude',
+      'cities.name as city',
+      'states.name as state',
+      'countries.name as country',
+    )
+    .first();
+
+  if (!row) return null;
+
+  const images = await findProductImages(id);
+  const videos = await findProductVideos(id);
+  return formatProductDetail(row, images, videos);
+};
+
+/** List gallery images for a product ordered by sort_order then id. */
+const findProductImages = (productId) =>
+  db('product_images')
+    .where({ product_id: productId })
+    .orderBy('sort_order', 'asc')
+    .orderBy('id', 'asc')
+    .select('id', 'path', 'is_primary', 'sort_order');
+
+/** List videos for a product ordered by sort_order then id. */
+const findProductVideos = (productId) =>
+  db('product_videos')
+    .where({ product_id: productId })
+    .orderBy('sort_order', 'asc')
+    .orderBy('id', 'asc')
+    .select('id', 'title', 'path', 'sort_order');
+
+/** Insert gallery image rows for a product. */
+const insertProductImages = async (productId, paths = []) => {
+  if (!paths.length) return [];
+
+  const existingCount = await db('product_images')
+    .where({ product_id: productId })
+    .count('* as count')
+    .first();
+  const hasPrimary = await db('product_images')
+    .where({ product_id: productId, is_primary: true })
+    .first();
+  const startOrder = parseInt(existingCount?.count || 0, 10);
+
+  const rows = paths.map((imagePath, index) => ({
+    product_id: productId,
+    path: imagePath,
+    is_primary: !hasPrimary && index === 0,
+    sort_order: startOrder + index,
+  }));
+
+  await db('product_images').insert(rows);
+  return findProductImages(productId);
+};
+
+/** Insert video rows for a product. */
+const insertProductVideos = async (productId, paths = []) => {
+  if (!paths.length) return [];
+
+  const existingCount = await db('product_videos')
+    .where({ product_id: productId })
+    .count('* as count')
+    .first();
+  const startOrder = parseInt(existingCount?.count || 0, 10);
+
+  const rows = paths.map((videoPath, index) => ({
+    product_id: productId,
+    title: null,
+    path: videoPath,
+    sort_order: startOrder + index,
+  }));
+
+  await db('product_videos').insert(rows);
+  return findProductVideos(productId);
+};
+
 /**
  * Paginated list of products with optional filters and sorting.
- * @param {Object} [filters] - Query filters (q, category_id, subcategory_id, brand_id, price range, sort)
+ * @param {Object} [filters] - Query filters (search, category_id, subcategory_id, brand_id, price range, sort)
  * @returns {Promise<Object>}
  */
 const findProducts = async (filters = {}) => {
@@ -110,8 +365,8 @@ const findProducts = async (filters = {}) => {
       'products.created_at',
     );
 
-  if (filters.q) {
-    q.where('products.name', 'like', `%${filters.q}%`);
+  if (filters.search) {
+    q.where('products.name', 'like', `%${filters.search}%`);
   }
 
   if (filters.category_id) {
@@ -146,15 +401,7 @@ const findProducts = async (filters = {}) => {
     q.whereNot('products.id', filters.exclude_product_id);
   }
 
-  if (filters.sort_by === 'price_asc') {
-    q.orderBy('products.price', 'asc');
-  } else if (filters.sort_by === 'price_desc') {
-    q.orderBy('products.price', 'desc');
-  } else if (filters.sort_by === 'rating') {
-    q.orderBy('products.rating', 'desc');
-  } else {
-    q.orderBy('products.id', 'desc');
-  }
+  applyProductListSort(q, filters);
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;
@@ -274,7 +521,13 @@ const deleteProduct = async (id, userId = null) => {
 
 module.exports = {
   formatRow,
+  formatProductDetail,
   findProductById,
+  findProductDetailById,
+  findProductImages,
+  findProductVideos,
+  insertProductImages,
+  insertProductVideos,
   findProducts,
   createProduct,
   updateProduct,
