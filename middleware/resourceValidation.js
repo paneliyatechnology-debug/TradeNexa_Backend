@@ -280,7 +280,7 @@ const productListQuery = [
 
 const productTrendingQuery = [...paginationQuery];
 
-const productRecommendedQuery = [
+const productRelatedQuery = [
   query('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required'),
   query('product_id').optional().isInt({ min: 1 }).withMessage('Product ID must be a positive integer'),
   ...paginationQuery,
@@ -410,7 +410,7 @@ module.exports = {
   productDeleteMediaRules,
   productListQuery,
   productTrendingQuery,
-  productRecommendedQuery,
+  productRelatedQuery,
   offerCreateRules,
   offerUpdateRules,
   rfqCreateRules,

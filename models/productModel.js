@@ -130,7 +130,7 @@ const formatProductDetail = (row, images = [], videos = []) => {
     marketplace: {
       is_featured: null,
       is_trending: row.is_trending !== undefined ? !!row.is_trending : null,
-      is_recommended: null,
+      is_related: null,
       share_url: null,
     },
     user_actions: {

@@ -81,7 +81,7 @@ const getProducts = async (req, res, next) => {
 
 /**
  * GET /products/trending
- * List trending products ordered by id desc (newest first).
+ * List products flagged is_trending=true, ordered by id desc (newest first).
  */
 const getTrendingProducts = async (req, res, next) => {
   try {
@@ -118,11 +118,11 @@ const getTrendingProducts = async (req, res, next) => {
 };
 
 /**
- * GET /products/recommended
- * List recommended products for a subcategory (ordered by id desc).
+ * GET /products/related
+ * List related products for a subcategory (ordered by id desc).
  * Optional product_id excludes that product from results (e.g. current product detail page).
  */
-const getRecommendedProducts = async (req, res, next) => {
+const getRelatedProducts = async (req, res, next) => {
   try {
     const filters = {
       subcategory_id: req.query.subcategory_id,
@@ -148,7 +148,7 @@ const getRecommendedProducts = async (req, res, next) => {
       verified: p.verified,
     }));
 
-    return success(res, 'Recommended products retrieved successfully', {
+    return success(res, 'Related products retrieved successfully', {
       ...data,
       results: formatted,
     });
@@ -237,7 +237,7 @@ module.exports = {
   getProduct,
   getProducts,
   getTrendingProducts,
-  getRecommendedProducts,
+  getRelatedProducts,
   updateProduct,
   deleteProductMedia,
   deleteProduct,

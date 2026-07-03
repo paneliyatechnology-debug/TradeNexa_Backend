@@ -1,7 +1,7 @@
 /**
  * Product routes.
  *
- * Public read endpoints (list, trending, recommended) and role-based write operations.
+ * Public read endpoints (list, trending, related) and role-based write operations.
  * Create/update support multipart thumbnail uploads.
  */
 const express = require('express');
@@ -18,7 +18,7 @@ const {
   productDeleteMediaRules,
   productListQuery,
   productTrendingQuery,
-  productRecommendedQuery,
+  productRelatedQuery,
 } = require('../middleware/resourceValidation');
 
 const router = express.Router();
@@ -29,7 +29,7 @@ const router = express.Router();
 
 router.get('/', productListQuery, validate, productController.getProducts);
 router.get('/trending', productTrendingQuery, validate, productController.getTrendingProducts);
-router.get('/recommended', productRecommendedQuery, validate, productController.getRecommendedProducts);
+router.get('/related', productRelatedQuery, validate, productController.getRelatedProducts);
 router.get('/:id', idParam, validate, productController.getProduct);
 
 // ==========================================
