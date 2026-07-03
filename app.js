@@ -12,6 +12,7 @@ const config = require('./config');
 const uploadConfig = require('./config/upload');
 const s3Service = require('./services/s3Service');
 const routers = require('./routers');
+const mediaRouter = require('./routers/mediaRouter');
 const errorHandler = require('./middleware/errorHandler');
 const { apiLimiter } = require('./middleware/rateLimiter');
 const firebase = require('./utils/firebase');
@@ -36,10 +37,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ==========================================
-// Static files (local dev only — production uses S3)
+// Media proxy (private S3 bucket) & static files
 // ==========================================
 
-if (!s3Service.isEnabled()) {
+if (s3Service.isEnabled()) {
+  app.use('/media', mediaRouter);
+} else {
   app.use(uploadConfig.publicPath, express.static(uploadConfig.rootDir));
 }
 

@@ -5,7 +5,9 @@ const {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
 } = require('@aws-sdk/client-s3');
+const config = require('../config');
 const s3Config = require('../config/s3');
 
 // ==========================================
@@ -93,23 +95,33 @@ const deleteObject = async (storedValue) => {
   }
 };
 
-/** Resolve a DB-stored relative path to a public URL. */
+/** Resolve a DB-stored relative path to a browser-accessible URL. */
 const getPublicUrl = (relativePath) => {
   if (!relativePath) return null;
   if (/^https?:\/\//i.test(relativePath)) return relativePath;
 
-  const objectKey = buildObjectKey(relativePath);
+  const normalized = relativePath.replace(/^\/+/, '');
 
+  // Use direct bucket URL only when a public base URL is explicitly configured.
   if (s3Config.publicUrl) {
+    const objectKey = buildObjectKey(normalized);
     return `${s3Config.publicUrl.replace(/\/$/, '')}/${objectKey}`;
   }
 
-  if (s3Config.endpoint) {
-    const base = s3Config.endpoint.replace(/\/$/, '');
-    return `${base}/${s3Config.bucket}/${objectKey}`;
-  }
+  // Private Railway bucket — serve through backend proxy (authenticated GetObject).
+  const baseUrl = (config.app.url || '').replace(/\/$/, '');
+  return `${baseUrl}/media/${normalized}`;
+};
 
-  return `https://${s3Config.bucket}.s3.${s3Config.region}.amazonaws.com/${objectKey}`;
+/** Fetch an object from S3 for streaming through the media proxy. */
+const getObject = async (relativePath) => {
+  const objectKey = buildObjectKey(stripObjectKeyPrefix(relativePath));
+  return getClient().send(
+    new GetObjectCommand({
+      Bucket: s3Config.bucket,
+      Key: objectKey,
+    }),
+  );
 };
 
 /** Try to extract object key from a full S3 URL. */
@@ -131,6 +143,7 @@ module.exports = {
   isEnabled: s3Config.isEnabled,
   uploadBuffer,
   deleteObject,
+  getObject,
   getPublicUrl,
   buildObjectKey,
 };
