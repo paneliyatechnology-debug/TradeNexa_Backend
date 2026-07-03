@@ -9,6 +9,19 @@ const { HTTP_STATUS } = require('../constants');
 // Product Operations
 // ==========================================
 
+/** Shared search, filter, sort, and pagination params for product list endpoints. */
+const pickProductListFilters = (req, extra = {}) => ({
+  search: req.query.search,
+  brand_id: req.query.brand_id,
+  min_price: req.query.min_price,
+  max_price: req.query.max_price,
+  page: req.query.page,
+  limit: req.query.limit,
+  sort_by: req.query.sort_by,
+  sort_order: req.query.sort_order,
+  ...extra,
+});
+
 /** Ensure the user may modify a product (assigned supplier or admin). */
 const assertCanModifyProduct = async (productId, user) => {
   const existing = await productModel.findProductById(productId, { raw: true });
@@ -85,12 +98,12 @@ const getProducts = async (req, res, next) => {
  */
 const getTrendingProducts = async (req, res, next) => {
   try {
-    const filters = {
+    const filters = pickProductListFilters(req, {
       is_trending: true,
       is_active: true,
-      page: req.query.page,
-      limit: req.query.limit,
-    };
+      category_id: req.query.category_id,
+      subcategory_id: req.query.subcategory_id,
+    });
     const data = await productModel.findProducts(filters);
 
     const formatted = data.results.map((p) => ({
@@ -124,12 +137,10 @@ const getTrendingProducts = async (req, res, next) => {
  */
 const getRelatedProducts = async (req, res, next) => {
   try {
-    const filters = {
+    const filters = pickProductListFilters(req, {
       subcategory_id: req.query.subcategory_id,
       is_active: true,
-      page: req.query.page,
-      limit: req.query.limit,
-    };
+    });
 
     if (req.query.product_id) {
       filters.exclude_product_id = req.query.product_id;

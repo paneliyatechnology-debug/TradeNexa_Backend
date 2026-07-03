@@ -255,19 +255,10 @@ const PRODUCT_SORT_BY_VALUES = [
   'supplier_name',
 ];
 
-const productListQuery = [
-  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
-  query('search').optional().trim(),
-  query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
-  query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+const productListFilterSortQuery = [
   query('brand_id').optional().isInt().withMessage('Brand ID must be an integer'),
   query('min_price').optional().isFloat({ min: 0 }).withMessage('Min price must be positive'),
   query('max_price').optional().isFloat({ min: 0 }).withMessage('Max price must be positive'),
-  query('is_active')
-    .optional()
-    .isIn(['true', 'false'])
-    .withMessage('is_active must be true or false'),
   query('sort_by')
     .optional()
     .isIn(PRODUCT_SORT_BY_VALUES)
@@ -278,12 +269,31 @@ const productListQuery = [
     .withMessage('sort_order must be asc or desc'),
 ];
 
-const productTrendingQuery = [...paginationQuery];
+const productListQuery = [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('search').optional().trim(),
+  query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
+  query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  query('is_active')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_active must be true or false'),
+  ...productListFilterSortQuery,
+];
+
+const productTrendingQuery = [
+  ...paginationQuery,
+  query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
+  query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  ...productListFilterSortQuery,
+];
 
 const productRelatedQuery = [
   query('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required'),
   query('product_id').optional().isInt({ min: 1 }).withMessage('Product ID must be a positive integer'),
   ...paginationQuery,
+  ...productListFilterSortQuery,
 ];
 
 // ==========================================
