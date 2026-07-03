@@ -48,9 +48,12 @@ const getCategory = async (req, res, next) => {
 const getCategories = async (req, res, next) => {
   try {
     const filters = {
-      q: req.query.q,
+      search: req.query.search,
+      slug: req.query.slug,
       page: req.query.page,
       limit: req.query.limit,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
     };
     const data = await categoryModel.findCategories(filters);
@@ -126,7 +129,7 @@ const createSubcategory = async (req, res, next) => {
 const getSubcategory = async (req, res, next) => {
   try {
     const subcategory = await categoryModel.getSubcategoryDetail(req.params.id);
-    if (!subcategory || String(subcategory.parent_id) !== String(req.params.categoryId)) {
+    if (!subcategory || String(subcategory.category_id) !== String(req.params.categoryId)) {
       return next(new AppError('Subcategory not found', HTTP_STATUS.NOT_FOUND));
     }
     return success(res, 'Subcategory details retrieved successfully', subcategory);
@@ -142,9 +145,12 @@ const getSubcategory = async (req, res, next) => {
 const getSubcategories = async (req, res, next) => {
   try {
     const filters = {
-      q: req.query.q,
+      search: req.query.search,
+      slug: req.query.slug,
       page: req.query.page,
       limit: req.query.limit,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
     };
     const data = await categoryModel.findSubcategories(req.params.categoryId, filters);

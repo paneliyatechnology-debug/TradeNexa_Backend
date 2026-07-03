@@ -11,15 +11,17 @@ const {
   handleCategoryCreateUpload,
   handleCategoryUpdateUpload,
   handleSubcategoryUpdateUpload,
+  requireIconUpload,
 } = require('../middleware/upload');
 const {
   idParam,
   categoryIdParam,
   categoryCreateRules,
   categoryUpdateRules,
+  categoryListQuery,
   subcategoryCreateRules,
   subcategoryUpdateRules,
-  paginationQuery,
+  subcategoryListQuery,
 } = require('../middleware/resourceValidation');
 
 const router = express.Router();
@@ -28,11 +30,11 @@ const router = express.Router();
 // Public read routes
 // ==========================================
 
-router.get('/', paginationQuery, validate, categoryController.getCategories);
+router.get('/', categoryListQuery, validate, categoryController.getCategories);
 router.get(
   '/:categoryId/subcategories',
   categoryIdParam,
-  paginationQuery,
+  subcategoryListQuery,
   validate,
   categoryController.getSubcategories,
 );
@@ -54,6 +56,7 @@ router.post(
   authenticate,
   authorize('admin'),
   handleCategoryCreateUpload,
+  requireIconUpload,
   categoryCreateRules,
   validate,
   categoryController.createCategory,
@@ -89,6 +92,7 @@ router.post(
   authorize('admin'),
   categoryIdParam,
   handleCategoryCreateUpload,
+  requireIconUpload,
   subcategoryCreateRules,
   validate,
   categoryController.createSubcategory,

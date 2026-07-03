@@ -34,6 +34,56 @@ const formatRow = (row) => {
   };
 };
 
+/**
+ * Format a subcategory row — same as formatRow but exposes category_id instead of parent_id.
+ */
+const formatSubcategoryRow = (row) => {
+  if (!row) return null;
+  const formatted = formatRow(row);
+  if (formatted.parent_id !== undefined && formatted.parent_id !== null) {
+    formatted.category_id = formatted.category_id ?? formatted.parent_id;
+  }
+  delete formatted.parent_id;
+  return formatted;
+};
+
+const CATEGORY_SORT_FIELDS = {
+  id: 'categories.id',
+  name: 'categories.name',
+  slug: 'categories.slug',
+  is_active: 'categories.is_active',
+  subcategory_count: 'subcategory_count',
+  product_count: 'product_count',
+};
+
+const SUBCATEGORY_SORT_FIELDS = {
+  id: 'categories.id',
+  name: 'categories.name',
+  slug: 'categories.slug',
+  is_active: 'categories.is_active',
+  product_count: 'product_count',
+};
+
+/** Apply list filters shared by category and subcategory queries. */
+const applyListFilters = (q, filters, prefix = 'categories') => {
+  if (filters.search) {
+    q.where(`${prefix}.name`, 'like', `%${filters.search}%`);
+  }
+  if (filters.slug) {
+    q.where(`${prefix}.slug`, filters.slug);
+  }
+  if (filters.is_active !== undefined) {
+    q.where(`${prefix}.is_active`, filters.is_active);
+  }
+};
+
+/** Apply field-wise sort (default: id desc). */
+const applyListSort = (q, filters, sortFieldMap) => {
+  const sortBy = filters.sort_by && sortFieldMap[filters.sort_by] ? filters.sort_by : 'id';
+  const sortOrder = filters.sort_order === 'asc' ? 'asc' : 'desc';
+  q.orderBy(sortFieldMap[sortBy], sortOrder);
+};
+
 // ==========================================
 // Lookups & guards
 // ==========================================
@@ -105,10 +155,9 @@ const findCategories = async (filters = {}) => {
       db.raw('count(products.id) as product_count'),
     );
 
-  if (filters.q) q.where('categories.name', 'like', `%${filters.q}%`);
-  if (filters.is_active !== undefined) q.where('categories.is_active', filters.is_active);
+  applyListFilters(q, filters);
+  applyListSort(q, filters, CATEGORY_SORT_FIELDS);
 
-  q.orderBy('categories.id', 'desc');
   const paginated = await paginate(q, filters.page, filters.limit);
   paginated.results = paginated.results.map(formatRow);
   return paginated;
@@ -136,12 +185,11 @@ const findSubcategories = async (parentId, filters = {}) => {
       db.raw('count(products.id) as product_count'),
     );
 
-  if (filters.q) q.where('categories.name', 'like', `%${filters.q}%`);
-  if (filters.is_active !== undefined) q.where('categories.is_active', filters.is_active);
+  applyListFilters(q, filters);
+  applyListSort(q, filters, SUBCATEGORY_SORT_FIELDS);
 
-  q.orderBy('categories.id', 'desc');
   const paginated = await paginate(q, filters.page, filters.limit);
-  paginated.results = paginated.results.map(formatRow);
+  paginated.results = paginated.results.map(formatSubcategoryRow);
   return paginated;
 };
 
@@ -158,7 +206,7 @@ const getCategoryWithSubcategories = async (id) => {
 
   return {
     ...formatRow(category),
-    subcategories: subcategories.map((row) => formatRow(row)),
+    subcategories: subcategories.map((row) => formatSubcategoryRow(row)),
   };
 };
 
@@ -203,7 +251,7 @@ const getSubcategoryDetail = async (id) => {
     )
     .first();
 
-  return formatRow(row);
+  return formatSubcategoryRow(row);
 };
 
 // ==========================================
@@ -408,4 +456,5 @@ module.exports = {
   deleteSubcategory,
   validateSubcategoryForProduct,
   formatRow,
+  formatSubcategoryRow,
 };

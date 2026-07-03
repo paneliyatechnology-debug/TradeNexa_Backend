@@ -80,6 +80,47 @@ const subcategoryUpdateRules = [
   optionalBooleanField('is_active'),
 ];
 
+const CATEGORY_SORT_BY_VALUES = ['id', 'name', 'slug', 'is_active', 'subcategory_count', 'product_count'];
+const SUBCATEGORY_SORT_BY_VALUES = ['id', 'name', 'slug', 'is_active', 'product_count'];
+
+const categoryListQuery = [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('search').optional().trim(),
+  query('is_active')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_active must be true or false'),
+  query('slug').optional().trim(),
+  query('sort_by')
+    .optional()
+    .isIn(CATEGORY_SORT_BY_VALUES)
+    .withMessage(`sort_by must be one of: ${CATEGORY_SORT_BY_VALUES.join(', ')}`),
+  query('sort_order')
+    .optional()
+    .isIn(['asc', 'desc'])
+    .withMessage('sort_order must be asc or desc'),
+];
+
+const subcategoryListQuery = [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('search').optional().trim(),
+  query('is_active')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_active must be true or false'),
+  query('slug').optional().trim(),
+  query('sort_by')
+    .optional()
+    .isIn(SUBCATEGORY_SORT_BY_VALUES)
+    .withMessage(`sort_by must be one of: ${SUBCATEGORY_SORT_BY_VALUES.join(', ')}`),
+  query('sort_order')
+    .optional()
+    .isIn(['asc', 'desc'])
+    .withMessage('sort_order must be asc or desc'),
+];
+
 // ==========================================
 // Banner validations
 // ==========================================
@@ -303,8 +344,10 @@ module.exports = {
   paginationQuery,
   categoryCreateRules,
   categoryUpdateRules,
+  categoryListQuery,
   subcategoryCreateRules,
   subcategoryUpdateRules,
+  subcategoryListQuery,
   bannerCreateRules,
   bannerUpdateRules,
   brandCreateRules,

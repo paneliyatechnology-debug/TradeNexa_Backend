@@ -110,6 +110,17 @@ const handleProductUpdateUpload = createUploadMiddleware({
   },
 });
 
+/**
+ * Require icon file on category/subcategory create.
+ * Must run after multer upload middleware.
+ */
+const requireIconUpload = (req, _res, next) => {
+  if (!req.files?.icon?.[0]) {
+    return next(new AppError('Icon is required', 400));
+  }
+  next();
+};
+
 module.exports = {
   createUploadMiddleware,
   handleProfileUpload,
@@ -120,4 +131,5 @@ module.exports = {
   handleBrandUpdateUpload,
   handleProductCreateUpload,
   handleProductUpdateUpload,
+  requireIconUpload,
 };

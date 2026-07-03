@@ -27,8 +27,11 @@ const parseCategoryBody = (body = {}) => ({
   is_active: parseBoolean(body.is_active),
 });
 
-/** Format a DB row for API response (resolves icon/image URLs). */
+/** Format a main category DB row for API response (resolves icon/image URLs). */
 const formatCategory = (row) => categoryModel.formatRow(row);
+
+/** Format a subcategory DB row for API response (category_id instead of parent_id). */
+const formatSubcategory = (row) => categoryModel.formatSubcategoryRow(row);
 
 // ==========================================
 // Image upload helpers
@@ -97,7 +100,7 @@ const createSubcategory = async (parentId, data, files = {}, userId = null) => {
   const subcategory = await categoryModel.createSubcategory(parentId, payload, userId);
   const withImages = await applyCreateImages(subcategory.id, files);
   const row = withImages || (await categoryModel.findSubcategoryById(subcategory.id, parentId));
-  return formatCategory(row);
+  return formatSubcategory(row);
 };
 
 /**
@@ -113,7 +116,7 @@ const updateSubcategory = async (parentId, id, data, files = {}, userId = null) 
     { ...payload, ...imageUpdates },
     userId,
   );
-  return formatCategory(row);
+  return formatSubcategory(row);
 };
 
 module.exports = {
