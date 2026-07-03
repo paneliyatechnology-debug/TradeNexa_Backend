@@ -9,6 +9,21 @@ const { HTTP_STATUS } = require('../constants');
 // Product Operations
 // ==========================================
 
+/** Ensure the user may modify a product (assigned supplier or admin). */
+const assertCanModifyProduct = async (productId, user) => {
+  const existing = await productModel.findProductById(productId, { raw: true });
+  if (!existing) {
+    throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
+  }
+
+  const isAdmin = user.role === 'admin';
+  if (!isAdmin && String(existing.supplier_id) !== String(user.id)) {
+    throw new AppError('Forbidden: You can only modify your own products', HTTP_STATUS.FORBIDDEN);
+  }
+
+  return existing;
+};
+
 /**
  * POST /products
  * Create a new product listing with optional thumbnail upload (seller or admin).
@@ -149,18 +164,9 @@ const getRecommendedProducts = async (req, res, next) => {
  */
 const updateProduct = async (req, res, next) => {
   try {
-    const existing = await productModel.findProductById(req.params.id, { raw: true });
-    if (!existing) {
-      return next(new AppError('Product not found', HTTP_STATUS.NOT_FOUND));
-    }
+    const existing = await assertCanModifyProduct(req.params.id, req.user);
 
     const isAdmin = req.user.role === 'admin';
-    if (!isAdmin && String(existing.supplier_id) !== String(req.user.id)) {
-      return next(
-        new AppError('Forbidden: You can only update your own products', HTTP_STATUS.FORBIDDEN),
-      );
-    }
-
     if (
       !isAdmin &&
       req.body.supplier_id !== undefined &&
@@ -176,6 +182,34 @@ const updateProduct = async (req, res, next) => {
       req.user?.id,
     );
     return success(res, 'Product updated successfully', product);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const parseIdArray = (value) => {
+  if (!Array.isArray(value)) return [];
+  return value.map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
+};
+
+/**
+ * DELETE /products/:id/media
+ * Remove gallery images and/or videos by ID (DB + S3). Supplier or admin only.
+ */
+const deleteProductMedia = async (req, res, next) => {
+  try {
+    await assertCanModifyProduct(req.params.id, req.user);
+
+    const result = await productService.deleteProductMedia(req.params.id, {
+      imageIds: parseIdArray(req.body.image_ids),
+      videoIds: parseIdArray(req.body.video_ids),
+    });
+
+    if (!result) {
+      return next(new AppError('No matching product media found to delete', HTTP_STATUS.NOT_FOUND));
+    }
+
+    return success(res, 'Product media deleted successfully', result);
   } catch (err) {
     next(err);
   }
@@ -205,5 +239,6 @@ module.exports = {
   getTrendingProducts,
   getRecommendedProducts,
   updateProduct,
+  deleteProductMedia,
   deleteProduct,
 };

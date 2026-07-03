@@ -15,6 +15,7 @@ const {
   idParam,
   productCreateRules,
   productUpdateRules,
+  productDeleteMediaRules,
   productListQuery,
   productTrendingQuery,
   productRecommendedQuery,
@@ -54,6 +55,16 @@ router.put(
   productUpdateRules,
   validate,
   productController.updateProduct,
+);
+
+router.delete(
+  '/:id/media',
+  authenticate,
+  authorize('seller', 'buyer_seller', 'admin'),
+  idParam,
+  productDeleteMediaRules,
+  validate,
+  productController.deleteProductMedia,
 );
 
 router.delete(

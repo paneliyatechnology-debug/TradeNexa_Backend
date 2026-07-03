@@ -222,6 +222,27 @@ const productUpdateRules = [
   body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
 ];
 
+const productDeleteMediaRules = [
+  body('image_ids')
+    .optional()
+    .isArray({ min: 1 })
+    .withMessage('image_ids must be a non-empty array when provided'),
+  body('image_ids.*').isInt({ min: 1 }).withMessage('Each image ID must be a positive integer'),
+  body('video_ids')
+    .optional()
+    .isArray({ min: 1 })
+    .withMessage('video_ids must be a non-empty array when provided'),
+  body('video_ids.*').isInt({ min: 1 }).withMessage('Each video ID must be a positive integer'),
+  body().custom((value) => {
+    const imageIds = value.image_ids || [];
+    const videoIds = value.video_ids || [];
+    if (!imageIds.length && !videoIds.length) {
+      throw new Error('At least one of image_ids or video_ids is required');
+    }
+    return true;
+  }),
+];
+
 const PRODUCT_SORT_BY_VALUES = [
   'id',
   'name',
@@ -386,6 +407,7 @@ module.exports = {
   supplierNearbyRules,
   productCreateRules,
   productUpdateRules,
+  productDeleteMediaRules,
   productListQuery,
   productTrendingQuery,
   productRecommendedQuery,

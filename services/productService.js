@@ -130,7 +130,42 @@ const updateProduct = async (id, data, files = {}, userId = null) => {
   return productModel.findProductById(id);
 };
 
+/**
+ * Delete gallery images and/or videos from a product (DB + S3/local storage).
+ */
+const deleteProductMedia = async (productId, { imageIds = [], videoIds = [] } = {}) => {
+  const deletedImages = [];
+  const deletedVideos = [];
+  const notFoundImageIds = [];
+  const notFoundVideoIds = [];
+
+  for (const imageId of imageIds) {
+    const deleted = await productModel.deleteProductImage(productId, imageId);
+    if (deleted) deletedImages.push(imageId);
+    else notFoundImageIds.push(imageId);
+  }
+
+  for (const videoId of videoIds) {
+    const deleted = await productModel.deleteProductVideo(productId, videoId);
+    if (deleted) deletedVideos.push(videoId);
+    else notFoundVideoIds.push(videoId);
+  }
+
+  if (!deletedImages.length && !deletedVideos.length) {
+    return null;
+  }
+
+  return {
+    deleted_image_ids: deletedImages,
+    deleted_video_ids: deletedVideos,
+    not_found_image_ids: notFoundImageIds,
+    not_found_video_ids: notFoundVideoIds,
+    product: await productModel.findProductDetailById(productId),
+  };
+};
+
 module.exports = {
   createProduct,
   updateProduct,
+  deleteProductMedia,
 };

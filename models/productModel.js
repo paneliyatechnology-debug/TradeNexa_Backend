@@ -1,7 +1,7 @@
 const db = require('../database/knex');
 const config = require('../config');
 const { paginate } = require('../utils/pagination');
-const { resolveMediaUrl } = require('../utils/media');
+const { resolveMediaUrl, deleteStoredFile } = require('../utils/media');
 const categoryModel = require('./categoryModel');
 
 // ==========================================
@@ -331,6 +331,53 @@ const insertProductVideos = async (productId, paths = []) => {
   return findProductVideos(productId);
 };
 
+/** Find a gallery image belonging to a product. */
+const findProductImageById = (productId, imageId) =>
+  db('product_images')
+    .where({ id: imageId, product_id: productId })
+    .first();
+
+/** Find a video belonging to a product. */
+const findProductVideoById = (productId, videoId) =>
+  db('product_videos')
+    .where({ id: videoId, product_id: productId })
+    .first();
+
+/**
+ * Delete a gallery image from DB and storage (S3 or local).
+ * Promotes the next image to primary when the deleted one was primary.
+ */
+const deleteProductImage = async (productId, imageId) => {
+  const image = await findProductImageById(productId, imageId);
+  if (!image) return null;
+
+  await deleteStoredFile(image.path);
+  await db('product_images').where({ id: imageId, product_id: productId }).del();
+
+  if (image.is_primary) {
+    const next = await db('product_images')
+      .where({ product_id: productId })
+      .orderBy('sort_order', 'asc')
+      .orderBy('id', 'asc')
+      .first();
+    if (next) {
+      await db('product_images').where({ id: next.id }).update({ is_primary: true });
+    }
+  }
+
+  return image;
+};
+
+/** Delete a video from DB and storage (S3 or local). */
+const deleteProductVideo = async (productId, videoId) => {
+  const video = await findProductVideoById(productId, videoId);
+  if (!video) return null;
+
+  await deleteStoredFile(video.path);
+  await db('product_videos').where({ id: videoId, product_id: productId }).del();
+  return video;
+};
+
 /**
  * Paginated list of products with optional filters and sorting.
  * @param {Object} [filters] - Query filters (search, category_id, subcategory_id, brand_id, price range, sort)
@@ -528,6 +575,10 @@ module.exports = {
   findProductVideos,
   insertProductImages,
   insertProductVideos,
+  findProductImageById,
+  findProductVideoById,
+  deleteProductImage,
+  deleteProductVideo,
   findProducts,
   createProduct,
   updateProduct,
