@@ -98,19 +98,18 @@ const deleteObject = async (storedValue) => {
 /** Resolve a DB-stored relative path to a browser-accessible URL. */
 const getPublicUrl = (relativePath) => {
   if (!relativePath) return null;
-  if (/^https?:\/\//i.test(relativePath)) return relativePath;
 
-  const normalized = relativePath.replace(/^\/+/, '');
+  const normalized = String(relativePath).replace(/^\/+/, '');
 
-  // Use direct bucket URL only when a public base URL is explicitly configured.
+  // Use direct bucket URL only when a dedicated public CDN/base URL is configured.
   if (s3Config.publicUrl) {
     const objectKey = buildObjectKey(normalized);
     return `${s3Config.publicUrl.replace(/\/$/, '')}/${objectKey}`;
   }
 
-  // Private Railway bucket — serve through backend proxy (authenticated GetObject).
+  // Private Railway bucket — always serve through backend proxy.
   const baseUrl = (config.app.url || '').replace(/\/$/, '');
-  return `${baseUrl}/media/${normalized}`;
+  return baseUrl ? `${baseUrl}/media/${normalized}` : `/media/${normalized}`;
 };
 
 /** Fetch an object from S3 for streaming through the media proxy. */
@@ -124,10 +123,16 @@ const getObject = async (relativePath) => {
   );
 };
 
-/** Try to extract object key from a full S3 URL. */
+/** Try to extract relative storage path from a full URL (S3, proxy, or legacy). */
 const extractKeyFromUrl = (url) => {
   try {
     const parsed = new URL(url);
+
+    const mediaMatch = parsed.pathname.match(/^\/media\/(.+)$/);
+    if (mediaMatch) {
+      return stripObjectKeyPrefix(mediaMatch[1]);
+    }
+
     const pathParts = parsed.pathname.replace(/^\/+/, '').split('/');
     if (pathParts[0] === s3Config.bucket) {
       pathParts.shift();
@@ -139,6 +144,15 @@ const extractKeyFromUrl = (url) => {
   }
 };
 
+/** Normalize any stored value to a relative path for DB/API use. */
+const normalizeStoredPath = (storedValue) => {
+  if (!storedValue) return null;
+  if (/^https?:\/\//i.test(storedValue)) {
+    return extractKeyFromUrl(storedValue);
+  }
+  return String(storedValue).replace(/^\/+/, '');
+};
+
 module.exports = {
   isEnabled: s3Config.isEnabled,
   uploadBuffer,
@@ -146,4 +160,6 @@ module.exports = {
   getObject,
   getPublicUrl,
   buildObjectKey,
+  extractKeyFromUrl,
+  normalizeStoredPath,
 };

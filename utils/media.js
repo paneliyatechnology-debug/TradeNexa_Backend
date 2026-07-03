@@ -73,15 +73,18 @@ const getMulterFile = (files, field) => files?.[field]?.[0] || null;
 
 /**
  * Convert a stored relative path to a public URL.
- * Uses S3 public URL when configured; otherwise local /uploads path.
+ * S3: returns APP_URL/media/... proxy URL (Railway buckets are private).
  */
 const resolveMediaUrl = (storedValue) => {
   if (!storedValue) return null;
-  if (/^https?:\/\//i.test(storedValue)) return storedValue;
 
   if (s3Service.isEnabled()) {
-    return s3Service.getPublicUrl(storedValue);
+    const relativePath = s3Service.normalizeStoredPath(storedValue);
+    if (!relativePath) return storedValue;
+    return s3Service.getPublicUrl(relativePath);
   }
+
+  if (/^https?:\/\//i.test(storedValue)) return storedValue;
 
   const baseUrl = (config.app.url || '').replace(/\/$/, '');
   const normalized = storedValue.replace(/^\/+/, '');

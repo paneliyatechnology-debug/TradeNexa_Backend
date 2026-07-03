@@ -8,6 +8,7 @@ require('dotenv').config();
 const app = require('./app');
 const config = require('./config');
 const logger = require('./utils/logger');
+const s3Service = require('./services/s3Service');
 const db = require('./database/knex');
 
 // ==========================================
@@ -22,6 +23,9 @@ const start = async () => {
     await db.raw('SELECT 1');
     app.listen(config.port, () => {
       logger.info(`${config.app.name} running on port ${config.port}`);
+      if (s3Service.isEnabled()) {
+        logger.info(`S3 storage enabled — media served via ${config.app.url}/media/`);
+      }
     });
   } catch (error) {
     logger.error('Failed to start server', { error: error.message });
