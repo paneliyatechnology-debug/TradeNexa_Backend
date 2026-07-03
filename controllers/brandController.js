@@ -49,7 +49,7 @@ const getBrand = async (req, res, next) => {
 const getBrands = async (req, res, next) => {
   try {
     const filters = {
-      q: req.query.q,
+      search: req.query.search,
       page: req.query.page,
       limit: req.query.limit,
       is_popular: req.query.is_popular !== undefined ? req.query.is_popular === 'true' : undefined,

@@ -42,7 +42,7 @@ const getService = async (req, res, next) => {
 const getServices = async (req, res, next) => {
   try {
     const filters = {
-      q: req.query.q,
+      search: req.query.search,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
     };
     const services = await serviceModel.findServices(filters);

@@ -42,7 +42,7 @@ const getNewsDetails = async (req, res, next) => {
 const getNewsList = async (req, res, next) => {
   try {
     const filters = {
-      q: req.query.q,
+      search: req.query.search,
       page: req.query.page,
       limit: req.query.limit,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,

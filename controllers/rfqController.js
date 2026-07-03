@@ -42,7 +42,7 @@ const getRfq = async (req, res, next) => {
 const getRfqs = async (req, res, next) => {
   try {
     const filters = {
-      q: req.query.q,
+      search: req.query.search,
       category_id: req.query.category_id,
       city_id: req.query.city_id,
       user_id: req.query.user_id,

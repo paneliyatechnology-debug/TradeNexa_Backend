@@ -29,7 +29,7 @@ const getSupplier = async (req, res, next) => {
 const getSuppliers = async (req, res, next) => {
   try {
     const filters = {
-      q: req.query.q,
+      search: req.query.search,
       page: req.query.page,
       limit: req.query.limit,
       is_verified: req.query.is_verified !== undefined ? req.query.is_verified === 'true' : undefined,

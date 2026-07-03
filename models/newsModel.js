@@ -15,14 +15,14 @@ const findNewsById = (id) =>
 
 /**
  * Paginated list of news articles with optional search and status filters.
- * @param {Object} [filters] - Query filters (q, is_active, page, limit)
+ * @param {Object} [filters] - Query filters (search, is_active, page, limit)
  * @returns {Promise<Object>}
  */
 const findNewsList = async (filters = {}) => {
   const q = db('news').whereNull('deleted_at');
 
-  if (filters.q) {
-    q.where('title', 'like', `%${filters.q}%`);
+  if (filters.search) {
+    q.where('title', 'like', `%${filters.search}%`);
   }
 
   if (filters.is_active !== undefined) {

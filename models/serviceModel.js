@@ -14,14 +14,14 @@ const findServiceById = (id) =>
 
 /**
  * List services with optional search and status filters, ordered by name.
- * @param {Object} [filters] - Query filters (q, is_active)
+ * @param {Object} [filters] - Query filters (search, is_active)
  * @returns {Promise<Object>}
  */
 const findServices = async (filters = {}) => {
   const q = db('services').whereNull('deleted_at');
 
-  if (filters.q) {
-    q.where('name', 'like', `%${filters.q}%`);
+  if (filters.search) {
+    q.where('name', 'like', `%${filters.search}%`);
   }
 
   if (filters.is_active !== undefined) {

@@ -68,7 +68,7 @@ const findSupplierById = async (id) => {
 
 /**
  * Paginated list of suppliers with optional search and status filters.
- * @param {Object} [filters] - Query filters (q, is_verified, is_active, page, limit)
+ * @param {Object} [filters] - Query filters (search, is_verified, is_active, page, limit)
  * @returns {Promise<Object>}
  */
 const findSuppliers = async (filters = {}) => {
@@ -85,8 +85,8 @@ const findSuppliers = async (filters = {}) => {
       'states.name as state',
     );
 
-  if (filters.q) {
-    q.where('company_details.company_name', 'like', `%${filters.q}%`);
+  if (filters.search) {
+    q.where('company_details.company_name', 'like', `%${filters.search}%`);
   }
   if (filters.is_verified !== undefined) {
     q.where('users.is_verified', filters.is_verified);

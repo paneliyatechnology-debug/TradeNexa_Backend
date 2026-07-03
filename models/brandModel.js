@@ -38,14 +38,14 @@ const findBrandById = async (id, options = {}) => {
 
 /**
  * Paginated list of brands with optional search and status filters.
- * @param {Object} [filters] - Query filters (q, is_popular, is_active, page, limit)
+ * @param {Object} [filters] - Query filters (search, is_popular, is_active, page, limit)
  * @returns {Promise<Object>}
  */
 const findBrands = async (filters = {}) => {
   const q = db('brands').whereNull('deleted_at');
 
-  if (filters.q) {
-    q.where('name', 'like', `%${filters.q}%`);
+  if (filters.search) {
+    q.where('name', 'like', `%${filters.search}%`);
   }
 
   if (filters.is_popular !== undefined) {

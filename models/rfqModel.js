@@ -27,7 +27,7 @@ const findRfqById = (id) =>
 
 /**
  * Paginated list of RFQs with optional filters.
- * @param {Object} [filters] - Query filters (q, category_id, city_id, user_id, is_active, page, limit)
+ * @param {Object} [filters] - Query filters (search, category_id, city_id, user_id, is_active, page, limit)
  * @returns {Promise<Object>}
  */
 const findRfqs = async (filters = {}) => {
@@ -43,8 +43,8 @@ const findRfqs = async (filters = {}) => {
       'rfqs.created_at'
     );
 
-  if (filters.q) {
-    q.where('rfqs.title', 'like', `%${filters.q}%`);
+  if (filters.search) {
+    q.where('rfqs.title', 'like', `%${filters.search}%`);
   }
 
   if (filters.category_id) {
