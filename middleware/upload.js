@@ -1,6 +1,8 @@
 /**
- * Pre-configured upload middleware for profile, category, brand, and product modules.
- * Uses the shared upload service — add new module handlers here.
+ * Pre-configured upload middleware for all modules that accept file uploads.
+ *
+ * Pattern: create routes use an inbox folder, then services move files to {resource}/{id}/.
+ * Validation guards (require*OnCreate, rejectEmptyFileFields) run after multer.
  */
 const { AppError } = require('../utils/response');
 const { createUploadMiddleware, createProductFileFilter } = require('../services/uploadService');
@@ -12,6 +14,9 @@ const {
   CATEGORY_UPLOAD_FIELDS,
   BRAND_UPLOAD_FIELDS,
   BANNER_UPLOAD_FIELDS,
+  OFFER_UPLOAD_FIELDS,
+  NEWS_UPLOAD_FIELDS,
+  SERVICE_UPLOAD_FIELDS,
   PRODUCT_UPLOAD_FIELDS,
   MAX_PRODUCT_GALLERY_MEDIA,
 } = require('../constants/uploadFields');
@@ -114,6 +119,75 @@ const handleBannerUpdateUpload = createUploadMiddleware({
 });
 
 // ==========================================
+// Offer uploads
+// ==========================================
+
+/**
+ * POST /offers.
+ * Files land in inbox first, then move to offers/{id}/ after record creation.
+ */
+const handleOfferCreateUpload = createUploadMiddleware({
+  fields: OFFER_UPLOAD_FIELDS,
+  getDestination: (req) => getAbsoluteUploadDir(...uploadPaths.offerInbox(req.user.id)),
+});
+
+/** PUT /offers/:id */
+const handleOfferUpdateUpload = createUploadMiddleware({
+  fields: OFFER_UPLOAD_FIELDS,
+  getDestination: (req) => {
+    const offerId = req.params.id;
+    if (!offerId) throw new AppError('Offer ID is required for banner upload', 400);
+    return getAbsoluteUploadDir(...uploadPaths.offer(offerId));
+  },
+});
+
+// ==========================================
+// News uploads
+// ==========================================
+
+/**
+ * POST /news.
+ * Files land in inbox first, then move to news/{id}/ after record creation.
+ */
+const handleNewsCreateUpload = createUploadMiddleware({
+  fields: NEWS_UPLOAD_FIELDS,
+  getDestination: (req) => getAbsoluteUploadDir(...uploadPaths.newsInbox(req.user.id)),
+});
+
+/** PUT /news/:id */
+const handleNewsUpdateUpload = createUploadMiddleware({
+  fields: NEWS_UPLOAD_FIELDS,
+  getDestination: (req) => {
+    const newsId = req.params.id;
+    if (!newsId) throw new AppError('News ID is required for thumbnail upload', 400);
+    return getAbsoluteUploadDir(...uploadPaths.news(newsId));
+  },
+});
+
+// ==========================================
+// Service uploads
+// ==========================================
+
+/**
+ * POST /services.
+ * Files land in inbox first, then move to services/{id}/ after record creation.
+ */
+const handleServiceCreateUpload = createUploadMiddleware({
+  fields: SERVICE_UPLOAD_FIELDS,
+  getDestination: (req) => getAbsoluteUploadDir(...uploadPaths.serviceInbox(req.user.id)),
+});
+
+/** PUT /services/:id */
+const handleServiceUpdateUpload = createUploadMiddleware({
+  fields: SERVICE_UPLOAD_FIELDS,
+  getDestination: (req) => {
+    const serviceId = req.params.id;
+    if (!serviceId) throw new AppError('Service ID is required for icon upload', 400);
+    return getAbsoluteUploadDir(...uploadPaths.service(serviceId));
+  },
+});
+
+// ==========================================
 // Product uploads
 // ==========================================
 
@@ -142,6 +216,10 @@ const handleProductUpdateUpload = createUploadMiddleware({
   maxFileSize: uploadConfig.maxVideoFileSize,
 });
 
+// ==========================================
+// Upload validation guards
+// ==========================================
+
 /**
  * Require icon file on category/subcategory create.
  * Must run after multer upload middleware.
@@ -161,6 +239,31 @@ const requireBannerImageOnCreate = (req, _res, next) => {
   next();
 };
 
+/** Require banner file on offer create. Must run after multer upload middleware. */
+const requireOfferBannerOnCreate = (req, _res, next) => {
+  if (!req.files?.banner?.[0]) {
+    return next(new AppError('Banner is required.', 400));
+  }
+  next();
+};
+
+/**
+ * When a file field key is present in the body but no file was uploaded, reject.
+ * Used on update routes for fields that are required on create.
+ */
+const rejectEmptyFileFields = (fields = []) => (req, _res, next) => {
+  for (const { name, label } of fields) {
+    if (!Object.prototype.hasOwnProperty.call(req.body, name)) continue;
+    const uploaded = req.files?.[name];
+    const hasFile = Array.isArray(uploaded) ? uploaded.length > 0 : !!uploaded;
+    if (!hasFile) {
+      return next(new AppError(`${label} is required.`, 400));
+    }
+  }
+  next();
+};
+
+/** Count gallery image + video files in the current multipart request. */
 const countUploadedGalleryMedia = (files = {}) =>
   (files.image?.length || 0) + (files.video?.length || 0);
 
@@ -221,10 +324,18 @@ module.exports = {
   handleBrandUpdateUpload,
   handleBannerCreateUpload,
   handleBannerUpdateUpload,
+  handleOfferCreateUpload,
+  handleOfferUpdateUpload,
+  handleNewsCreateUpload,
+  handleNewsUpdateUpload,
+  handleServiceCreateUpload,
+  handleServiceUpdateUpload,
   handleProductCreateUpload,
   handleProductUpdateUpload,
   requireIconUpload,
   requireBannerImageOnCreate,
+  requireOfferBannerOnCreate,
+  rejectEmptyFileFields,
   requireProductThumbnailOnCreate,
   validateProductGalleryMediaCount,
 };

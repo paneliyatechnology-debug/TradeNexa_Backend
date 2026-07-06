@@ -1,9 +1,17 @@
+/**
+ * Brand business logic — create/update with multipart logo upload.
+ *
+ * Logo files are never read from req.body; stripFields removes upload keys
+ * before persisting text fields.
+ */
 const brandModel = require('../models/brandModel');
 const { uploadPaths } = require('../constants/uploadPaths');
 const { BRAND_UPLOAD_FIELDS } = require('../constants/uploadFields');
 const { processUploadedFiles } = require('../services/uploadService');
+const { stripFields } = require('../utils/formBody');
 
 const BRAND_IMAGE_FIELDS = BRAND_UPLOAD_FIELDS.map((field) => field.name);
+const BRAND_UPLOAD_KEYS = BRAND_IMAGE_FIELDS;
 
 // ==========================================
 // Request parsing helpers
@@ -22,11 +30,14 @@ const parseBoolean = (value) => {
 };
 
 /** Normalize brand body from multipart form-data. */
-const parseBrandBody = (body = {}) => ({
-  ...body,
-  is_popular: parseBoolean(body.is_popular),
-  is_active: parseBoolean(body.is_active),
-});
+const parseBrandBody = (body = {}) => {
+  const clean = stripFields(body, BRAND_UPLOAD_KEYS);
+  return {
+    ...clean,
+    is_popular: parseBoolean(clean.is_popular),
+    is_active: parseBoolean(clean.is_active),
+  };
+};
 
 /** Format a DB row for API response (resolves logo URL). */
 const formatBrand = (row) => brandModel.formatRow(row);

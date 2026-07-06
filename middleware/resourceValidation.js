@@ -2,6 +2,10 @@
  * Resource validation rules for CRUD endpoints.
  *
  * express-validator schemas for route params, query strings, and request bodies.
+ *
+ * Shared helpers:
+ * - blockedUploadField / blockedOptionalUploadField — multipart file fields (no URL strings)
+ * - optionalRequired* — update-only: validate when sent, skip when omitted
  */
 const { body, param, query } = require('express-validator');
 
@@ -25,11 +29,79 @@ const paginationQuery = [
 // Shared field helpers
 // ==========================================
 
-/** Reject a body field when a file upload is expected instead. */
+/**
+ * Reject URL/string body values for file upload fields.
+ * Empty explicit values return a required error (field was sent but not as a file).
+ */
 const blockedUploadField = (field, label) =>
   body(field).custom((val) => {
-    if (val !== undefined && val !== null && val !== '') {
-      throw new Error(`${label} must be uploaded as a file`);
+    if (val === undefined) return true;
+    if (val === null || val === '') {
+      throw new Error(`${label} is required.`);
+    }
+    throw new Error(`${label} must be uploaded as a file`);
+  });
+
+/** Reject non-empty URL/string values for optional file fields; allow omitted or empty keys. */
+const blockedOptionalUploadField = (field, label) =>
+  body(field).custom((val) => {
+    if (val === undefined || val === null || val === '') return true;
+    throw new Error(`${label} must be uploaded as a file`);
+  });
+
+// ==========================================
+// Update-only validators (omitted = no change)
+// ==========================================
+
+/** On update: reject null/empty only when the field is explicitly sent. */
+const optionalRequiredText = (field, label, min = 2, max = 200) =>
+  body(field).custom((val) => {
+    if (val === undefined) return true;
+    if (val === null || (typeof val === 'string' && val.trim() === '')) {
+      throw new Error(`${label} is required.`);
+    }
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed.length < min || trimmed.length > max) {
+        throw new Error(`${label} must be ${min} to ${max} chars`);
+      }
+    }
+    return true;
+  });
+
+/** On update: reject null/empty integer when the field is explicitly sent. */
+const optionalRequiredInt = (field, label, { min = 1 } = {}) =>
+  body(field).custom((val) => {
+    if (val === undefined) return true;
+    if (val === null || val === '') throw new Error(`${label} is required.`);
+    const parsed = parseInt(val, 10);
+    if (Number.isNaN(parsed)) throw new Error(`${label} must be an integer`);
+    if (parsed < min) throw new Error(`${label} must be at least ${min}`);
+    return true;
+  });
+
+/** On update: reject null/empty number when the field is explicitly sent. */
+const optionalRequiredFloat = (field, label, { min = 0 } = {}) =>
+  body(field).custom((val) => {
+    if (val === undefined) return true;
+    if (val === null || val === '') {
+      throw new Error(`${label} is required.`);
+    }
+    const parsed = parseFloat(val);
+    if (Number.isNaN(parsed) || parsed < min) {
+      throw new Error(`${label} is required and must be a positive number`);
+    }
+    return true;
+  });
+
+/** On update: reject null/empty ISO date when the field is explicitly sent. */
+const optionalRequiredIsoDate = (field, label) =>
+  body(field).custom((val) => {
+    if (val === undefined) return true;
+    if (val === null || val === '') throw new Error(`${label} is required.`);
+    const date = new Date(val);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`${label} must be a valid ISO8601 timestamp`);
     }
     return true;
   });
@@ -51,15 +123,15 @@ const optionalBooleanField = (field) =>
 const categoryCreateRules = [
   body('name').trim().notEmpty().withMessage('Category name is required').isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
   blockedUploadField('icon', 'Icon'),
-  blockedUploadField('image', 'Image'),
+  blockedOptionalUploadField('image', 'Image'),
   body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
   optionalBooleanField('is_active'),
 ];
 
 const categoryUpdateRules = [
-  body('name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
+  optionalRequiredText('name', 'Category name', 2, 100),
   blockedUploadField('icon', 'Icon'),
-  blockedUploadField('image', 'Image'),
+  blockedOptionalUploadField('image', 'Image'),
   body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
   optionalBooleanField('is_active'),
 ];
@@ -67,15 +139,15 @@ const categoryUpdateRules = [
 const subcategoryCreateRules = [
   body('name').trim().notEmpty().withMessage('Subcategory name is required').isLength({ min: 2, max: 100 }),
   blockedUploadField('icon', 'Icon'),
-  blockedUploadField('image', 'Image'),
+  blockedOptionalUploadField('image', 'Image'),
   body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
   optionalBooleanField('is_active'),
 ];
 
 const subcategoryUpdateRules = [
-  body('name').optional().trim().isLength({ min: 2, max: 100 }),
+  optionalRequiredText('name', 'Subcategory name', 2, 100),
   blockedUploadField('icon', 'Icon'),
-  blockedUploadField('image', 'Image'),
+  blockedOptionalUploadField('image', 'Image'),
   body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
   optionalBooleanField('is_active'),
 ];
@@ -135,7 +207,7 @@ const bannerCreateRules = [
 ];
 
 const bannerUpdateRules = [
-  body('title').optional().trim().isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
+  optionalRequiredText('title', 'Banner title', 2, 200),
   blockedUploadField('image', 'Image'),
   body('redirect_type').optional({ values: 'falsy' }).trim().isIn(['category', 'product', 'offer', 'brand', 'url']).withMessage('Invalid redirect type'),
   body('redirect_id').optional({ values: 'falsy' }).isInt().withMessage('Redirect ID must be an integer'),
@@ -149,14 +221,14 @@ const bannerUpdateRules = [
 
 const brandCreateRules = [
   body('name').trim().notEmpty().withMessage('Brand name is required').isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
-  blockedUploadField('logo', 'Logo'),
+  blockedOptionalUploadField('logo', 'Logo'),
   optionalBooleanField('is_popular'),
   optionalBooleanField('is_active'),
 ];
 
 const brandUpdateRules = [
-  body('name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
-  blockedUploadField('logo', 'Logo'),
+  optionalRequiredText('name', 'Brand name', 2, 100),
+  blockedOptionalUploadField('logo', 'Logo'),
   optionalBooleanField('is_popular'),
   optionalBooleanField('is_active'),
 ];
@@ -191,8 +263,8 @@ const supplierNearbyRules = [
 const productCreateRules = [
   body('name').trim().notEmpty().withMessage('Product name is required').isLength({ min: 2, max: 200 }).withMessage('Product name must be 2 to 200 chars'),
   blockedUploadField('thumbnail', 'Thumbnail'),
-  blockedUploadField('image', 'Image'),
-  blockedUploadField('video', 'Video'),
+  blockedOptionalUploadField('image', 'Image'),
+  blockedOptionalUploadField('video', 'Video'),
   body('price').isFloat({ min: 0 }).withMessage('Price is required and must be a positive number'),
   body('currency').optional().trim().isLength({ max: 10 }).withMessage('Currency code too long'),
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
@@ -207,16 +279,16 @@ const productCreateRules = [
 ];
 
 const productUpdateRules = [
-  body('name').optional().trim().isLength({ min: 2, max: 200 }).withMessage('Product name must be 2 to 200 chars'),
+  optionalRequiredText('name', 'Product name', 2, 200),
   blockedUploadField('thumbnail', 'Thumbnail'),
-  blockedUploadField('image', 'Image'),
-  blockedUploadField('video', 'Video'),
-  body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a positive number'),
+  blockedOptionalUploadField('image', 'Image'),
+  blockedOptionalUploadField('video', 'Video'),
+  optionalRequiredFloat('price', 'Price', { min: 0 }),
   body('currency').optional().trim().isLength({ max: 10 }).withMessage('Currency code too long'),
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
   body('unit').optional().trim().isLength({ max: 50 }).withMessage('Unit string too long'),
-  body('supplier_id').optional().isInt().withMessage('Supplier ID must be an integer'),
-  body('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  optionalRequiredInt('supplier_id', 'Supplier ID', { min: 1 }),
+  optionalRequiredInt('subcategory_id', 'Subcategory ID', { min: 1 }),
   body('brand_id').optional({ values: 'falsy' }).isInt().withMessage('Brand ID must be an integer'),
   optionalBooleanField('is_trending'),
   optionalBooleanField('is_active'),
@@ -304,16 +376,18 @@ const productRelatedQuery = [
 
 const offerCreateRules = [
   body('title').trim().notEmpty().withMessage('Offer title is required').isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
-  body('banner').trim().notEmpty().withMessage('Offer banner is required').isLength({ max: 500 }).withMessage('Banner URL too long'),
+  blockedUploadField('banner', 'Banner'),
   body('discount').trim().notEmpty().withMessage('Offer discount details are required').isLength({ max: 100 }).withMessage('Discount detail too long'),
-  body('expiry_date').isISO8601().withMessage('Expiry date must be a valid ISO8601 timestamp')
+  body('expiry_date').isISO8601().withMessage('Expiry date must be a valid ISO8601 timestamp'),
+  optionalBooleanField('is_active'),
 ];
 
 const offerUpdateRules = [
-  body('title').optional().trim().isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
-  body('banner').optional().trim().isLength({ max: 500 }).withMessage('Banner URL too long'),
-  body('discount').optional().trim().isLength({ max: 100 }).withMessage('Discount detail too long'),
-  body('expiry_date').optional().isISO8601().withMessage('Expiry date must be a valid ISO8601 timestamp')
+  optionalRequiredText('title', 'Offer title', 2, 200),
+  blockedUploadField('banner', 'Banner'),
+  optionalRequiredText('discount', 'Offer discount details', 1, 100),
+  optionalRequiredIsoDate('expiry_date', 'Expiry date'),
+  optionalBooleanField('is_active'),
 ];
 
 // ==========================================
@@ -330,12 +404,12 @@ const rfqCreateRules = [
 ];
 
 const rfqUpdateRules = [
-  body('title').optional().trim().isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
-  body('category_id').optional().isInt().withMessage('Category ID must be an integer'),
-  body('city_id').optional().isInt().withMessage('City ID must be an integer'),
+  optionalRequiredText('title', 'RFQ title', 2, 200),
+  optionalRequiredInt('category_id', 'Category ID', { min: 1 }),
+  optionalRequiredInt('city_id', 'City ID', { min: 1 }),
   body('description').optional({ values: 'falsy' }).trim(),
   body('quantity').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
-  body('budget').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Budget must be positive')
+  body('budget').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Budget must be positive'),
 ];
 
 const rfqListQuery = [
@@ -350,14 +424,16 @@ const rfqListQuery = [
 
 const serviceCreateRules = [
   body('name').trim().notEmpty().withMessage('Service name is required').isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
-  body('icon').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Icon URL too long'),
-  body('description').optional({ values: 'falsy' }).trim()
+  blockedOptionalUploadField('icon', 'Icon'),
+  body('description').optional({ values: 'falsy' }).trim(),
+  optionalBooleanField('is_active'),
 ];
 
 const serviceUpdateRules = [
-  body('name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
-  body('icon').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Icon URL too long'),
-  body('description').optional({ values: 'falsy' }).trim()
+  optionalRequiredText('name', 'Service name', 2, 100),
+  blockedOptionalUploadField('icon', 'Icon'),
+  body('description').optional({ values: 'falsy' }).trim(),
+  optionalBooleanField('is_active'),
 ];
 
 // ==========================================
@@ -366,16 +442,18 @@ const serviceUpdateRules = [
 
 const newsCreateRules = [
   body('title').trim().notEmpty().withMessage('News title is required').isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
-  body('thumbnail').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Thumbnail URL too long'),
+  blockedOptionalUploadField('thumbnail', 'Thumbnail'),
   body('content').trim().notEmpty().withMessage('News content is required'),
-  body('published_at').optional({ values: 'falsy' }).isISO8601().withMessage('Published date must be a valid ISO8601 timestamp')
+  body('published_at').optional({ values: 'falsy' }).isISO8601().withMessage('Published date must be a valid ISO8601 timestamp'),
+  optionalBooleanField('is_active'),
 ];
 
 const newsUpdateRules = [
-  body('title').optional().trim().isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
-  body('thumbnail').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Thumbnail URL too long'),
-  body('content').optional().trim(),
-  body('published_at').optional({ values: 'falsy' }).isISO8601().withMessage('Published date must be a valid ISO8601 timestamp')
+  optionalRequiredText('title', 'News title', 2, 200),
+  blockedOptionalUploadField('thumbnail', 'Thumbnail'),
+  optionalRequiredText('content', 'News content', 1, 50000),
+  body('published_at').optional({ values: 'falsy' }).isISO8601().withMessage('Published date must be a valid ISO8601 timestamp'),
+  optionalBooleanField('is_active'),
 ];
 
 // ==========================================
@@ -395,9 +473,9 @@ const businessTypeCreateRules = [
 ];
 
 const businessTypeUpdateRules = [
-  body('name').optional().trim().isLength({ min: 2, max: 100 }),
+  optionalRequiredText('name', 'Name', 2, 100),
   body('code').optional({ values: 'falsy' }).trim().isLength({ max: 50 }),
-  body('role_id').optional().isInt({ min: 1 }),
+  optionalRequiredInt('role_id', 'role_id', { min: 1 }),
   body('is_active').optional().isBoolean(),
 ];
 

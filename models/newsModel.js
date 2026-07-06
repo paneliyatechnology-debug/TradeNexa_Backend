@@ -1,23 +1,34 @@
+/**
+ * News article data access — CRUD and thumbnail media path updates.
+ */
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
+const { resolveMediaUrl } = require('../utils/media');
+
+// ==========================================
+// Formatting helpers
+// ==========================================
+
+/** Format a news row for API responses (resolves thumbnail URL). */
+const formatRow = (row) => {
+  if (!row) return null;
+  return {
+    ...row,
+    thumbnail: row.thumbnail ? resolveMediaUrl(row.thumbnail) : null,
+    is_active: row.is_active !== undefined ? !!row.is_active : undefined,
+  };
+};
 
 // ==========================================
 // List & read queries
 // ==========================================
 
-/**
- * Find a news article by ID (non-deleted).
- * @param {number} id - News ID
- * @returns {Promise<Object|undefined>}
- */
-const findNewsById = (id) =>
-  db('news').where({ id }).whereNull('deleted_at').first();
+const findNewsById = async (id, options = {}) => {
+  const row = await db('news').where({ id }).whereNull('deleted_at').first();
+  if (!row || options.raw) return row;
+  return formatRow(row);
+};
 
-/**
- * Paginated list of news articles with optional search and status filters.
- * @param {Object} [filters] - Query filters (search, is_active, page, limit)
- * @returns {Promise<Object>}
- */
 const findNewsList = async (filters = {}) => {
   const q = db('news').whereNull('deleted_at');
 
@@ -33,19 +44,15 @@ const findNewsList = async (filters = {}) => {
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;
-  return paginate(q, page, limit);
+  const paginated = await paginate(q, page, limit);
+  paginated.results = paginated.results.map(formatRow);
+  return paginated;
 };
 
 // ==========================================
-// Create & update
+// Write operations
 // ==========================================
 
-/**
- * Insert a new news article.
- * @param {Object} data - News creation payload
- * @param {number|null} [userId] - Acting user ID for audit fields
- * @returns {Promise<Object>}
- */
 const createNews = async (data, userId = null) => {
   const payload = {
     title: data.title,
@@ -57,22 +64,17 @@ const createNews = async (data, userId = null) => {
   };
 
   const [id] = await db('news').insert(payload);
-  return findNewsById(id);
+  return db('news').where({ id }).whereNull('deleted_at').first();
 };
 
-/**
- * Update an existing news article by ID.
- * @param {number} id - News ID
- * @param {Object} data - Fields to update
- * @param {number|null} [userId] - Acting user ID for audit fields
- * @returns {Promise<Object>}
- */
 const updateNews = async (id, data, userId = null) => {
   const payload = {};
   if (data.title !== undefined) payload.title = data.title;
   if (data.thumbnail !== undefined) payload.thumbnail = data.thumbnail;
   if (data.content !== undefined) payload.content = data.content;
-  if (data.published_at !== undefined) payload.published_at = data.published_at ? new Date(data.published_at) : null;
+  if (data.published_at !== undefined) {
+    payload.published_at = data.published_at ? new Date(data.published_at) : null;
+  }
   if (data.is_active !== undefined) payload.is_active = data.is_active;
 
   if (Object.keys(payload).length === 0) return findNewsById(id);
@@ -84,16 +86,23 @@ const updateNews = async (id, data, userId = null) => {
   return findNewsById(id);
 };
 
-// ==========================================
-// Delete (soft)
-// ==========================================
+/** Apply thumbnail path updates after file upload (create inbox move or update direct). */
+const applyNewsMediaUpdates = async (id, updates, userId = null) => {
+  if (!updates || !Object.keys(updates).length) {
+    return db('news').where({ id }).whereNull('deleted_at').first();
+  }
 
-/**
- * Soft-delete a news article by ID.
- * @param {number} id - News ID
- * @param {number|null} [userId] - Acting user ID for audit fields
- * @returns {Promise<void>}
- */
+  await db('news')
+    .where({ id })
+    .update({
+      ...updates,
+      updated_by: userId,
+      updated_at: db.fn.now(),
+    });
+
+  return db('news').where({ id }).whereNull('deleted_at').first();
+};
+
 const deleteNews = async (id, userId = null) => {
   await db('news')
     .where({ id })
@@ -104,9 +113,11 @@ const deleteNews = async (id, userId = null) => {
 };
 
 module.exports = {
+  formatRow,
   findNewsById,
   findNewsList,
   createNews,
   updateNews,
+  applyNewsMediaUpdates,
   deleteNews,
 };

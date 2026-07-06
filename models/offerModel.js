@@ -1,23 +1,34 @@
+/**
+ * Offer data access — CRUD and banner media path updates.
+ */
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
+const { resolveMediaUrl } = require('../utils/media');
+
+// ==========================================
+// Formatting helpers
+// ==========================================
+
+/** Format an offer row for API responses (resolves banner URL). */
+const formatRow = (row) => {
+  if (!row) return null;
+  return {
+    ...row,
+    banner: resolveMediaUrl(row.banner),
+    is_active: row.is_active !== undefined ? !!row.is_active : undefined,
+  };
+};
 
 // ==========================================
 // List & read queries
 // ==========================================
 
-/**
- * Find an offer by ID (non-deleted).
- * @param {number} id - Offer ID
- * @returns {Promise<Object|undefined>}
- */
-const findOfferById = (id) =>
-  db('offers').where({ id }).whereNull('deleted_at').first();
+const findOfferById = async (id, options = {}) => {
+  const row = await db('offers').where({ id }).whereNull('deleted_at').first();
+  if (!row || options.raw) return row;
+  return formatRow(row);
+};
 
-/**
- * Paginated list of offers; excludes expired offers unless include_expired is set.
- * @param {Object} [filters] - Query filters (is_active, include_expired, page, limit)
- * @returns {Promise<Object>}
- */
 const findOffers = async (filters = {}) => {
   const q = db('offers').whereNull('deleted_at');
 
@@ -25,7 +36,6 @@ const findOffers = async (filters = {}) => {
     q.where('is_active', filters.is_active);
   }
 
-  // Offer listing typically requires non-expired offers
   if (filters.include_expired !== 'true') {
     q.where('expiry_date', '>', db.fn.now());
   }
@@ -34,23 +44,19 @@ const findOffers = async (filters = {}) => {
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;
-  return paginate(q, page, limit);
+  const paginated = await paginate(q, page, limit);
+  paginated.results = paginated.results.map(formatRow);
+  return paginated;
 };
 
 // ==========================================
-// Create & update
+// Write operations
 // ==========================================
 
-/**
- * Insert a new offer.
- * @param {Object} data - Offer creation payload
- * @param {number|null} [userId] - Acting user ID for audit fields
- * @returns {Promise<Object>}
- */
 const createOffer = async (data, userId = null) => {
   const payload = {
     title: data.title,
-    banner: data.banner,
+    banner: data.banner || '',
     discount: data.discount,
     expiry_date: new Date(data.expiry_date),
     is_active: data.is_active !== undefined ? data.is_active : true,
@@ -58,16 +64,9 @@ const createOffer = async (data, userId = null) => {
   };
 
   const [id] = await db('offers').insert(payload);
-  return findOfferById(id);
+  return db('offers').where({ id }).whereNull('deleted_at').first();
 };
 
-/**
- * Update an existing offer by ID.
- * @param {number} id - Offer ID
- * @param {Object} data - Fields to update
- * @param {number|null} [userId] - Acting user ID for audit fields
- * @returns {Promise<Object>}
- */
 const updateOffer = async (id, data, userId = null) => {
   const payload = {};
   if (data.title !== undefined) payload.title = data.title;
@@ -85,16 +84,23 @@ const updateOffer = async (id, data, userId = null) => {
   return findOfferById(id);
 };
 
-// ==========================================
-// Delete (soft)
-// ==========================================
+/** Apply banner path updates after file upload (create inbox move or update direct). */
+const applyOfferMediaUpdates = async (id, updates, userId = null) => {
+  if (!updates || !Object.keys(updates).length) {
+    return db('offers').where({ id }).whereNull('deleted_at').first();
+  }
 
-/**
- * Soft-delete an offer by ID.
- * @param {number} id - Offer ID
- * @param {number|null} [userId] - Acting user ID for audit fields
- * @returns {Promise<void>}
- */
+  await db('offers')
+    .where({ id })
+    .update({
+      ...updates,
+      updated_by: userId,
+      updated_at: db.fn.now(),
+    });
+
+  return db('offers').where({ id }).whereNull('deleted_at').first();
+};
+
 const deleteOffer = async (id, userId = null) => {
   await db('offers')
     .where({ id })
@@ -105,9 +111,11 @@ const deleteOffer = async (id, userId = null) => {
 };
 
 module.exports = {
+  formatRow,
   findOfferById,
   findOffers,
   createOffer,
   updateOffer,
+  applyOfferMediaUpdates,
   deleteOffer,
 };

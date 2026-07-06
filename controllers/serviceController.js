@@ -1,4 +1,5 @@
 const serviceModel = require('../models/serviceModel');
+const serviceService = require('../services/serviceService');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
@@ -12,7 +13,7 @@ const { HTTP_STATUS } = require('../constants');
  */
 const createService = async (req, res, next) => {
   try {
-    const service = await serviceModel.createService(req.body, req.user?.id);
+    const service = await serviceService.createService(req.body, req.files, req.user?.id);
     return success(res, 'Service created successfully', service, HTTP_STATUS.CREATED);
   } catch (err) {
     next(err);
@@ -71,7 +72,7 @@ const updateService = async (req, res, next) => {
     if (!existing) {
       return next(new AppError('Service not found', HTTP_STATUS.NOT_FOUND));
     }
-    const service = await serviceModel.updateService(req.params.id, req.body, req.user?.id);
+    const service = await serviceService.updateService(req.params.id, req.body, req.files, req.user?.id);
     return success(res, 'Service updated successfully', service);
   } catch (err) {
     next(err);

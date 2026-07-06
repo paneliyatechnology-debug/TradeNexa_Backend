@@ -1,10 +1,18 @@
+/**
+ * Product business logic — create/update with multipart thumbnail and gallery uploads.
+ *
+ * Media files are never read from req.body; stripFields removes upload keys
+ * before persisting text fields.
+ */
 const productModel = require('../models/productModel');
 const { uploadPaths } = require('../constants/uploadPaths');
 const { processUploadedFiles, processMultipleUploadedFiles } = require('../services/uploadService');
+const { stripFields } = require('../utils/formBody');
 
 const THUMBNAIL_FIELD = 'thumbnail';
 const IMAGE_FIELD = 'image';
 const VIDEO_FIELD = 'video';
+const PRODUCT_UPLOAD_KEYS = [THUMBNAIL_FIELD, IMAGE_FIELD, VIDEO_FIELD];
 
 // ==========================================
 // Request parsing helpers
@@ -30,20 +38,23 @@ const parseNumber = (value, parser = Number) => {
 };
 
 /** Normalize product body from multipart form-data. */
-const parseProductBody = (body = {}) => ({
-  ...body,
-  price: parseNumber(body.price, parseFloat),
-  moq: parseNumber(body.moq, (v) => parseInt(v, 10)),
-  rating: parseNumber(body.rating, parseFloat),
-  supplier_id: parseNumber(body.supplier_id, (v) => parseInt(v, 10)),
-  subcategory_id: parseNumber(body.subcategory_id, (v) => parseInt(v, 10)),
-  brand_id:
-    body.brand_id === '' || body.brand_id === null
-      ? null
-      : parseNumber(body.brand_id, (v) => parseInt(v, 10)),
-  is_trending: parseBoolean(body.is_trending),
-  is_active: parseBoolean(body.is_active),
-});
+const parseProductBody = (body = {}) => {
+  const clean = stripFields(body, PRODUCT_UPLOAD_KEYS);
+  return {
+    ...clean,
+    price: parseNumber(clean.price, parseFloat),
+    moq: parseNumber(clean.moq, (v) => parseInt(v, 10)),
+    rating: parseNumber(clean.rating, parseFloat),
+    supplier_id: parseNumber(clean.supplier_id, (v) => parseInt(v, 10)),
+    subcategory_id: parseNumber(clean.subcategory_id, (v) => parseInt(v, 10)),
+    brand_id:
+      clean.brand_id === '' || clean.brand_id === null
+        ? null
+        : parseNumber(clean.brand_id, (v) => parseInt(v, 10)),
+    is_trending: parseBoolean(clean.is_trending),
+    is_active: parseBoolean(clean.is_active),
+  };
+};
 
 // ==========================================
 // Upload helpers

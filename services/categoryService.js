@@ -2,8 +2,10 @@ const categoryModel = require('../models/categoryModel');
 const { uploadPaths } = require('../constants/uploadPaths');
 const { CATEGORY_UPLOAD_FIELDS } = require('../constants/uploadFields');
 const { processUploadedFiles } = require('../services/uploadService');
+const { stripFields } = require('../utils/formBody');
 
 const CATEGORY_IMAGE_FIELDS = CATEGORY_UPLOAD_FIELDS.map((field) => field.name);
+const CATEGORY_UPLOAD_KEYS = CATEGORY_IMAGE_FIELDS;
 
 // ==========================================
 // Request parsing helpers
@@ -22,10 +24,13 @@ const parseBoolean = (value) => {
 };
 
 /** Normalize category/subcategory body from multipart form-data. */
-const parseCategoryBody = (body = {}) => ({
-  ...body,
-  is_active: parseBoolean(body.is_active),
-});
+const parseCategoryBody = (body = {}) => {
+  const clean = stripFields(body, CATEGORY_UPLOAD_KEYS);
+  return {
+    ...clean,
+    is_active: parseBoolean(clean.is_active),
+  };
+};
 
 /** Format a main category DB row for API response (resolves icon/image URLs). */
 const formatCategory = (row) => categoryModel.formatRow(row);

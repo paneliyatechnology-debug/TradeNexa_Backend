@@ -1,4 +1,5 @@
 const newsModel = require('../models/newsModel');
+const newsService = require('../services/newsService');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
@@ -12,7 +13,7 @@ const { HTTP_STATUS } = require('../constants');
  */
 const createNews = async (req, res, next) => {
   try {
-    const news = await newsModel.createNews(req.body, req.user?.id);
+    const news = await newsService.createNews(req.body, req.files, req.user?.id);
     return success(res, 'News article created successfully', news, HTTP_STATUS.CREATED);
   } catch (err) {
     next(err);
@@ -76,7 +77,7 @@ const updateNews = async (req, res, next) => {
     if (!existing) {
       return next(new AppError('News article not found', HTTP_STATUS.NOT_FOUND));
     }
-    const news = await newsModel.updateNews(req.params.id, req.body, req.user?.id);
+    const news = await newsService.updateNews(req.params.id, req.body, req.files, req.user?.id);
     return success(res, 'News article updated successfully', news);
   } catch (err) {
     next(err);

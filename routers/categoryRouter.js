@@ -12,6 +12,7 @@ const {
   handleCategoryUpdateUpload,
   handleSubcategoryUpdateUpload,
   requireIconUpload,
+  rejectEmptyFileFields,
 } = require('../middleware/upload');
 const {
   idParam,
@@ -68,6 +69,7 @@ router.put(
   authorize('admin'),
   idParam,
   handleCategoryUpdateUpload,
+  rejectEmptyFileFields([{ name: 'icon', label: 'Icon' }]),
   categoryUpdateRules,
   validate,
   categoryController.updateCategory,
@@ -105,6 +107,7 @@ router.put(
   categoryIdParam,
   idParam,
   handleSubcategoryUpdateUpload,
+  rejectEmptyFileFields([{ name: 'icon', label: 'Icon' }]),
   subcategoryUpdateRules,
   validate,
   categoryController.updateSubcategory,

@@ -12,6 +12,7 @@ const {
   handleProductUpdateUpload,
   requireProductThumbnailOnCreate,
   validateProductGalleryMediaCount,
+  rejectEmptyFileFields,
 } = require('../middleware/upload');
 const {
   idParam,
@@ -57,6 +58,7 @@ router.put(
   idParam,
   handleProductUpdateUpload,
   validateProductGalleryMediaCount('update'),
+  rejectEmptyFileFields([{ name: 'thumbnail', label: 'Thumbnail' }]),
   productUpdateRules,
   validate,
   productController.updateProduct,

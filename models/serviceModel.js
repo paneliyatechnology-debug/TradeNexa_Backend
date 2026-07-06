@@ -1,22 +1,33 @@
+/**
+ * Marketplace service listing data access — CRUD and icon media path updates.
+ */
 const db = require('../database/knex');
+const { resolveMediaUrl } = require('../utils/media');
+
+// ==========================================
+// Formatting helpers
+// ==========================================
+
+/** Format a service row for API responses (resolves icon URL). */
+const formatRow = (row) => {
+  if (!row) return null;
+  return {
+    ...row,
+    icon: row.icon ? resolveMediaUrl(row.icon) : null,
+    is_active: row.is_active !== undefined ? !!row.is_active : undefined,
+  };
+};
 
 // ==========================================
 // List & read queries
 // ==========================================
 
-/**
- * Find a service by ID (non-deleted).
- * @param {number} id - Service ID
- * @returns {Promise<Object|undefined>}
- */
-const findServiceById = (id) =>
-  db('services').where({ id }).whereNull('deleted_at').first();
+const findServiceById = async (id, options = {}) => {
+  const row = await db('services').where({ id }).whereNull('deleted_at').first();
+  if (!row || options.raw) return row;
+  return formatRow(row);
+};
 
-/**
- * List services with optional search and status filters, ordered by name.
- * @param {Object} [filters] - Query filters (search, is_active)
- * @returns {Promise<Object>}
- */
 const findServices = async (filters = {}) => {
   const q = db('services').whereNull('deleted_at');
 
@@ -30,19 +41,14 @@ const findServices = async (filters = {}) => {
 
   q.orderBy('services.id', 'desc');
 
-  return q;
+  const rows = await q;
+  return rows.map(formatRow);
 };
 
 // ==========================================
-// Create & update
+// Write operations
 // ==========================================
 
-/**
- * Insert a new service.
- * @param {Object} data - Service creation payload
- * @param {number|null} [userId] - Acting user ID for audit fields
- * @returns {Promise<Object>}
- */
 const createService = async (data, userId = null) => {
   const payload = {
     name: data.name,
@@ -53,16 +59,9 @@ const createService = async (data, userId = null) => {
   };
 
   const [id] = await db('services').insert(payload);
-  return findServiceById(id);
+  return db('services').where({ id }).whereNull('deleted_at').first();
 };
 
-/**
- * Update an existing service by ID.
- * @param {number} id - Service ID
- * @param {Object} data - Fields to update
- * @param {number|null} [userId] - Acting user ID for audit fields
- * @returns {Promise<Object>}
- */
 const updateService = async (id, data, userId = null) => {
   const payload = {};
   if (data.name !== undefined) payload.name = data.name;
@@ -79,16 +78,23 @@ const updateService = async (id, data, userId = null) => {
   return findServiceById(id);
 };
 
-// ==========================================
-// Delete (soft)
-// ==========================================
+/** Apply icon path updates after file upload (create inbox move or update direct). */
+const applyServiceMediaUpdates = async (id, updates, userId = null) => {
+  if (!updates || !Object.keys(updates).length) {
+    return db('services').where({ id }).whereNull('deleted_at').first();
+  }
 
-/**
- * Soft-delete a service by ID.
- * @param {number} id - Service ID
- * @param {number|null} [userId] - Acting user ID for audit fields
- * @returns {Promise<void>}
- */
+  await db('services')
+    .where({ id })
+    .update({
+      ...updates,
+      updated_by: userId,
+      updated_at: db.fn.now(),
+    });
+
+  return db('services').where({ id }).whereNull('deleted_at').first();
+};
+
 const deleteService = async (id, userId = null) => {
   await db('services')
     .where({ id })
@@ -99,9 +105,11 @@ const deleteService = async (id, userId = null) => {
 };
 
 module.exports = {
+  formatRow,
   findServiceById,
   findServices,
   createService,
   updateService,
+  applyServiceMediaUpdates,
   deleteService,
 };

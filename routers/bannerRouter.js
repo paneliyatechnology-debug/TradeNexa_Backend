@@ -11,6 +11,7 @@ const {
   handleBannerCreateUpload,
   handleBannerUpdateUpload,
   requireBannerImageOnCreate,
+  rejectEmptyFileFields,
 } = require('../middleware/upload');
 const { idParam, bannerCreateRules, bannerUpdateRules } = require('../middleware/resourceValidation');
 
@@ -44,6 +45,7 @@ router.put(
   authorize('admin'),
   idParam,
   handleBannerUpdateUpload,
+  rejectEmptyFileFields([{ name: 'image', label: 'Image' }]),
   bannerUpdateRules,
   validate,
   bannerController.updateBanner,

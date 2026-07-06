@@ -34,6 +34,24 @@ const uploadPaths = {
 
   /** Temporary inbox before banner ID exists: uploads/banners/_inbox/{userId}/ */
   bannerInbox: (userId) => ['banners', '_inbox', String(userId)],
+
+  /** Offer banners: uploads/offers/{offerId}/ */
+  offer: (offerId) => ['offers', String(offerId)],
+
+  /** Temporary inbox before offer ID exists: uploads/offers/_inbox/{userId}/ */
+  offerInbox: (userId) => ['offers', '_inbox', String(userId)],
+
+  /** News thumbnails: uploads/news/{newsId}/ */
+  news: (newsId) => ['news', String(newsId)],
+
+  /** Temporary inbox before news ID exists: uploads/news/_inbox/{userId}/ */
+  newsInbox: (userId) => ['news', '_inbox', String(userId)],
+
+  /** Service icons: uploads/services/{serviceId}/ */
+  service: (serviceId) => ['services', String(serviceId)],
+
+  /** Temporary inbox before service ID exists: uploads/services/_inbox/{userId}/ */
+  serviceInbox: (userId) => ['services', '_inbox', String(userId)],
 };
 
 // ==========================================
