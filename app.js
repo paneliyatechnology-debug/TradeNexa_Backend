@@ -29,8 +29,39 @@ const app = express();
 // Global middleware
 // ==========================================
 
-app.use(helmet());
-app.use(cors({ origin: config.corsOrigin, credentials: true }));
+const corsOptions = {
+  origin(origin, callback) {
+    const { corsOrigins } = config;
+
+    // Allow non-browser clients (Postman, mobile apps, server-to-server).
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (corsOrigins === '*') {
+      return callback(null, true);
+    }
+
+    if (Array.isArray(corsOrigins) && corsOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }),
+);
 app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json());

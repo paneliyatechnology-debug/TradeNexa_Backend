@@ -28,5 +28,22 @@ module.exports = {
     apiKey: process.env.FIREBASE_API_KEY,
   },
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  /** Parsed allowed CORS origins — comma-separated in CORS_ORIGIN, or * for all. */
+  corsOrigins: (() => {
+    const raw = (process.env.CORS_ORIGIN || '').trim();
+    if (raw === '*') return '*';
+    if (raw) {
+      return raw.split(',').map((origin) => origin.trim()).filter(Boolean);
+    }
+    if ((process.env.NODE_ENV || 'development') !== 'production') {
+      return [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173',
+      ];
+    }
+    return ['http://localhost:3000'];
+  })(),
   bcryptSaltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS, 10) || 12,
 };
