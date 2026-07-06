@@ -26,14 +26,21 @@ const BRAND_UPLOAD_FIELDS = [{ name: 'logo', maxCount: 1 }];
 /** POST/PUT /banners */
 const BANNER_UPLOAD_FIELDS = [{ name: 'image', maxCount: 1 }];
 
-const PRODUCT_UPLOAD_FIELDS = [
-  { name: 'thumbnail', maxCount: 1 },
-  { name: 'image', maxCount: 10 },
-  { name: 'video', maxCount: 10 },
-];
-
 /** Max combined gallery images + videos per product (thumbnail excluded). */
 const MAX_PRODUCT_GALLERY_MEDIA = 10;
+
+/**
+ * Multer per-field max for image/video.
+ * Set above the business limit so validateProductGalleryMediaCount runs first
+ * and returns the proper validation message (not a Multer "Unexpected field" error).
+ */
+const PRODUCT_GALLERY_MULTER_MAX_PER_FIELD = MAX_PRODUCT_GALLERY_MEDIA * 2;
+
+const PRODUCT_UPLOAD_FIELDS = [
+  { name: 'thumbnail', maxCount: 1 },
+  { name: 'image', maxCount: PRODUCT_GALLERY_MULTER_MAX_PER_FIELD },
+  { name: 'video', maxCount: PRODUCT_GALLERY_MULTER_MAX_PER_FIELD },
+];
 
 const PRODUCT_IMAGE_FIELD_NAMES = ['thumbnail', 'image'];
 const PRODUCT_VIDEO_FIELD_NAMES = ['video'];
