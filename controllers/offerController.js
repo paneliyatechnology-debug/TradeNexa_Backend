@@ -45,6 +45,7 @@ const getOffers = async (req, res, next) => {
         banner: o.banner,
         discount: o.discount,
         expiry_date: o.expiry_date,
+        is_active: o.is_active,
       })),
     };
 
