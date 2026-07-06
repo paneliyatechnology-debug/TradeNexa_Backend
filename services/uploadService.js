@@ -28,6 +28,12 @@ const formatMulterError = (err) => {
     if (err.code === 'LIMIT_UNEXPECTED_FILE') {
       return new AppError(`Unexpected file field: ${err.field}`, 400);
     }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return new AppError(
+        `Too many files uploaded for field "${err.field}". Check per-field and combined image + video limits.`,
+        400,
+      );
+    }
     return new AppError(err.message, 400);
   }
   return err;
