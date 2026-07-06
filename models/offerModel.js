@@ -14,7 +14,8 @@ const formatRow = (row) => {
   if (!row) return null;
   return {
     ...row,
-    banner: resolveMediaUrl(row.banner),
+    banner: row.banner ? resolveMediaUrl(row.banner) : null,
+    discount: row.discount !== undefined && row.discount !== null ? parseFloat(row.discount) : undefined,
     is_active: row.is_active !== undefined ? !!row.is_active : undefined,
   };
 };

@@ -376,16 +376,16 @@ const productRelatedQuery = [
 
 const offerCreateRules = [
   body('title').trim().notEmpty().withMessage('Offer title is required').isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
-  blockedUploadField('banner', 'Banner'),
-  body('discount').trim().notEmpty().withMessage('Offer discount details are required').isLength({ max: 100 }).withMessage('Discount detail too long'),
-  body('expiry_date').isISO8601().withMessage('Expiry date must be a valid ISO8601 timestamp'),
+  blockedOptionalUploadField('banner', 'Banner'),
+  body('discount').notEmpty().withMessage('Discount is required').isFloat({ min: 0 }).withMessage('Discount must be a positive number'),
+  body('expiry_date').notEmpty().withMessage('Expiry date is required').isISO8601().withMessage('Expiry date must be a valid ISO8601 timestamp'),
   optionalBooleanField('is_active'),
 ];
 
 const offerUpdateRules = [
   optionalRequiredText('title', 'Offer title', 2, 200),
-  blockedUploadField('banner', 'Banner'),
-  optionalRequiredText('discount', 'Offer discount details', 1, 100),
+  blockedOptionalUploadField('banner', 'Banner'),
+  optionalRequiredFloat('discount', 'Discount', { min: 0 }),
   optionalRequiredIsoDate('expiry_date', 'Expiry date'),
   optionalBooleanField('is_active'),
 ];

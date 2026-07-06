@@ -2,7 +2,7 @@
  * Offer routes.
  *
  * Public read endpoints with pagination and admin-only write operations.
- * Create/update use multipart form-data for the banner file field.
+ * Create/update use multipart form-data; banner is an optional single file.
  */
 const express = require('express');
 const offerController = require('../controllers/offerController');
@@ -10,8 +10,6 @@ const { authenticate, authorize, validate } = require('../middleware/auth');
 const {
   handleOfferCreateUpload,
   handleOfferUpdateUpload,
-  requireOfferBannerOnCreate,
-  rejectEmptyFileFields,
 } = require('../middleware/upload');
 const { idParam, offerCreateRules, offerUpdateRules, paginationQuery } = require('../middleware/resourceValidation');
 
@@ -25,7 +23,6 @@ router.post(
   authenticate,
   authorize('admin'),
   handleOfferCreateUpload,
-  requireOfferBannerOnCreate,
   offerCreateRules,
   validate,
   offerController.createOffer,
@@ -37,7 +34,6 @@ router.put(
   authorize('admin'),
   idParam,
   handleOfferUpdateUpload,
-  rejectEmptyFileFields([{ name: 'banner', label: 'Banner' }]),
   offerUpdateRules,
   validate,
   offerController.updateOffer,

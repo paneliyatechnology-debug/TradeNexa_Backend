@@ -26,7 +26,7 @@ const BRAND_UPLOAD_FIELDS = [{ name: 'logo', maxCount: 1 }];
 /** POST/PUT /banners */
 const BANNER_UPLOAD_FIELDS = [{ name: 'image', maxCount: 1 }];
 
-/** POST/PUT /offers — DB column is `banner` */
+/** POST/PUT /offers — optional single banner file (DB column is `banner`) */
 const OFFER_UPLOAD_FIELDS = [{ name: 'banner', maxCount: 1 }];
 
 /** POST/PUT /news */

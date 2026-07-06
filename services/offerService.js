@@ -8,7 +8,6 @@ const offerModel = require('../models/offerModel');
 const { uploadPaths } = require('../constants/uploadPaths');
 const { OFFER_UPLOAD_FIELDS } = require('../constants/uploadFields');
 const { processUploadedFiles } = require('../services/uploadService');
-const { AppError } = require('../utils/response');
 const { stripFields } = require('../utils/formBody');
 
 const OFFER_FILE_FIELDS = OFFER_UPLOAD_FIELDS.map((field) => field.name);
@@ -29,11 +28,19 @@ const parseBoolean = (value) => {
   return value;
 };
 
+/** Parse numeric multipart fields sent as strings. */
+const parseNumber = (value, parser = Number) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = parser(value);
+  return Number.isNaN(parsed) ? value : parsed;
+};
+
 /** Normalize offer body from multipart form-data. */
 const parseOfferBody = (body = {}) => {
   const clean = stripFields(body, OFFER_FILE_FIELDS);
   return {
     ...clean,
+    discount: parseNumber(clean.discount, parseFloat),
     is_active: parseBoolean(clean.is_active),
   };
 };
@@ -75,20 +82,18 @@ const applyUpdateBanner = async (offerId, files = {}, existing = {}) =>
 // ==========================================
 
 /**
- * Create an offer. Banner file is required (validated in middleware + here).
+ * Create an offer with optional banner upload (single file).
  */
 const createOffer = async (data, files = {}, userId = null) => {
   const payload = parseOfferBody(data);
   const offer = await offerModel.createOffer(payload, userId);
   const withBanner = await applyCreateBanner(offer.id, files);
-  if (!withBanner?.banner) {
-    throw new AppError('Banner is required.', 400);
-  }
-  return formatOffer(withBanner);
+  const row = withBanner || (await offerModel.findOfferById(offer.id));
+  return formatOffer(row);
 };
 
 /**
- * Update an offer. Text fields and banner upload are optional unless explicitly sent empty.
+ * Update an offer. Text fields and banner upload are optional.
  */
 const updateOffer = async (id, data, files = {}, userId = null) => {
   const payload = parseOfferBody(data);
