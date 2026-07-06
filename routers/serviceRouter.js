@@ -8,11 +8,11 @@ const express = require('express');
 const serviceController = require('../controllers/serviceController');
 const { authenticate, authorize, validate } = require('../middleware/auth');
 const { handleServiceCreateUpload, handleServiceUpdateUpload } = require('../middleware/upload');
-const { idParam, serviceCreateRules, serviceUpdateRules } = require('../middleware/resourceValidation');
+const { idParam, serviceCreateRules, serviceUpdateRules, serviceListQuery } = require('../middleware/resourceValidation');
 
 const router = express.Router();
 
-router.get('/', serviceController.getServices);
+router.get('/', serviceListQuery, validate, serviceController.getServices);
 router.get('/:id', idParam, validate, serviceController.getService);
 
 router.post(

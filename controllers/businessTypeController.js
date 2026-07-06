@@ -53,13 +53,18 @@ const getBusinessType = async (req, res, next) => {
  */
 const getBusinessTypes = async (req, res, next) => {
   try {
-    const roleId = parseInt(req.query.role_id, 10);
-    const types = await businessTypeModel.findByRoleId(
-      roleId,
-      req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
-    );
+    const filters = {
+      role_id: req.query.role_id ? parseInt(req.query.role_id, 10) : undefined,
+      search: req.query.search,
+      page: req.query.page,
+      limit: req.query.limit,
+      is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
+    };
+    const data = await businessTypeModel.findBusinessTypes(filters);
 
-    return success(res, 'Business types retrieved successfully', types);
+    return success(res, 'Business types retrieved successfully', data);
   } catch (err) {
     next(err);
   }

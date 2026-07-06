@@ -43,10 +43,16 @@ const getBanner = async (req, res, next) => {
 const getBanners = async (req, res, next) => {
   try {
     const filters = {
+      search: req.query.search,
+      page: req.query.page,
+      limit: req.query.limit,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
+      redirect_type: req.query.redirect_type,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
     };
-    const banners = await bannerModel.findBanners(filters);
-    return success(res, 'Banners list retrieved successfully', banners);
+    const data = await bannerModel.findBanners(filters);
+    return success(res, 'Banners list retrieved successfully', data);
   } catch (err) {
     next(err);
   }

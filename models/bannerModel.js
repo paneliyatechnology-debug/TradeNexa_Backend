@@ -1,5 +1,15 @@
 const db = require('../database/knex');
+const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl } = require('../utils/media');
+const { applyListSort } = require('../utils/listQuery');
+
+const BANNER_SORT_FIELDS = {
+  id: 'banners.id',
+  title: 'banners.title',
+  priority: 'banners.priority',
+  is_active: 'banners.is_active',
+  created_at: 'banners.created_at',
+};
 
 // ==========================================
 // Formatting helpers
@@ -33,21 +43,32 @@ const findBannerById = async (id, options = {}) => {
 };
 
 /**
- * List banners with optional active filter, ordered by priority.
- * @param {Object} [filters] - Query filters (is_active)
- * @returns {Promise<Array>}
+ * Paginated list of banners with search, filters, and sorting.
+ * @param {Object} [filters] - Query filters (search, is_active, redirect_type, page, limit, sort_by, sort_order)
+ * @returns {Promise<Object>}
  */
 const findBanners = async (filters = {}) => {
   const q = db('banners').whereNull('deleted_at');
 
-  if (filters.is_active !== undefined) {
-    q.where({ is_active: filters.is_active });
+  if (filters.search) {
+    q.where('banners.title', 'like', `%${filters.search}%`);
   }
 
-  q.orderBy('banners.priority', 'desc').orderBy('banners.id', 'desc');
+  if (filters.is_active !== undefined) {
+    q.where('banners.is_active', filters.is_active);
+  }
 
-  const rows = await q;
-  return rows.map(formatRow);
+  if (filters.redirect_type) {
+    q.where('banners.redirect_type', filters.redirect_type);
+  }
+
+  applyListSort(q, filters, BANNER_SORT_FIELDS, { defaultSortBy: 'priority', defaultSortOrder: 'desc' });
+
+  const page = parseInt(filters.page, 10) || 1;
+  const limit = parseInt(filters.limit, 10) || 10;
+  const paginated = await paginate(q, page, limit);
+  paginated.results = paginated.results.map(formatRow);
+  return paginated;
 };
 
 // ==========================================

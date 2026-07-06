@@ -27,10 +27,13 @@ const getOffer = async (req, res, next) => {
 const getOffers = async (req, res, next) => {
   try {
     const filters = {
+      search: req.query.search,
       page: req.query.page,
       limit: req.query.limit,
       include_expired: req.query.include_expired,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
     };
     const data = await offerModel.findOffers(filters);
 

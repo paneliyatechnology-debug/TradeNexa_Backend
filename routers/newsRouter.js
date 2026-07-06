@@ -8,11 +8,11 @@ const express = require('express');
 const newsController = require('../controllers/newsController');
 const { authenticate, authorize, validate } = require('../middleware/auth');
 const { handleNewsCreateUpload, handleNewsUpdateUpload } = require('../middleware/upload');
-const { idParam, newsCreateRules, newsUpdateRules, paginationQuery } = require('../middleware/resourceValidation');
+const { idParam, newsCreateRules, newsUpdateRules, newsListQuery } = require('../middleware/resourceValidation');
 
 const router = express.Router();
 
-router.get('/', paginationQuery, validate, newsController.getNewsList);
+router.get('/', newsListQuery, validate, newsController.getNewsList);
 router.get('/:id', idParam, validate, newsController.getNewsDetails);
 
 router.post(

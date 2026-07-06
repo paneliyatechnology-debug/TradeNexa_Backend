@@ -13,7 +13,7 @@ const {
   requireBannerImageOnCreate,
   rejectEmptyFileFields,
 } = require('../middleware/upload');
-const { idParam, bannerCreateRules, bannerUpdateRules } = require('../middleware/resourceValidation');
+const { idParam, bannerCreateRules, bannerUpdateRules, bannerListQuery } = require('../middleware/resourceValidation');
 
 const router = express.Router();
 
@@ -21,7 +21,7 @@ const router = express.Router();
 // Public read routes
 // ==========================================
 
-router.get('/', bannerController.getBanners);
+router.get('/', bannerListQuery, validate, bannerController.getBanners);
 router.get('/:id', idParam, validate, bannerController.getBanner);
 
 // ==========================================

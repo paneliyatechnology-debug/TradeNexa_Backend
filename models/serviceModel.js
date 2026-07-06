@@ -2,7 +2,16 @@
  * Marketplace service listing data access — CRUD and icon media path updates.
  */
 const db = require('../database/knex');
+const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl } = require('../utils/media');
+const { applyListSort } = require('../utils/listQuery');
+
+const SERVICE_SORT_FIELDS = {
+  id: 'services.id',
+  name: 'services.name',
+  is_active: 'services.is_active',
+  created_at: 'services.created_at',
+};
 
 // ==========================================
 // Formatting helpers
@@ -39,10 +48,13 @@ const findServices = async (filters = {}) => {
     q.where('is_active', filters.is_active);
   }
 
-  q.orderBy('services.id', 'desc');
+  applyListSort(q, filters, SERVICE_SORT_FIELDS);
 
-  const rows = await q;
-  return rows.map(formatRow);
+  const page = parseInt(filters.page, 10) || 1;
+  const limit = parseInt(filters.limit, 10) || 10;
+  const paginated = await paginate(q, page, limit);
+  paginated.results = paginated.results.map(formatRow);
+  return paginated;
 };
 
 // ==========================================

@@ -4,6 +4,15 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl } = require('../utils/media');
+const { applyListSort } = require('../utils/listQuery');
+
+const NEWS_SORT_FIELDS = {
+  id: 'news.id',
+  title: 'news.title',
+  published_at: 'news.published_at',
+  is_active: 'news.is_active',
+  created_at: 'news.created_at',
+};
 
 // ==========================================
 // Formatting helpers
@@ -40,7 +49,7 @@ const findNewsList = async (filters = {}) => {
     q.where('is_active', filters.is_active);
   }
 
-  q.orderBy('news.id', 'desc');
+  applyListSort(q, filters, NEWS_SORT_FIELDS);
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;

@@ -22,7 +22,26 @@ const categoryIdParam = [
 const paginationQuery = [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
   query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
-  query('search').optional().trim()
+  query('search').optional().trim(),
+];
+
+/** Optional is_active filter (true/false string). */
+const isActiveQuery = () =>
+  query('is_active')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_active must be true or false');
+
+/** Optional sort_by + sort_order for list endpoints. */
+const listSortQuery = (values) => [
+  query('sort_by')
+    .optional()
+    .isIn(values)
+    .withMessage(`sort_by must be one of: ${values.join(', ')}`),
+  query('sort_order')
+    .optional()
+    .isIn(['asc', 'desc'])
+    .withMessage('sort_order must be asc or desc'),
 ];
 
 // ==========================================
@@ -197,6 +216,19 @@ const subcategoryListQuery = [
 // Banner validations
 // ==========================================
 
+const BANNER_SORT_BY_VALUES = ['id', 'title', 'priority', 'is_active', 'created_at'];
+
+const bannerListQuery = [
+  ...paginationQuery,
+  isActiveQuery(),
+  query('redirect_type')
+    .optional()
+    .trim()
+    .isIn(['category', 'product', 'offer', 'brand', 'url'])
+    .withMessage('Invalid redirect type'),
+  ...listSortQuery(BANNER_SORT_BY_VALUES),
+];
+
 const bannerCreateRules = [
   body('title').trim().notEmpty().withMessage('Banner title is required').isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
   blockedUploadField('image', 'Image'),
@@ -233,21 +265,40 @@ const brandUpdateRules = [
   optionalBooleanField('is_active'),
 ];
 
+const BRAND_SORT_BY_VALUES = ['id', 'name', 'is_popular', 'is_active', 'created_at'];
+
 const brandListQuery = [
   ...paginationQuery,
   query('is_popular')
     .optional()
     .isIn(['true', 'false'])
     .withMessage('is_popular must be true or false'),
-  query('is_active')
-    .optional()
-    .isIn(['true', 'false'])
-    .withMessage('is_active must be true or false'),
+  isActiveQuery(),
+  ...listSortQuery(BRAND_SORT_BY_VALUES),
 ];
 
 // ==========================================
 // Supplier validations
 // ==========================================
+
+const SUPPLIER_SORT_BY_VALUES = [
+  'id',
+  'company_name',
+  'rating',
+  'response_rate',
+  'years_in_business',
+  'created_at',
+];
+
+const supplierListQuery = [
+  ...paginationQuery,
+  query('is_verified')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_verified must be true or false'),
+  isActiveQuery(),
+  ...listSortQuery(SUPPLIER_SORT_BY_VALUES),
+];
 
 const supplierNearbyRules = [
   query('latitude').isFloat({ min: -90, max: 90 }).withMessage('Latitude is required and must be between -90 and 90'),
@@ -374,6 +425,18 @@ const productRelatedQuery = [
 // Offer validations
 // ==========================================
 
+const OFFER_SORT_BY_VALUES = ['id', 'title', 'discount', 'expiry_date', 'is_active', 'created_at'];
+
+const offerListQuery = [
+  ...paginationQuery,
+  isActiveQuery(),
+  query('include_expired')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('include_expired must be true or false'),
+  ...listSortQuery(OFFER_SORT_BY_VALUES),
+];
+
 const offerCreateRules = [
   body('title').trim().notEmpty().withMessage('Offer title is required').isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
   blockedOptionalUploadField('banner', 'Banner'),
@@ -412,15 +475,30 @@ const rfqUpdateRules = [
   body('budget').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Budget must be positive'),
 ];
 
+const RFQ_SORT_BY_VALUES = ['id', 'title', 'budget', 'quantity', 'created_at', 'category', 'city'];
+
 const rfqListQuery = [
   query('category_id').optional().isInt().withMessage('Category ID must be an integer'),
   query('city_id').optional().isInt().withMessage('City ID must be an integer'),
-  ...paginationQuery
+  query('user_id').optional().isInt({ min: 1 }).withMessage('User ID must be a positive integer'),
+  query('min_budget').optional().isFloat({ min: 0 }).withMessage('Min budget must be positive'),
+  query('max_budget').optional().isFloat({ min: 0 }).withMessage('Max budget must be positive'),
+  ...paginationQuery,
+  isActiveQuery(),
+  ...listSortQuery(RFQ_SORT_BY_VALUES),
 ];
 
 // ==========================================
 // Service validations
 // ==========================================
+
+const SERVICE_SORT_BY_VALUES = ['id', 'name', 'is_active', 'created_at'];
+
+const serviceListQuery = [
+  ...paginationQuery,
+  isActiveQuery(),
+  ...listSortQuery(SERVICE_SORT_BY_VALUES),
+];
 
 const serviceCreateRules = [
   body('name').trim().notEmpty().withMessage('Service name is required').isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
@@ -439,6 +517,14 @@ const serviceUpdateRules = [
 // ==========================================
 // News validations
 // ==========================================
+
+const NEWS_SORT_BY_VALUES = ['id', 'title', 'published_at', 'is_active', 'created_at'];
+
+const newsListQuery = [
+  ...paginationQuery,
+  isActiveQuery(),
+  ...listSortQuery(NEWS_SORT_BY_VALUES),
+];
 
 const newsCreateRules = [
   body('title').trim().notEmpty().withMessage('News title is required').isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
@@ -460,9 +546,13 @@ const newsUpdateRules = [
 // Business type validations
 // ==========================================
 
+const BUSINESS_TYPE_SORT_BY_VALUES = ['id', 'name', 'code', 'is_active', 'created_at'];
+
 const businessTypeListQuery = [
-  query('role_id').isInt({ min: 1 }).withMessage('role_id is required'),
-  query('is_active').optional().isBoolean().withMessage('is_active must be a boolean'),
+  query('role_id').optional().isInt({ min: 1 }).withMessage('role_id must be a positive integer'),
+  ...paginationQuery,
+  isActiveQuery(),
+  ...listSortQuery(BUSINESS_TYPE_SORT_BY_VALUES),
 ];
 
 const businessTypeCreateRules = [
@@ -479,6 +569,18 @@ const businessTypeUpdateRules = [
   body('is_active').optional().isBoolean(),
 ];
 
+// ==========================================
+// Role validations
+// ==========================================
+
+const ROLE_SORT_BY_VALUES = ['id', 'name', 'code', 'is_active', 'created_at'];
+
+const roleListQuery = [
+  ...paginationQuery,
+  isActiveQuery(),
+  ...listSortQuery(ROLE_SORT_BY_VALUES),
+];
+
 module.exports = {
   idParam,
   categoryIdParam,
@@ -491,10 +593,12 @@ module.exports = {
   subcategoryListQuery,
   bannerCreateRules,
   bannerUpdateRules,
+  bannerListQuery,
   brandCreateRules,
   brandUpdateRules,
   brandListQuery,
   supplierNearbyRules,
+  supplierListQuery,
   productCreateRules,
   productUpdateRules,
   productDeleteMediaRules,
@@ -503,14 +607,18 @@ module.exports = {
   productRelatedQuery,
   offerCreateRules,
   offerUpdateRules,
+  offerListQuery,
   rfqCreateRules,
   rfqUpdateRules,
   rfqListQuery,
   serviceCreateRules,
   serviceUpdateRules,
+  serviceListQuery,
   newsCreateRules,
   newsUpdateRules,
+  newsListQuery,
   businessTypeListQuery,
   businessTypeCreateRules,
   businessTypeUpdateRules,
+  roleListQuery,
 };

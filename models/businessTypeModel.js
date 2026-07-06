@@ -1,5 +1,15 @@
 const db = require('../database/knex');
+const { paginate } = require('../utils/pagination');
 const { ROLE_CODES } = require('../constants');
+const { applyListSort } = require('../utils/listQuery');
+
+const BUSINESS_TYPE_SORT_FIELDS = {
+  id: 'business_types.id',
+  name: 'business_types.name',
+  code: 'business_types.code',
+  is_active: 'business_types.is_active',
+  created_at: 'business_types.created_at',
+};
 
 // ==========================================
 // Formatting helpers
@@ -45,24 +55,48 @@ const baseQuery = () =>
 const findById = (id) => baseQuery().where('business_types.id', id).first();
 
 /**
+ * List business types with optional role, search, filters, and sorting.
+ * @param {Object} [filters] - role_id, search, is_active, page, limit, sort_by, sort_order
+ * @returns {Promise<Object>}
+ */
+const findBusinessTypes = async (filters = {}) => {
+  const q = baseQuery();
+
+  if (filters.role_id) {
+    const role = await db('roles').where({ id: filters.role_id, is_active: true }).first();
+    if (!role) {
+      return paginate(db('business_types').whereRaw('1 = 0'), filters.page, filters.limit);
+    }
+    q.where('business_types.role_id', filters.role_id);
+  }
+
+  if (filters.search) {
+    q.where('business_types.name', 'like', `%${filters.search}%`);
+  }
+
+  if (filters.is_active !== undefined) {
+    q.where('business_types.is_active', filters.is_active);
+  }
+
+  applyListSort(q, filters, BUSINESS_TYPE_SORT_FIELDS);
+
+  return paginate(q, filters.page, filters.limit);
+};
+
+/**
  * List business types for a given role.
  * @param {number} roleId - Role ID
  * @param {boolean} [isActive=true] - Filter by active status; pass undefined to skip filter
  * @returns {Promise<Array>}
  */
 const findByRoleId = async (roleId, isActive = true) => {
-  const role = await db('roles').where({ id: roleId, is_active: true }).first();
-  if (!role) return [];
-
-  const q = baseQuery()
-    .where('business_types.role_id', roleId)
-    .orderBy('business_types.id', 'desc');
-
-  if (isActive !== undefined) {
-    q.where('business_types.is_active', isActive);
-  }
-
-  return q;
+  const data = await findBusinessTypes({
+    role_id: roleId,
+    is_active: isActive,
+    page: 1,
+    limit: 100,
+  });
+  return data.results;
 };
 
 /**
@@ -154,6 +188,7 @@ const softDelete = async (id) => {
 module.exports = {
   findById,
   findByRoleId,
+  findBusinessTypes,
   isValidForRole,
   create,
   update,

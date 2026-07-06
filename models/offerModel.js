@@ -4,6 +4,16 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl } = require('../utils/media');
+const { applyListSort } = require('../utils/listQuery');
+
+const OFFER_SORT_FIELDS = {
+  id: 'offers.id',
+  title: 'offers.title',
+  discount: 'offers.discount',
+  expiry_date: 'offers.expiry_date',
+  is_active: 'offers.is_active',
+  created_at: 'offers.created_at',
+};
 
 // ==========================================
 // Formatting helpers
@@ -33,15 +43,20 @@ const findOfferById = async (id, options = {}) => {
 const findOffers = async (filters = {}) => {
   const q = db('offers').whereNull('deleted_at');
 
+  if (filters.search) {
+    q.where('offers.title', 'like', `%${filters.search}%`);
+  }
+
   if (filters.is_active !== undefined) {
     q.where('is_active', filters.is_active);
   }
 
-  if (filters.include_expired !== 'true') {
+  // Default: return all offers (including expired). Pass include_expired=false to hide expired.
+  if (filters.include_expired === 'false') {
     q.where('expiry_date', '>', db.fn.now());
   }
 
-  q.orderBy('offers.id', 'desc');
+  applyListSort(q, filters, OFFER_SORT_FIELDS);
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;

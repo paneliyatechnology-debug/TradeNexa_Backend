@@ -11,11 +11,11 @@ const {
   handleOfferCreateUpload,
   handleOfferUpdateUpload,
 } = require('../middleware/upload');
-const { idParam, offerCreateRules, offerUpdateRules, paginationQuery } = require('../middleware/resourceValidation');
+const { idParam, offerCreateRules, offerUpdateRules, offerListQuery } = require('../middleware/resourceValidation');
 
 const router = express.Router();
 
-router.get('/', paginationQuery, validate, offerController.getOffers);
+router.get('/', offerListQuery, validate, offerController.getOffers);
 router.get('/:id', idParam, validate, offerController.getOffer);
 
 router.post(

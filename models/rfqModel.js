@@ -1,5 +1,16 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
+const { applyListSort } = require('../utils/listQuery');
+
+const RFQ_SORT_FIELDS = {
+  id: 'rfqs.id',
+  title: 'rfqs.title',
+  budget: 'rfqs.budget',
+  quantity: 'rfqs.quantity',
+  created_at: 'rfqs.created_at',
+  category: 'categories.name',
+  city: 'cities.name',
+};
 
 // ==========================================
 // List & read queries
@@ -59,11 +70,19 @@ const findRfqs = async (filters = {}) => {
     q.where('rfqs.user_id', filters.user_id);
   }
 
+  if (filters.min_budget) {
+    q.where('rfqs.budget', '>=', filters.min_budget);
+  }
+
+  if (filters.max_budget) {
+    q.where('rfqs.budget', '<=', filters.max_budget);
+  }
+
   if (filters.is_active !== undefined) {
     q.where('rfqs.is_active', filters.is_active);
   }
 
-  q.orderBy('rfqs.id', 'desc');
+  applyListSort(q, filters, RFQ_SORT_FIELDS);
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;

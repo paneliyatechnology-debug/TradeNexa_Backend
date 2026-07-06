@@ -46,9 +46,13 @@ const getRfqs = async (req, res, next) => {
       category_id: req.query.category_id,
       city_id: req.query.city_id,
       user_id: req.query.user_id,
+      min_budget: req.query.min_budget,
+      max_budget: req.query.max_budget,
       page: req.query.page,
       limit: req.query.limit,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
     };
     const data = await rfqModel.findRfqs(filters);
     return success(res, 'RFQs list retrieved successfully', data);

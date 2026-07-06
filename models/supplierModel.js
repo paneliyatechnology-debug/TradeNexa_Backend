@@ -1,6 +1,16 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl } = require('../utils/media');
+const { applyListSort } = require('../utils/listQuery');
+
+const SUPPLIER_SORT_FIELDS = {
+  id: 'users.id',
+  company_name: 'company_details.company_name',
+  rating: 'company_details.rating',
+  response_rate: 'company_details.response_rate',
+  years_in_business: 'company_details.years_in_business',
+  created_at: 'users.created_at',
+};
 
 // ==========================================
 // Query helpers
@@ -95,7 +105,7 @@ const findSuppliers = async (filters = {}) => {
     q.where('users.is_active', filters.is_active);
   }
 
-  q.orderBy('users.id', 'desc');
+  applyListSort(q, filters, SUPPLIER_SORT_FIELDS);
 
   const paginated = await paginate(q, filters.page, filters.limit);
   paginated.results = paginated.results.map(formatSupplierRow);

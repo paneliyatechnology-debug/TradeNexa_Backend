@@ -54,6 +54,8 @@ const getBrands = async (req, res, next) => {
       limit: req.query.limit,
       is_popular: req.query.is_popular !== undefined ? req.query.is_popular === 'true' : undefined,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
     };
     const data = await brandModel.findBrands(filters);
     const message =

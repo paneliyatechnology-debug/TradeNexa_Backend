@@ -34,6 +34,8 @@ const getSuppliers = async (req, res, next) => {
       limit: req.query.limit,
       is_verified: req.query.is_verified !== undefined ? req.query.is_verified === 'true' : undefined,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
     };
     const data = await supplierModel.findSuppliers(filters);
     return success(res, 'Suppliers list retrieved successfully', data);
