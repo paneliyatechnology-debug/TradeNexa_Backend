@@ -7,7 +7,7 @@
 const express = require('express');
 const brandController = require('../controllers/brandController');
 const { authenticate, authorize, validate } = require('../middleware/auth');
-const { handleBrandCreateUpload, handleBrandUpdateUpload } = require('../middleware/upload');
+const { handleBrandCreateUpload, handleBrandUpdateUpload, requireLogoOnCreate, rejectEmptyFileFields } = require('../middleware/upload');
 const { idParam, brandCreateRules, brandUpdateRules, brandListQuery } = require('../middleware/resourceValidation');
 
 const router = express.Router();
@@ -28,6 +28,7 @@ router.post(
   authenticate,
   authorize('admin'),
   handleBrandCreateUpload,
+  requireLogoOnCreate,
   brandCreateRules,
   validate,
   brandController.createBrand,
@@ -39,6 +40,7 @@ router.put(
   authorize('admin'),
   idParam,
   handleBrandUpdateUpload,
+  rejectEmptyFileFields([{ name: 'logo', label: 'Logo' }]),
   brandUpdateRules,
   validate,
   brandController.updateBrand,

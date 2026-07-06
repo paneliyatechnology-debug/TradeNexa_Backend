@@ -221,14 +221,14 @@ const bannerUpdateRules = [
 
 const brandCreateRules = [
   body('name').trim().notEmpty().withMessage('Brand name is required').isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
-  blockedOptionalUploadField('logo', 'Logo'),
+  blockedUploadField('logo', 'Logo'),
   optionalBooleanField('is_popular'),
   optionalBooleanField('is_active'),
 ];
 
 const brandUpdateRules = [
   optionalRequiredText('name', 'Brand name', 2, 100),
-  blockedOptionalUploadField('logo', 'Logo'),
+  blockedUploadField('logo', 'Logo'),
   optionalBooleanField('is_popular'),
   optionalBooleanField('is_active'),
 ];

@@ -247,6 +247,14 @@ const requireOfferBannerOnCreate = (req, _res, next) => {
   next();
 };
 
+/** Require logo file on brand create. Must run after multer upload middleware. */
+const requireLogoOnCreate = (req, _res, next) => {
+  if (!req.files?.logo?.[0]) {
+    return next(new AppError('Logo is required.', 400));
+  }
+  next();
+};
+
 /**
  * When a file field key is present in the body but no file was uploaded, reject.
  * Used on update routes for fields that are required on create.
@@ -335,6 +343,7 @@ module.exports = {
   requireIconUpload,
   requireBannerImageOnCreate,
   requireOfferBannerOnCreate,
+  requireLogoOnCreate,
   rejectEmptyFileFields,
   requireProductThumbnailOnCreate,
   validateProductGalleryMediaCount,

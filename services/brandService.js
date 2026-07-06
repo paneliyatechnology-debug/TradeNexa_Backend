@@ -8,6 +8,7 @@ const brandModel = require('../models/brandModel');
 const { uploadPaths } = require('../constants/uploadPaths');
 const { BRAND_UPLOAD_FIELDS } = require('../constants/uploadFields');
 const { processUploadedFiles } = require('../services/uploadService');
+const { AppError } = require('../utils/response');
 const { stripFields } = require('../utils/formBody');
 
 const BRAND_IMAGE_FIELDS = BRAND_UPLOAD_FIELDS.map((field) => field.name);
@@ -77,18 +78,22 @@ const applyUpdateLogo = async (brandId, files = {}, existing = {}) =>
 // ==========================================
 
 /**
- * Create a brand with optional logo upload.
+ * Create a brand. Logo file is required (validated in middleware + here).
  */
 const createBrand = async (data, files = {}, userId = null) => {
   const payload = parseBrandBody(data);
   const brand = await brandModel.createBrand(payload, userId);
   const withLogo = await applyCreateLogo(brand.id, files);
-  const row = withLogo || (await brandModel.findBrandById(brand.id));
-  return formatBrand(row);
+
+  if (!withLogo?.logo) {
+    throw new AppError('Logo is required.', 400);
+  }
+
+  return formatBrand(withLogo);
 };
 
 /**
- * Update a brand. Text fields and logo upload are all optional.
+ * Update a brand. Text fields and logo upload are optional unless explicitly sent empty.
  */
 const updateBrand = async (id, data, files = {}, userId = null) => {
   const payload = parseBrandBody(data);
