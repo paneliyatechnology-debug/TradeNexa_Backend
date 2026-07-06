@@ -35,39 +35,85 @@ const formatRow = (row) => {
   };
 };
 
-/** Build nested product detail response; null for fields not stored in DB. */
+/** Named entity with id + name; always returned as an object in product detail. */
+const formatNamedEntity = (id, name) => ({
+  id: id ?? null,
+  name: name ?? null,
+});
+
+/** Seller block with a stable key set for product detail responses. */
+const formatSellerDetail = (row) => ({
+  id: row?.supplier_id ?? null,
+  company: {
+    name: row?.supplier_name ?? null,
+    logo: row?.company_logo ? resolveMediaUrl(row.company_logo) : null,
+    business_type: row?.business_type_name ?? null,
+    year_established: null,
+    experience_years:
+      row?.years_in_business !== undefined && row?.years_in_business !== null
+        ? parseInt(row.years_in_business, 10)
+        : null,
+  },
+  rating: {
+    average:
+      row?.supplier_rating !== undefined && row?.supplier_rating !== null
+        ? parseFloat(row.supplier_rating)
+        : null,
+    total_reviews: null,
+  },
+  contact: {
+    show_phone: null,
+    show_email: null,
+    phone: row?.supplier_phone ?? null,
+    whatsapp: null,
+    email: row?.supplier_email ?? null,
+    website: null,
+  },
+  location: {
+    address: row?.address_line_1 ?? null,
+    city: row?.city ?? null,
+    state: row?.state ?? null,
+    country: row?.country ?? null,
+    postal_code: row?.pincode ?? null,
+    latitude:
+      row?.latitude !== undefined && row?.latitude !== null ? parseFloat(row.latitude) : null,
+    longitude:
+      row?.longitude !== undefined && row?.longitude !== null ? parseFloat(row.longitude) : null,
+  },
+  social_links: {
+    website: null,
+    facebook: null,
+  },
+});
+
+/** Build nested product detail response with a consistent key set. */
 const formatProductDetail = (row, images = [], videos = []) => {
   if (!row) return null;
 
   return {
-    id: row.id,
-    slug: row.slug,
+    id: row.id ?? null,
+    slug: row.slug ?? null,
     basic_details: {
-      name: row.name,
+      name: row.name ?? null,
       short_description: null,
       description: null,
-      brand: row.brand_id
-        ? { id: row.brand_id, name: row.brand_name || null }
-        : null,
-      category: row.category_id
-        ? { id: row.category_id, name: row.category_name || null }
-        : null,
-      subcategory: row.subcategory_id
-        ? { id: row.subcategory_id, name: row.subcategory_name || null }
-        : null,
+      brand: formatNamedEntity(row.brand_id, row.brand_name),
+      category: formatNamedEntity(row.category_id, row.category_name),
+      subcategory: formatNamedEntity(row.subcategory_id, row.subcategory_name),
       country_of_origin: null,
     },
     pricing: {
-      price: row.price !== undefined ? parseFloat(row.price) : null,
+      price: row.price !== undefined && row.price !== null ? parseFloat(row.price) : null,
       price_type: null,
-      minimum_order_quantity: row.moq !== undefined ? parseInt(row.moq, 10) : null,
-      unit: row.unit || null,
+      minimum_order_quantity:
+        row.moq !== undefined && row.moq !== null ? parseInt(row.moq, 10) : null,
+      unit: row.unit ?? null,
       gst_percentage: null,
       gst_included: null,
       hsn_code: null,
     },
     images: {
-      thumbnail: resolveMediaUrl(row.thumbnail),
+      thumbnail: row.thumbnail ? resolveMediaUrl(row.thumbnail) : null,
       gallery: images.map((image) => ({
         id: image.id,
         url: resolveMediaUrl(image.path),
@@ -78,55 +124,7 @@ const formatProductDetail = (row, images = [], videos = []) => {
       id: video.id,
       url: resolveMediaUrl(video.path),
     })),
-    seller: row.supplier_id
-      ? {
-          id: row.supplier_id,
-          company: {
-            name: row.supplier_name || null,
-            logo: resolveMediaUrl(row.company_logo),
-            business_type: row.business_type_name || null,
-            year_established: null,
-            experience_years:
-              row.years_in_business !== undefined && row.years_in_business !== null
-                ? parseInt(row.years_in_business, 10)
-                : null,
-          },
-          rating: {
-            average:
-              row.supplier_rating !== undefined && row.supplier_rating !== null
-                ? parseFloat(row.supplier_rating)
-                : null,
-            total_reviews: null,
-          },
-          contact: {
-            show_phone: null,
-            show_email: null,
-            phone: row.supplier_phone || null,
-            whatsapp: null,
-            email: row.supplier_email || null,
-            website: null,
-          },
-          location: {
-            address: row.address_line_1 || null,
-            city: row.city || null,
-            state: row.state || null,
-            country: row.country || null,
-            postal_code: row.pincode || null,
-            latitude:
-              row.latitude !== undefined && row.latitude !== null
-                ? parseFloat(row.latitude)
-                : null,
-            longitude:
-              row.longitude !== undefined && row.longitude !== null
-                ? parseFloat(row.longitude)
-                : null,
-          },
-          social_links: {
-            website: null,
-            facebook: null,
-          },
-        }
-      : null,
+    seller: formatSellerDetail(row),
     marketplace: {
       is_featured: null,
       is_trending: row.is_trending !== undefined ? !!row.is_trending : null,
@@ -140,13 +138,14 @@ const formatProductDetail = (row, images = [], videos = []) => {
       can_buy: null,
     },
     ratings: {
-      average: row.rating !== undefined ? parseFloat(row.rating) : null,
+      average:
+        row.rating !== undefined && row.rating !== null ? parseFloat(row.rating) : null,
       total_reviews: null,
       breakdown: null,
     },
-    reviews: null,
-    created_at: row.created_at || null,
-    updated_at: row.updated_at || null,
+    reviews: [],
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
   };
 };
 
@@ -281,6 +280,19 @@ const findProductVideos = (productId) =>
     .orderBy('sort_order', 'asc')
     .orderBy('id', 'asc')
     .select('id', 'title', 'path', 'sort_order');
+
+/** Count gallery images and videos stored for a product. */
+const countProductMedia = async (productId) => {
+  const [imageCount, videoCount] = await Promise.all([
+    db('product_images').where({ product_id: productId }).count('* as count').first(),
+    db('product_videos').where({ product_id: productId }).count('* as count').first(),
+  ]);
+
+  return {
+    images: parseInt(imageCount?.count || 0, 10),
+    videos: parseInt(videoCount?.count || 0, 10),
+  };
+};
 
 /** Insert gallery image rows for a product. */
 const insertProductImages = async (productId, paths = []) => {
@@ -569,6 +581,7 @@ module.exports = {
   findProductDetailById,
   findProductImages,
   findProductVideos,
+  countProductMedia,
   insertProductImages,
   insertProductVideos,
   findProductImageById,

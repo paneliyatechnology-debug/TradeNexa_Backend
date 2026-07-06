@@ -127,18 +127,20 @@ const subcategoryListQuery = [
 
 const bannerCreateRules = [
   body('title').trim().notEmpty().withMessage('Banner title is required').isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
-  body('image').trim().notEmpty().withMessage('Banner image is required').isLength({ max: 500 }).withMessage('Image URL too long'),
+  blockedUploadField('image', 'Image'),
   body('redirect_type').optional({ values: 'falsy' }).trim().isIn(['category', 'product', 'offer', 'brand', 'url']).withMessage('Invalid redirect type'),
   body('redirect_id').optional({ values: 'falsy' }).isInt().withMessage('Redirect ID must be an integer'),
-  body('priority').optional().isInt().withMessage('Priority must be an integer')
+  body('priority').optional().isInt().withMessage('Priority must be an integer'),
+  optionalBooleanField('is_active'),
 ];
 
 const bannerUpdateRules = [
   body('title').optional().trim().isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
-  body('image').optional().trim().isLength({ max: 500 }).withMessage('Image URL too long'),
+  blockedUploadField('image', 'Image'),
   body('redirect_type').optional({ values: 'falsy' }).trim().isIn(['category', 'product', 'offer', 'brand', 'url']).withMessage('Invalid redirect type'),
   body('redirect_id').optional({ values: 'falsy' }).isInt().withMessage('Redirect ID must be an integer'),
-  body('priority').optional().isInt().withMessage('Priority must be an integer')
+  body('priority').optional().isInt().withMessage('Priority must be an integer'),
+  optionalBooleanField('is_active'),
 ];
 
 // ==========================================

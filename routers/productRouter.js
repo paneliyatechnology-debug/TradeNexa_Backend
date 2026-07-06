@@ -10,6 +10,8 @@ const { authenticate, authorize, validate } = require('../middleware/auth');
 const {
   handleProductCreateUpload,
   handleProductUpdateUpload,
+  requireProductThumbnailOnCreate,
+  validateProductGalleryMediaCount,
 } = require('../middleware/upload');
 const {
   idParam,
@@ -41,6 +43,8 @@ router.post(
   authenticate,
   authorize('seller', 'buyer_seller', 'admin'),
   handleProductCreateUpload,
+  requireProductThumbnailOnCreate,
+  validateProductGalleryMediaCount('create'),
   productCreateRules,
   validate,
   productController.createProduct,
@@ -52,6 +56,7 @@ router.put(
   authorize('seller', 'buyer_seller', 'admin'),
   idParam,
   handleProductUpdateUpload,
+  validateProductGalleryMediaCount('update'),
   productUpdateRules,
   validate,
   productController.updateProduct,

@@ -1,4 +1,5 @@
 const bannerModel = require('../models/bannerModel');
+const bannerService = require('../services/bannerService');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
@@ -8,11 +9,11 @@ const { HTTP_STATUS } = require('../constants');
 
 /**
  * POST /banners
- * Create a new banner (admin only).
+ * Create a new banner with required image upload (admin only).
  */
 const createBanner = async (req, res, next) => {
   try {
-    const banner = await bannerModel.createBanner(req.body, req.user?.id);
+    const banner = await bannerService.createBanner(req.body, req.files, req.user?.id);
     return success(res, 'Banner created successfully', banner, HTTP_STATUS.CREATED);
   } catch (err) {
     next(err);
@@ -53,7 +54,7 @@ const getBanners = async (req, res, next) => {
 
 /**
  * PUT /banners/:id
- * Update an existing banner (admin only).
+ * Update an existing banner with optional image upload (admin only).
  */
 const updateBanner = async (req, res, next) => {
   try {
@@ -61,7 +62,7 @@ const updateBanner = async (req, res, next) => {
     if (!existing) {
       return next(new AppError('Banner not found', HTTP_STATUS.NOT_FOUND));
     }
-    const banner = await bannerModel.updateBanner(req.params.id, req.body, req.user?.id);
+    const banner = await bannerService.updateBanner(req.params.id, req.body, req.files, req.user?.id);
     return success(res, 'Banner updated successfully', banner);
   } catch (err) {
     next(err);

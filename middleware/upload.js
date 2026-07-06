@@ -11,7 +11,9 @@ const {
   PROFILE_UPLOAD_FIELDS,
   CATEGORY_UPLOAD_FIELDS,
   BRAND_UPLOAD_FIELDS,
+  BANNER_UPLOAD_FIELDS,
   PRODUCT_UPLOAD_FIELDS,
+  MAX_PRODUCT_GALLERY_MEDIA,
 } = require('../constants/uploadFields');
 
 // ==========================================
@@ -87,6 +89,31 @@ const handleBrandUpdateUpload = createUploadMiddleware({
 });
 
 // ==========================================
+// Banner uploads
+// ==========================================
+
+/**
+ * POST /banners.
+ * Files land in inbox first, then move to banners/{id}/ after record creation.
+ */
+const handleBannerCreateUpload = createUploadMiddleware({
+  fields: BANNER_UPLOAD_FIELDS,
+  getDestination: (req) => getAbsoluteUploadDir(...uploadPaths.bannerInbox(req.user.id)),
+});
+
+/** PUT /banners/:id */
+const handleBannerUpdateUpload = createUploadMiddleware({
+  fields: BANNER_UPLOAD_FIELDS,
+  getDestination: (req) => {
+    const bannerId = req.params.id;
+    if (!bannerId) {
+      throw new AppError('Banner ID is required for image upload', 400);
+    }
+    return getAbsoluteUploadDir(...uploadPaths.banner(bannerId));
+  },
+});
+
+// ==========================================
 // Product uploads
 // ==========================================
 
@@ -126,6 +153,64 @@ const requireIconUpload = (req, _res, next) => {
   next();
 };
 
+/** Require image file on banner create. Must run after multer upload middleware. */
+const requireBannerImageOnCreate = (req, _res, next) => {
+  if (!req.files?.image?.[0]) {
+    return next(new AppError('Banner image is required', 400));
+  }
+  next();
+};
+
+const countUploadedGalleryMedia = (files = {}) =>
+  (files.image?.length || 0) + (files.video?.length || 0);
+
+/** Require thumbnail file on product create. Must run after multer upload middleware. */
+const requireProductThumbnailOnCreate = (req, _res, next) => {
+  if (!req.files?.thumbnail?.[0]) {
+    return next(new AppError('Thumbnail is required', 400));
+  }
+  next();
+};
+
+/**
+ * Enforce combined gallery image + video limit. Must run after multer upload middleware.
+ * @param {'create'|'update'} mode
+ */
+const validateProductGalleryMediaCount = (mode = 'create') => async (req, _res, next) => {
+  try {
+    const newCount = countUploadedGalleryMedia(req.files);
+
+    if (mode === 'create') {
+      if (newCount > MAX_PRODUCT_GALLERY_MEDIA) {
+        return next(
+          new AppError(
+            `Total product images and videos cannot exceed ${MAX_PRODUCT_GALLERY_MEDIA} files`,
+            400,
+          ),
+        );
+      }
+      return next();
+    }
+
+    const productModel = require('../models/productModel');
+    const existing = await productModel.countProductMedia(req.params.id);
+    const total = existing.images + existing.videos + newCount;
+
+    if (total > MAX_PRODUCT_GALLERY_MEDIA) {
+      return next(
+        new AppError(
+          `Total product images and videos cannot exceed ${MAX_PRODUCT_GALLERY_MEDIA} files`,
+          400,
+        ),
+      );
+    }
+
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   createUploadMiddleware,
   handleProfileUpload,
@@ -134,7 +219,12 @@ module.exports = {
   handleSubcategoryUpdateUpload,
   handleBrandCreateUpload,
   handleBrandUpdateUpload,
+  handleBannerCreateUpload,
+  handleBannerUpdateUpload,
   handleProductCreateUpload,
   handleProductUpdateUpload,
   requireIconUpload,
+  requireBannerImageOnCreate,
+  requireProductThumbnailOnCreate,
+  validateProductGalleryMediaCount,
 };
