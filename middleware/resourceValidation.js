@@ -457,35 +457,121 @@ const offerUpdateRules = [
 // RFQ validations
 // ==========================================
 
+const { RFQ_STATUS, RFQ_VISIBILITY, RFQ_SORT_BY_VALUES } = require('../constants/rfq');
+
+const RFQ_PINCODE_REGEX = /^[1-9][0-9]{5}$/;
+
+const rfqDateFields = [
+  body('required_before').optional({ values: 'falsy' }).isISO8601().withMessage('Required before must be a valid ISO8601 timestamp'),
+  body('quotation_deadline').optional({ values: 'falsy' }).isISO8601().withMessage('Quotation deadline must be a valid ISO8601 timestamp'),
+];
+
+const rfqAddressFields = [
+  body('address_line_1').trim().notEmpty().withMessage('Address line 1 is required').isLength({ min: 3, max: 255 }),
+  body('address_line_2').optional({ values: 'falsy' }).trim().isLength({ max: 255 }),
+  body('city').trim().notEmpty().withMessage('City is required').isLength({ min: 2, max: 100 }),
+  body('state').trim().notEmpty().withMessage('State is required').isLength({ min: 2, max: 100 }),
+  body('country').trim().notEmpty().withMessage('Country is required').isLength({ min: 2, max: 100 }),
+  body('pincode').trim().notEmpty().withMessage('Pincode is required').matches(RFQ_PINCODE_REGEX).withMessage('Invalid pincode'),
+];
+
+const rfqAddressUpdateFields = [
+  body('address_line_1').optional({ values: 'falsy' }).trim().isLength({ min: 3, max: 255 }).withMessage('Address line 1 must be 3 to 255 chars'),
+  body('address_line_2').optional({ values: 'falsy' }).trim().isLength({ max: 255 }),
+  body('city').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 100 }),
+  body('state').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 100 }),
+  body('country').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 100 }),
+  body('pincode').optional({ values: 'falsy' }).trim().matches(RFQ_PINCODE_REGEX).withMessage('Invalid pincode'),
+];
+
 const rfqCreateRules = [
   body('title').trim().notEmpty().withMessage('RFQ title is required').isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
-  body('category_id').isInt().withMessage('Category ID is required and must be an integer'),
-  body('city_id').isInt().withMessage('City ID is required and must be an integer'),
-  body('description').optional({ values: 'falsy' }).trim(),
-  body('quantity').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
-  body('budget').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Budget must be positive')
+  body('category_id').isInt({ min: 1 }).withMessage('Category ID is required and must be an integer'),
+  body('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required and must be an integer'),
+  body('description').trim().notEmpty().withMessage('Description is required').isLength({ min: 10 }).withMessage('Description must be at least 10 characters'),
+  body('quantity').isInt({ min: 1 }).withMessage('Quantity is required and must be at least 1'),
+  body('unit').trim().notEmpty().withMessage('Unit is required').isLength({ max: 50 }).withMessage('Unit must be at most 50 characters'),
+  body('quotation_deadline').isISO8601().withMessage('Quotation deadline is required and must be a valid ISO8601 timestamp'),
+  ...rfqAddressFields,
+  body('product_id').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Product ID must be an integer'),
+  body('expected_price').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Expected price must be positive'),
+  body('budget').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Budget must be positive'),
+  body('currency').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
+  body('required_before').optional({ values: 'falsy' }).isISO8601().withMessage('Required before must be a valid ISO8601 timestamp'),
+  body('payment_terms').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
+  body('visibility').optional().isIn(Object.values(RFQ_VISIBILITY)).withMessage('Invalid visibility'),
+  body('supplier_ids').optional().isArray().withMessage('supplier_ids must be an array'),
+  body('supplier_ids.*').optional().isInt({ min: 1 }).withMessage('Each supplier ID must be a positive integer'),
 ];
 
 const rfqUpdateRules = [
   optionalRequiredText('title', 'RFQ title', 2, 200),
   optionalRequiredInt('category_id', 'Category ID', { min: 1 }),
-  optionalRequiredInt('city_id', 'City ID', { min: 1 }),
-  body('description').optional({ values: 'falsy' }).trim(),
+  optionalRequiredInt('subcategory_id', 'Subcategory ID', { min: 1 }),
+  body('description').optional({ values: 'falsy' }).trim().isLength({ min: 10 }).withMessage('Description must be at least 10 characters'),
+  ...rfqAddressUpdateFields,
+  body('product_id').optional({ values: 'falsy' }).isInt({ min: 1 }),
+  body('unit').optional({ values: 'falsy' }).trim().isLength({ max: 50 }).withMessage('Unit must be at most 50 characters'),
   body('quantity').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
+  body('expected_price').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Expected price must be positive'),
   body('budget').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Budget must be positive'),
+  body('currency').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
+  body('payment_terms').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
+  body('visibility').optional().isIn(Object.values(RFQ_VISIBILITY)).withMessage('Invalid visibility'),
+  body('supplier_ids').optional().isArray(),
+  body('supplier_ids.*').optional().isInt({ min: 1 }),
+  ...rfqDateFields,
 ];
-
-const RFQ_SORT_BY_VALUES = ['id', 'title', 'budget', 'quantity', 'created_at', 'category', 'city'];
 
 const rfqListQuery = [
   query('category_id').optional().isInt().withMessage('Category ID must be an integer'),
-  query('city_id').optional().isInt().withMessage('City ID must be an integer'),
-  query('user_id').optional().isInt({ min: 1 }).withMessage('User ID must be a positive integer'),
+  query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  query('city').optional().trim().isLength({ max: 100 }).withMessage('City filter too long'),
+  query('state').optional().trim().isLength({ max: 100 }).withMessage('State filter too long'),
+  query('country').optional().trim().isLength({ max: 100 }).withMessage('Country filter too long'),
+  query('buyer_id').optional().isInt({ min: 1 }).withMessage('Buyer ID must be a positive integer'),
+  query('status').optional().isIn(Object.values(RFQ_STATUS)).withMessage('Invalid RFQ status'),
   query('min_budget').optional().isFloat({ min: 0 }).withMessage('Min budget must be positive'),
   query('max_budget').optional().isFloat({ min: 0 }).withMessage('Max budget must be positive'),
+  query('min_expected_price').optional().isFloat({ min: 0 }).withMessage('Min expected price must be positive'),
+  query('max_expected_price').optional().isFloat({ min: 0 }).withMessage('Max expected price must be positive'),
+  query('date_from').optional().isISO8601().withMessage('date_from must be a valid ISO8601 timestamp'),
+  query('date_to').optional().isISO8601().withMessage('date_to must be a valid ISO8601 timestamp'),
   ...paginationQuery,
   isActiveQuery(),
   ...listSortQuery(RFQ_SORT_BY_VALUES),
+];
+
+const quotationCreateRules = [
+  body('price').isFloat({ min: 0 }).withMessage('Price is required and must be positive'),
+  body('quantity').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
+  body('unit').optional({ values: 'falsy' }).trim().isLength({ max: 50 }).withMessage('Unit must be at most 50 characters'),
+  body('gst_percentage').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('GST percentage must be positive'),
+  body('transportation_charge').optional({ values: 'falsy' }).isFloat({ min: 0 }),
+  body('delivery_days').optional({ values: 'falsy' }).isInt({ min: 0 }),
+  body('payment_terms').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
+  body('validity_days').optional({ values: 'falsy' }).isInt({ min: 1 }),
+  body('remarks').optional({ values: 'falsy' }).trim(),
+];
+
+const quotationUpdateRules = [
+  optionalRequiredFloat('price', 'Price', { min: 0 }),
+  body('quantity').optional({ values: 'falsy' }).isInt({ min: 1 }),
+  body('unit').optional({ values: 'falsy' }).trim().isLength({ max: 50 }).withMessage('Unit must be at most 50 characters'),
+  body('gst_percentage').optional({ values: 'falsy' }).isFloat({ min: 0 }),
+  body('transportation_charge').optional({ values: 'falsy' }).isFloat({ min: 0 }),
+  body('delivery_days').optional({ values: 'falsy' }).isInt({ min: 0 }),
+  body('payment_terms').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
+  body('validity_days').optional({ values: 'falsy' }).isInt({ min: 1 }),
+  body('remarks').optional({ values: 'falsy' }).trim(),
+];
+
+const quotationRevisionRules = [
+  body('remarks').trim().notEmpty().withMessage('Revision remarks are required'),
+];
+
+const adminRfqStatusRules = [
+  body('status').isIn(Object.values(RFQ_STATUS)).withMessage('Invalid RFQ status'),
 ];
 
 // ==========================================
@@ -611,6 +697,10 @@ module.exports = {
   rfqCreateRules,
   rfqUpdateRules,
   rfqListQuery,
+  quotationCreateRules,
+  quotationUpdateRules,
+  quotationRevisionRules,
+  adminRfqStatusRules,
   serviceCreateRules,
   serviceUpdateRules,
   serviceListQuery,

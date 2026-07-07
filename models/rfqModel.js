@@ -1,173 +1,264 @@
+/**
+ * RFQ data access — list filters, detail queries, and lifecycle helpers.
+ */
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { applyListSort } = require('../utils/listQuery');
+const { RFQ_STATUS } = require('../constants/rfq');
 
 const RFQ_SORT_FIELDS = {
   id: 'rfqs.id',
   title: 'rfqs.title',
+  created_at: 'rfqs.created_at',
+  quotation_deadline: 'rfqs.quotation_deadline',
+  expected_price: 'rfqs.expected_price',
+  total_quotations: 'rfqs.total_quotations',
   budget: 'rfqs.budget',
   quantity: 'rfqs.quantity',
-  created_at: 'rfqs.created_at',
   category: 'categories.name',
-  city: 'cities.name',
+  city: 'rfqs.city',
 };
 
-// ==========================================
-// List & read queries
-// ==========================================
+const formatRow = (row) => {
+  if (!row) return null;
+  return {
+    ...row,
+    expected_price:
+      row.expected_price !== undefined && row.expected_price !== null
+        ? parseFloat(row.expected_price)
+        : row.budget !== undefined && row.budget !== null
+          ? parseFloat(row.budget)
+          : null,
+    budget: row.budget !== undefined && row.budget !== null ? parseFloat(row.budget) : undefined,
+    quantity: row.quantity !== undefined ? parseInt(row.quantity, 10) : undefined,
+    total_views: row.total_views !== undefined ? parseInt(row.total_views, 10) : undefined,
+    total_quotations:
+      row.total_quotations !== undefined ? parseInt(row.total_quotations, 10) : undefined,
+  };
+};
 
-/**
- * Find an RFQ by ID with category, city, and creator joins.
- * @param {number} id - RFQ ID
- * @returns {Promise<Object|undefined>}
- */
-const findRfqById = (id) =>
+const baseRfqQuery = () =>
   db('rfqs')
     .leftJoin('categories', 'rfqs.category_id', '=', 'categories.id')
-    .leftJoin('cities', 'rfqs.city_id', '=', 'cities.id')
-    .leftJoin('users', 'rfqs.user_id', '=', 'users.id')
+    .leftJoin('categories as subcategories', 'rfqs.subcategory_id', '=', 'subcategories.id')
+    .leftJoin('products', 'rfqs.product_id', '=', 'products.id')
+    .leftJoin('users as buyers', 'rfqs.buyer_id', '=', 'buyers.id')
+    .whereNull('rfqs.deleted_at');
+
+const applyRfqFilters = (q, filters = {}) => {
+  if (filters.search) {
+    const term = `%${filters.search}%`;
+    q.where(function () {
+      this.where('rfqs.title', 'like', term)
+        .orWhere('rfqs.rfq_number', 'like', term)
+        .orWhere('products.name', 'like', term)
+        .orWhere('buyers.full_name', 'like', term)
+        .orWhere('rfqs.city', 'like', term);
+    });
+  }
+
+  if (filters.status) q.where('rfqs.status', filters.status);
+  if (filters.category_id) q.where('rfqs.category_id', filters.category_id);
+  if (filters.subcategory_id) q.where('rfqs.subcategory_id', filters.subcategory_id);
+  if (filters.city) q.where('rfqs.city', 'like', `%${filters.city}%`);
+  if (filters.state) q.where('rfqs.state', 'like', `%${filters.state}%`);
+  if (filters.country) q.where('rfqs.country', 'like', `%${filters.country}%`);
+  if (filters.buyer_id) q.where('rfqs.buyer_id', filters.buyer_id);
+  if (filters.min_budget || filters.min_expected_price) {
+    const min = filters.min_expected_price || filters.min_budget;
+    q.where(function () {
+      this.where('rfqs.expected_price', '>=', min).orWhere('rfqs.budget', '>=', min);
+    });
+  }
+  if (filters.max_budget || filters.max_expected_price) {
+    const max = filters.max_expected_price || filters.max_budget;
+    q.where(function () {
+      this.where('rfqs.expected_price', '<=', max).orWhere('rfqs.budget', '<=', max);
+    });
+  }
+  if (filters.date_from) q.where('rfqs.created_at', '>=', filters.date_from);
+  if (filters.date_to) q.where('rfqs.created_at', '<=', filters.date_to);
+  if (filters.is_active !== undefined) q.where('rfqs.is_active', filters.is_active);
+  if (filters.visibility) q.where('rfqs.visibility', filters.visibility);
+};
+
+const findRfqById = async (id, options = {}) => {
+  const row = await baseRfqQuery()
     .where('rfqs.id', id)
-    .whereNull('rfqs.deleted_at')
     .select(
       'rfqs.*',
-      'categories.name as category',
-      'cities.name as city',
-      'users.full_name as creator_name'
+      'categories.name as category_name',
+      'subcategories.name as subcategory_name',
+      'products.name as product_name',
+      'buyers.full_name as buyer_name',
+      'buyers.email as buyer_email',
     )
     .first();
 
-/**
- * Paginated list of RFQs with optional filters.
- * @param {Object} [filters] - Query filters (search, category_id, city_id, user_id, is_active, page, limit)
- * @returns {Promise<Object>}
- */
+  if (!row || options.raw) return row;
+  return formatRow(row);
+};
+
 const findRfqs = async (filters = {}) => {
-  const q = db('rfqs')
-    .leftJoin('categories', 'rfqs.category_id', '=', 'categories.id')
-    .leftJoin('cities', 'rfqs.city_id', '=', 'cities.id')
-    .whereNull('rfqs.deleted_at')
-    .select(
-      'rfqs.id',
-      'rfqs.title',
-      'categories.name as category',
-      'cities.name as city',
-      'rfqs.created_at'
-    );
+  const q = baseRfqQuery().select(
+    'rfqs.id',
+    'rfqs.rfq_number',
+    'rfqs.title',
+    'rfqs.status',
+    'rfqs.expected_price',
+    'rfqs.budget',
+    'rfqs.quotation_deadline',
+    'rfqs.total_quotations',
+    'rfqs.created_at',
+    'rfqs.city',
+    'rfqs.unit',
+    'categories.name as category',
+  );
 
-  if (filters.search) {
-    q.where('rfqs.title', 'like', `%${filters.search}%`);
-  }
+  applyRfqFilters(q, filters);
 
-  if (filters.category_id) {
-    q.where('rfqs.category_id', filters.category_id);
-  }
-
-  if (filters.city_id) {
-    q.where('rfqs.city_id', filters.city_id);
-  }
-
-  if (filters.user_id) {
-    q.where('rfqs.user_id', filters.user_id);
-  }
-
-  if (filters.min_budget) {
-    q.where('rfqs.budget', '>=', filters.min_budget);
-  }
-
-  if (filters.max_budget) {
-    q.where('rfqs.budget', '<=', filters.max_budget);
-  }
-
-  if (filters.is_active !== undefined) {
-    q.where('rfqs.is_active', filters.is_active);
+  if (filters.statuses?.length) {
+    q.whereIn('rfqs.status', filters.statuses);
   }
 
   applyListSort(q, filters, RFQ_SORT_FIELDS);
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;
-  return paginate(q, page, limit);
+  const paginated = await paginate(q, page, limit);
+  paginated.results = paginated.results.map(formatRow);
+  return paginated;
 };
 
-// ==========================================
-// Create & update
-// ==========================================
+const findSupplierFeed = async (supplierId, filters = {}) => {
+  const q = baseRfqQuery()
+    .where(function () {
+      this.where('rfqs.visibility', 'PUBLIC').orWhereExists(function () {
+        this.select(1)
+          .from('rfq_suppliers')
+          .whereRaw('rfq_suppliers.rfq_id = rfqs.id')
+          .where('rfq_suppliers.supplier_id', supplierId);
+      });
+    })
+    .whereIn('rfqs.status', filters.statuses || ['PUBLISHED', 'OPEN', 'QUOTATION_RECEIVED', 'NEGOTIATION'])
+    .select(
+      'rfqs.id',
+      'rfqs.rfq_number',
+      'rfqs.title',
+      'rfqs.status',
+      'rfqs.expected_price',
+      'rfqs.budget',
+      'rfqs.quantity',
+      'rfqs.unit',
+      'rfqs.quotation_deadline',
+      'rfqs.created_at',
+      'rfqs.city',
+      'categories.name as category',
+    );
 
-/**
- * Insert a new RFQ for the authenticated user.
- * @param {Object} data - RFQ creation payload
- * @param {number} userId - Creator user ID
- * @returns {Promise<Object>}
- */
-const createRfq = async (data, userId) => {
-  const payload = {
-    title: data.title,
-    category_id: data.category_id,
-    city_id: data.city_id,
-    user_id: userId,
-    description: data.description || null,
-    quantity: data.quantity !== undefined ? data.quantity : null,
-    budget: data.budget !== undefined ? data.budget : null,
-    is_active: data.is_active !== undefined ? data.is_active : true,
-    created_by: userId,
-  };
+  applyRfqFilters(q, filters);
+  applyListSort(q, filters, RFQ_SORT_FIELDS);
 
-  const [id] = await db('rfqs').insert(payload);
-  return findRfqById(id);
+  const page = parseInt(filters.page, 10) || 1;
+  const limit = parseInt(filters.limit, 10) || 10;
+  const paginated = await paginate(q, page, limit);
+  paginated.results = paginated.results.map(formatRow);
+  return paginated;
 };
 
-/**
- * Update an existing RFQ by ID.
- * @param {number} id - RFQ ID
- * @param {Object} data - Fields to update
- * @param {number|null} [userId] - Acting user ID for audit fields
- * @returns {Promise<Object>}
- */
-const updateRfq = async (id, data, userId = null) => {
-  const payload = {};
-  if (data.title !== undefined) payload.title = data.title;
-  if (data.category_id !== undefined) payload.category_id = data.category_id;
-  if (data.city_id !== undefined) payload.city_id = data.city_id;
-  if (data.description !== undefined) payload.description = data.description;
-  if (data.quantity !== undefined) payload.quantity = data.quantity;
-  if (data.budget !== undefined) payload.budget = data.budget;
-  if (data.is_active !== undefined) payload.is_active = data.is_active;
+const createRfq = async (data, trx = null) => {
+  const client = trx || db;
+  const [id] = await client('rfqs').insert(data);
+  return client('rfqs').where({ id }).first();
+};
 
-  if (Object.keys(payload).length === 0) return findRfqById(id);
+const updateRfq = async (id, data, trx = null) => {
+  const client = trx || db;
+  await client('rfqs')
+    .where({ id })
+    .update({ ...data, updated_at: client.fn.now() });
+  return client('rfqs').where({ id }).whereNull('deleted_at').first();
+};
 
-  if (userId) {
-    payload.updated_by = userId;
+const incrementViews = async (id, trx = null) => {
+  const client = trx || db;
+  await client('rfqs').where({ id }).increment('total_views', 1);
+};
+
+const incrementQuotationCount = async (id, trx = null) => {
+  const client = trx || db;
+  await client('rfqs').where({ id }).increment('total_quotations', 1);
+};
+
+const deleteRfq = async (id, userId = null, trx = null) => {
+  const client = trx || db;
+  const payload = { deleted_at: client.fn.now() };
+  if (userId) payload.updated_by = userId;
+  await client('rfqs').where({ id }).update(payload);
+};
+
+const expireOverdueRfqs = async () => {
+  try {
+    return await db('rfqs')
+      .whereIn('status', [RFQ_STATUS.PUBLISHED, RFQ_STATUS.OPEN, RFQ_STATUS.QUOTATION_RECEIVED])
+      .where('quotation_deadline', '<', db.fn.now())
+      .whereNull('deleted_at')
+      .update({ status: RFQ_STATUS.EXPIRED, updated_at: db.fn.now() });
+  } catch (err) {
+    if (err.code === 'ER_LOCK_WAIT_TIMEOUT' || err.code === 'ER_LOCK_DEADLOCK') {
+      return 0;
+    }
+    throw err;
   }
-  payload.updated_at = db.fn.now();
-
-  await db('rfqs').where({ id }).update(payload);
-  return findRfqById(id);
 };
 
-// ==========================================
-// Delete (soft)
-// ==========================================
+const getAdminSummary = async () => {
+  const counts = await db('rfqs')
+    .whereNull('deleted_at')
+    .select('status')
+    .count('* as count')
+    .groupBy('status');
 
-/**
- * Soft-delete an RFQ by ID.
- * @param {number} id - RFQ ID
- * @param {number|null} [userId] - Acting user ID for audit fields
- * @returns {Promise<void>}
- */
-const deleteRfq = async (id, userId = null) => {
-  const updatePayload = {
-    deleted_at: db.fn.now(),
+  const statusMap = counts.reduce((acc, row) => {
+    acc[row.status] = parseInt(row.count, 10);
+    return acc;
+  }, {});
+
+  const avgQuotations = await db('rfqs')
+    .whereNull('deleted_at')
+    .avg('total_quotations as avg_quotations')
+    .first();
+
+  const avgResponse = await db('rfq_suppliers')
+    .whereNotNull('responded_at')
+    .whereNotNull('viewed_at')
+    .select(db.raw('AVG(TIMESTAMPDIFF(MINUTE, viewed_at, responded_at)) as avg_minutes'))
+    .first();
+
+  return {
+    total_rfqs: Object.values(statusMap).reduce((a, b) => a + b, 0),
+    open_rfqs: (statusMap.OPEN || 0) + (statusMap.PUBLISHED || 0) + (statusMap.QUOTATION_RECEIVED || 0),
+    awarded_rfqs: statusMap.AWARDED || 0,
+    completed_rfqs: statusMap.COMPLETED || 0,
+    cancelled_rfqs: statusMap.CANCELLED || 0,
+    expired_rfqs: statusMap.EXPIRED || 0,
+    average_quotations_per_rfq: parseFloat(avgQuotations?.avg_quotations || 0),
+    average_response_time_minutes: parseFloat(avgResponse?.avg_minutes || 0),
+    by_status: statusMap,
   };
-  if (userId) {
-    updatePayload.updated_by = userId;
-  }
-  await db('rfqs').where({ id }).update(updatePayload);
 };
 
 module.exports = {
+  formatRow,
   findRfqById,
   findRfqs,
+  findSupplierFeed,
   createRfq,
   updateRfq,
+  incrementViews,
+  incrementQuotationCount,
   deleteRfq,
+  expireOverdueRfqs,
+  getAdminSummary,
+  RFQ_SORT_FIELDS,
 };
