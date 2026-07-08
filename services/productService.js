@@ -37,15 +37,26 @@ const parseNumber = (value, parser = Number) => {
   return Number.isNaN(parsed) ? value : parsed;
 };
 
-/** Normalize product body from multipart form-data. */
-const parseJsonField = (value) => {
+/** Store specifications as a JSON string for MySQL JSON columns (knex/mysql2). */
+const parseSpecificationsForStorage = (value) => {
   if (value === undefined || value === null || value === '') return undefined;
-  if (typeof value === 'object') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
+
+  let parsed = value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      throw new Error('specifications must be valid JSON');
+    }
   }
+
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('specifications must be a JSON object or array');
+  }
+
+  return JSON.stringify(parsed);
 };
 
 /** Store search tags as JSON string in DB. */
@@ -85,7 +96,7 @@ const parseProductBody = (body = {}) => {
     show_price: parseBoolean(clean.show_price),
     accept_inquiry: parseBoolean(clean.accept_inquiry),
     search_tags: parseSearchTagsForStorage(clean.search_tags),
-    specifications: parseJsonField(clean.specifications),
+    specifications: parseSpecificationsForStorage(clean.specifications),
   };
 };
 
