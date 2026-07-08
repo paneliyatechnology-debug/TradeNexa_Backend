@@ -52,6 +52,9 @@ const uploadPaths = {
 
   /** Temporary inbox before service ID exists: uploads/services/_inbox/{userId}/ */
   serviceInbox: (userId) => ['services', '_inbox', String(userId)],
+
+  /** Chat attachments: uploads/chats/{conversationId}/ */
+  chat: (conversationId) => ['chats', String(conversationId)],
 };
 
 // ==========================================

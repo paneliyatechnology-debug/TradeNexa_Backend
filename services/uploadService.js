@@ -79,6 +79,31 @@ const createProductFileFilter = () => (_req, file, cb) => {
   cb(null, true);
 };
 
+/** Chat uploads: images for IMAGE type, documents for DOCUMENT type. */
+const createChatFileFilter = () => (req, file, cb) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+  const messageType = req.body?.message_type;
+
+  if (messageType === 'DOCUMENT') {
+    if (!uploadConfig.allowedDocumentMimeTypes.includes(file.mimetype)) {
+      return cb(new AppError('Only PDF, DOC, DOCX, XLS, and XLSX documents are allowed', 400), false);
+    }
+    if (!uploadConfig.allowedDocumentExtensions.includes(ext)) {
+      return cb(new AppError('Invalid document file extension', 400), false);
+    }
+    return cb(null, true);
+  }
+
+  if (!uploadConfig.allowedMimeTypes.includes(file.mimetype)) {
+    return cb(new AppError('Only JPEG, PNG, WEBP, and GIF images are allowed', 400), false);
+  }
+  if (!uploadConfig.allowedExtensions.includes(ext)) {
+    return cb(new AppError('Invalid image file extension', 400), false);
+  }
+
+  cb(null, true);
+};
+
 const buildMulterStorage = (getDestination) => {
   if (s3Service.isEnabled()) {
     return multer.memoryStorage();
@@ -181,4 +206,5 @@ module.exports = {
   processUploadedFiles,
   processMultipleUploadedFiles,
   createProductFileFilter,
+  createChatFileFilter,
 };

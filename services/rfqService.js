@@ -21,6 +21,8 @@ const {
 } = require('../constants/rfq');
 const quotationHistoryModel = require('../models/quotationHistoryModel');
 const { generateQuotationNumber } = require('../utils/rfqNumbers');
+const chatService = require('./chatService');
+const { CHAT_SYSTEM_EVENT } = require('../constants/chat');
 const logger = require('../utils/logger');
 
 // ==========================================
@@ -255,6 +257,7 @@ const cancelRfq = async (id, buyerId, isAdmin = false) => {
   await rfqModel.updateRfq(id, { status: RFQ_STATUS.CANCELLED, updated_by: buyerId });
   await rfqAuditModel.logAction({ rfqId: id, action: RFQ_AUDIT_ACTION.RFQ_CANCELLED, actorId: buyerId });
   notify('RFQ_CANCELLED', { rfqId: id, buyerId });
+  await chatService.recordRfqEventForSellers(id, CHAT_SYSTEM_EVENT.RFQ_CANCELLED, buyerId);
   return getRfqDetail(id);
 };
 
@@ -396,6 +399,14 @@ const submitQuotation = async (rfqId, data, sellerId) => {
     );
     notify('NEW_QUOTATION', { rfqId, quotationId: quotation.id, sellerId });
 
+    await chatService.recordSystemEvent({
+      rfqId,
+      sellerId,
+      quotationId: quotation.id,
+      eventType: CHAT_SYSTEM_EVENT.QUOTATION_SUBMITTED,
+      actorId: sellerId,
+    });
+
     return quotationModel.findById(quotation.id);
   });
 };
@@ -431,6 +442,13 @@ const updateQuotation = async (quotationId, data, sellerId) => {
       trx,
     );
     notify('QUOTATION_UPDATED', { quotationId, sellerId });
+    await chatService.recordSystemEvent({
+      rfqId: quotation.rfq_id,
+      sellerId,
+      quotationId,
+      eventType: CHAT_SYSTEM_EVENT.QUOTATION_UPDATED,
+      actorId: sellerId,
+    });
     return quotationModel.findById(quotationId);
   });
 };
@@ -448,6 +466,13 @@ const withdrawQuotation = async (quotationId, sellerId) => {
     rfqId: quotation.rfq_id,
     quotationId,
     action: RFQ_AUDIT_ACTION.QUOTATION_WITHDRAWN,
+    actorId: sellerId,
+  });
+  await chatService.recordSystemEvent({
+    rfqId: quotation.rfq_id,
+    sellerId,
+    quotationId,
+    eventType: CHAT_SYSTEM_EVENT.QUOTATION_WITHDRAWN,
     actorId: sellerId,
   });
   return quotationModel.findById(quotationId);
@@ -481,6 +506,21 @@ const acceptQuotation = async (quotationId, buyerId, isAdmin = false) => {
     );
     notify('QUOTATION_ACCEPTED', { rfqId: quotation.rfq_id, quotationId, sellerId: quotation.seller_id });
 
+    await chatService.recordSystemEvent({
+      rfqId: quotation.rfq_id,
+      sellerId: quotation.seller_id,
+      quotationId,
+      eventType: CHAT_SYSTEM_EVENT.QUOTATION_ACCEPTED,
+      actorId: buyerId,
+    });
+    await chatService.recordSystemEvent({
+      rfqId: quotation.rfq_id,
+      sellerId: quotation.seller_id,
+      quotationId,
+      eventType: CHAT_SYSTEM_EVENT.RFQ_AWARDED,
+      actorId: buyerId,
+    });
+
     return quotationModel.findById(quotationId);
   });
 };
@@ -502,6 +542,13 @@ const rejectQuotation = async (quotationId, buyerId, isAdmin = false) => {
     actorId: buyerId,
   });
   notify('QUOTATION_REJECTED', { quotationId, buyerId });
+  await chatService.recordSystemEvent({
+    rfqId: quotation.rfq_id,
+    sellerId: quotation.seller_id,
+    quotationId,
+    eventType: CHAT_SYSTEM_EVENT.QUOTATION_REJECTED,
+    actorId: buyerId,
+  });
   return quotationModel.findById(quotationId);
 };
 
@@ -528,6 +575,14 @@ const requestRevision = async (quotationId, buyerId, remarks) => {
     metadata: { remarks },
   });
   notify('NEGOTIATION_REQUEST', { quotationId, buyerId, remarks });
+  await chatService.recordSystemEvent({
+    rfqId: quotation.rfq_id,
+    sellerId: quotation.seller_id,
+    quotationId,
+    eventType: CHAT_SYSTEM_EVENT.REVISION_REQUESTED,
+    actorId: buyerId,
+    metadata: { remarks },
+  });
   return quotationModel.findById(quotationId);
 };
 
@@ -549,6 +604,13 @@ const reviseQuotation = async (quotationId, data, sellerId) => {
     actorId: sellerId,
   });
   notify('NEGOTIATION_RESPONSE', { quotationId, sellerId });
+  await chatService.recordSystemEvent({
+    rfqId: quotation.rfq_id,
+    sellerId,
+    quotationId,
+    eventType: CHAT_SYSTEM_EVENT.QUOTATION_REVISED,
+    actorId: sellerId,
+  });
   return updated;
 };
 

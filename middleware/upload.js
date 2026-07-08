@@ -5,7 +5,7 @@
  * Validation guards (require*OnCreate, rejectEmptyFileFields) run after multer.
  */
 const { AppError } = require('../utils/response');
-const { createUploadMiddleware, createProductFileFilter } = require('../services/uploadService');
+const { createUploadMiddleware, createProductFileFilter, createChatFileFilter } = require('../services/uploadService');
 const { getAbsoluteUploadDir } = require('../utils/media');
 const uploadConfig = require('../config/upload');
 const { uploadPaths } = require('../constants/uploadPaths');
@@ -19,6 +19,7 @@ const {
   SERVICE_UPLOAD_FIELDS,
   PRODUCT_UPLOAD_FIELDS,
   MAX_PRODUCT_GALLERY_MEDIA,
+  CHAT_UPLOAD_FIELDS,
 } = require('../constants/uploadFields');
 
 // ==========================================
@@ -331,6 +332,18 @@ const validateProductGalleryMediaCount = (mode = 'create') => async (req, _res, 
   }
 };
 
+// ==========================================
+// Chat uploads
+// ==========================================
+
+/** POST /chats/conversations/:id/messages/media — IMAGE or DOCUMENT file upload. */
+const handleChatMediaUpload = createUploadMiddleware({
+  fields: CHAT_UPLOAD_FIELDS,
+  getDestination: (req) => getAbsoluteUploadDir(...uploadPaths.chat(req.params.id)),
+  maxFileSize: uploadConfig.maxDocumentFileSize,
+  fileFilter: createChatFileFilter(),
+});
+
 module.exports = {
   createUploadMiddleware,
   handleProfileUpload,
@@ -357,4 +370,5 @@ module.exports = {
   requireProductThumbnailOnCreate,
   requireProductGalleryImagesOnCreate,
   validateProductGalleryMediaCount,
+  handleChatMediaUpload,
 };

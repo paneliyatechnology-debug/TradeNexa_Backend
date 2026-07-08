@@ -55,6 +55,9 @@ const PRODUCT_UPLOAD_FIELDS = [
 const PRODUCT_IMAGE_FIELD_NAMES = ['thumbnail', 'image'];
 const PRODUCT_VIDEO_FIELD_NAMES = ['video'];
 
+/** POST /chats/conversations/:id/messages/media */
+const CHAT_UPLOAD_FIELDS = [{ name: 'file', maxCount: 1 }];
+
 // ==========================================
 // Exports
 // ==========================================
@@ -70,5 +73,6 @@ module.exports = {
   PRODUCT_UPLOAD_FIELDS,
   PRODUCT_IMAGE_FIELD_NAMES,
   PRODUCT_VIDEO_FIELD_NAMES,
+  CHAT_UPLOAD_FIELDS,
   MAX_PRODUCT_GALLERY_MEDIA,
 };

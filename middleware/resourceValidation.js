@@ -777,6 +777,95 @@ const roleListQuery = [
   ...listSortQuery(ROLE_SORT_BY_VALUES),
 ];
 
+// ==========================================
+// Chat validations (/chats)
+// ==========================================
+
+const { CHAT_MESSAGE_TYPE_VALUES, CHAT_CONVERSATION_SORT_BY_VALUES } = require('../constants/chat');
+
+/** GET /chats/conversations — inbox list query params. */
+const chatConversationListQuery = [
+  ...paginationQuery,
+  query('rfq_id').optional().isInt({ min: 1 }).withMessage('rfq_id must be a positive integer'),
+  query('role').optional().isIn(['buyer', 'seller']).withMessage('role must be buyer or seller'),
+  query('search').optional().trim(),
+  ...listSortQuery(CHAT_CONVERSATION_SORT_BY_VALUES),
+];
+
+/** GET /chats/conversations/:id/messages — message history query params. */
+const chatMessageListQuery = [
+  ...paginationQuery,
+  query('before_id').optional().isInt({ min: 1 }).withMessage('before_id must be a positive integer'),
+  query('after_id').optional().isInt({ min: 1 }).withMessage('after_id must be a positive integer'),
+  query('order').optional().isIn(['asc', 'desc']).withMessage('order must be asc or desc'),
+];
+
+/** POST /chats/conversations — start or get existing RFQ thread. */
+const chatStartConversationRules = [
+  body('rfq_id').isInt({ min: 1 }).withMessage('rfq_id is required and must be a positive integer'),
+  body('seller_id')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 1 })
+    .withMessage('seller_id must be a positive integer'),
+];
+
+/** POST /chats/conversations/:id/messages — TEXT, PRODUCT, QUOTATION body rules. */
+const chatMessageRules = [
+  body('message_type')
+    .trim()
+    .notEmpty()
+    .isIn(CHAT_MESSAGE_TYPE_VALUES.filter((type) => type !== 'SYSTEM' && type !== 'IMAGE' && type !== 'DOCUMENT'))
+    .withMessage('Invalid message type'),
+  body('content')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isLength({ max: 5000 })
+    .withMessage('Message content too long'),
+  body('message_type').custom((value, { req }) => {
+    if (value === 'TEXT' && (!req.body.content || !String(req.body.content).trim())) {
+      throw new Error('content is required for TEXT messages');
+    }
+    if (value === 'PRODUCT' && !req.body.product_id) {
+      throw new Error('product_id is required for PRODUCT messages');
+    }
+    if (value === 'QUOTATION' && !req.body.quotation_id) {
+      throw new Error('quotation_id is required for QUOTATION messages');
+    }
+    return true;
+  }),
+  body('product_id').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('product_id must be a positive integer'),
+  body('quotation_id')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 1 })
+    .withMessage('quotation_id must be a positive integer'),
+  body('reply_to_message_id')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 1 })
+    .withMessage('reply_to_message_id must be a positive integer'),
+];
+
+/** POST /chats/conversations/:id/messages/media — IMAGE, DOCUMENT multipart rules. */
+const chatMediaMessageRules = [
+  body('message_type')
+    .trim()
+    .notEmpty()
+    .isIn(['IMAGE', 'DOCUMENT'])
+    .withMessage('message_type must be IMAGE or DOCUMENT'),
+  body('content')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Caption too long'),
+];
+
+/** POST /chats/conversations/:id/read — read receipt body rules. */
+const chatMarkReadRules = [
+  body('last_read_message_id')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 1 })
+    .withMessage('last_read_message_id must be a positive integer'),
+];
+
 module.exports = {
   idParam,
   categoryIdParam,
@@ -823,4 +912,10 @@ module.exports = {
   businessTypeCreateRules,
   businessTypeUpdateRules,
   roleListQuery,
+  chatConversationListQuery,
+  chatMessageListQuery,
+  chatStartConversationRules,
+  chatMessageRules,
+  chatMediaMessageRules,
+  chatMarkReadRules,
 };
