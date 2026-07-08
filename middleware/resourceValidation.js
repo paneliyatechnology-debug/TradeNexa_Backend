@@ -278,10 +278,10 @@ const brandListQuery = [
 ];
 
 // ==========================================
-// Supplier validations
+// Seller validations
 // ==========================================
 
-const SUPPLIER_SORT_BY_VALUES = [
+const SELLER_SORT_BY_VALUES = [
   'id',
   'company_name',
   'rating',
@@ -290,17 +290,17 @@ const SUPPLIER_SORT_BY_VALUES = [
   'created_at',
 ];
 
-const supplierListQuery = [
+const sellerListQuery = [
   ...paginationQuery,
   query('is_verified')
     .optional()
     .isIn(['true', 'false'])
     .withMessage('is_verified must be true or false'),
   isActiveQuery(),
-  ...listSortQuery(SUPPLIER_SORT_BY_VALUES),
+  ...listSortQuery(SELLER_SORT_BY_VALUES),
 ];
 
-const supplierNearbyRules = [
+const sellerNearbyRules = [
   query('latitude').isFloat({ min: -90, max: 90 }).withMessage('Latitude is required and must be between -90 and 90'),
   query('longitude').isFloat({ min: -180, max: 180 }).withMessage('Longitude is required and must be between -180 and 180'),
   query('max_distance').optional().isFloat({ min: 0 }).withMessage('max_distance must be a positive number'),
@@ -320,7 +320,7 @@ const productCreateRules = [
   body('currency').optional().trim().isLength({ max: 10 }).withMessage('Currency code too long'),
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
   body('unit').optional().trim().isLength({ max: 50 }).withMessage('Unit string too long'),
-  body('supplier_id').isInt().withMessage('Supplier ID is required and must be an integer'),
+  body('seller_id').isInt().withMessage('Seller ID is required and must be an integer'),
   body('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required and must be an integer'),
   body('brand_id').optional({ values: 'falsy' }).isInt().withMessage('Brand ID must be an integer'),
   optionalBooleanField('is_trending'),
@@ -338,7 +338,7 @@ const productUpdateRules = [
   body('currency').optional().trim().isLength({ max: 10 }).withMessage('Currency code too long'),
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
   body('unit').optional().trim().isLength({ max: 50 }).withMessage('Unit string too long'),
-  optionalRequiredInt('supplier_id', 'Supplier ID', { min: 1 }),
+  optionalRequiredInt('seller_id', 'Seller ID', { min: 1 }),
   optionalRequiredInt('subcategory_id', 'Subcategory ID', { min: 1 }),
   body('brand_id').optional({ values: 'falsy' }).isInt().withMessage('Brand ID must be an integer'),
   optionalBooleanField('is_trending'),
@@ -377,7 +377,7 @@ const PRODUCT_SORT_BY_VALUES = [
   'rating',
   'is_trending',
   'created_at',
-  'supplier_name',
+  'seller_name',
 ];
 
 const productListFilterSortQuery = [
@@ -500,8 +500,8 @@ const rfqCreateRules = [
   body('required_before').optional({ values: 'falsy' }).isISO8601().withMessage('Required before must be a valid ISO8601 timestamp'),
   body('payment_terms').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
   body('visibility').optional().isIn(Object.values(RFQ_VISIBILITY)).withMessage('Invalid visibility'),
-  body('supplier_ids').optional().isArray().withMessage('supplier_ids must be an array'),
-  body('supplier_ids.*').optional().isInt({ min: 1 }).withMessage('Each supplier ID must be a positive integer'),
+  body('seller_ids').optional().isArray().withMessage('seller_ids must be an array'),
+  body('seller_ids.*').optional().isInt({ min: 1 }).withMessage('Each seller ID must be a positive integer'),
 ];
 
 const rfqUpdateRules = [
@@ -518,8 +518,8 @@ const rfqUpdateRules = [
   body('currency').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
   body('payment_terms').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
   body('visibility').optional().isIn(Object.values(RFQ_VISIBILITY)).withMessage('Invalid visibility'),
-  body('supplier_ids').optional().isArray(),
-  body('supplier_ids.*').optional().isInt({ min: 1 }),
+  body('seller_ids').optional().isArray(),
+  body('seller_ids.*').optional().isInt({ min: 1 }),
   ...rfqDateFields,
 ];
 
@@ -683,8 +683,10 @@ module.exports = {
   brandCreateRules,
   brandUpdateRules,
   brandListQuery,
-  supplierNearbyRules,
-  supplierListQuery,
+  sellerNearbyRules,
+  sellerListQuery,
+  /** @deprecated */ supplierNearbyRules: sellerNearbyRules,
+  /** @deprecated */ supplierListQuery: sellerListQuery,
   productCreateRules,
   productUpdateRules,
   productDeleteMediaRules,

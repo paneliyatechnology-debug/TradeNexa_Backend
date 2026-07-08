@@ -21,7 +21,7 @@ const RFQ_SORT_FIELDS = {
 
 const formatRow = (row) => {
   if (!row) return null;
-  return {
+  const formatted = {
     ...row,
     expected_price:
       row.expected_price !== undefined && row.expected_price !== null
@@ -35,6 +35,13 @@ const formatRow = (row) => {
     total_quotations:
       row.total_quotations !== undefined ? parseInt(row.total_quotations, 10) : undefined,
   };
+
+  // When buyer details are present, expose users.id as user_id
+  if (row.buyer_id != null || row.buyer_name !== undefined || row.user_id != null) {
+    formatted.user_id = row.user_id ?? row.buyer_id ?? null;
+  }
+
+  return formatted;
 };
 
 const baseRfqQuery = () =>
@@ -90,6 +97,7 @@ const findRfqById = async (id, options = {}) => {
       'categories.name as category_name',
       'subcategories.name as subcategory_name',
       'products.name as product_name',
+      'buyers.id as user_id',
       'buyers.full_name as buyer_name',
       'buyers.email as buyer_email',
     )
@@ -130,14 +138,14 @@ const findRfqs = async (filters = {}) => {
   return paginated;
 };
 
-const findSupplierFeed = async (supplierId, filters = {}) => {
+const findSellerFeed = async (sellerId, filters = {}) => {
   const q = baseRfqQuery()
     .where(function () {
       this.where('rfqs.visibility', 'PUBLIC').orWhereExists(function () {
         this.select(1)
-          .from('rfq_suppliers')
-          .whereRaw('rfq_suppliers.rfq_id = rfqs.id')
-          .where('rfq_suppliers.supplier_id', supplierId);
+          .from('rfq_sellers')
+          .whereRaw('rfq_sellers.rfq_id = rfqs.id')
+          .where('rfq_sellers.seller_id', sellerId);
       });
     })
     .whereIn('rfqs.status', filters.statuses || ['PUBLISHED', 'OPEN', 'QUOTATION_RECEIVED', 'NEGOTIATION'])
@@ -229,7 +237,7 @@ const getAdminSummary = async () => {
     .avg('total_quotations as avg_quotations')
     .first();
 
-  const avgResponse = await db('rfq_suppliers')
+  const avgResponse = await db('rfq_sellers')
     .whereNotNull('responded_at')
     .whereNotNull('viewed_at')
     .select(db.raw('AVG(TIMESTAMPDIFF(MINUTE, viewed_at, responded_at)) as avg_minutes'))
@@ -252,7 +260,7 @@ module.exports = {
   formatRow,
   findRfqById,
   findRfqs,
-  findSupplierFeed,
+  findSellerFeed,
   createRfq,
   updateRfq,
   incrementViews,

@@ -22,7 +22,7 @@ const pickProductListFilters = (req, extra = {}) => ({
   ...extra,
 });
 
-/** Ensure the user may modify a product (assigned supplier or admin). */
+/** Ensure the user may modify a product (assigned seller or admin). */
 const assertCanModifyProduct = async (productId, user) => {
   const existing = await productModel.findProductById(productId, { raw: true });
   if (!existing) {
@@ -30,7 +30,7 @@ const assertCanModifyProduct = async (productId, user) => {
   }
 
   const isAdmin = user.role === 'admin';
-  if (!isAdmin && String(existing.supplier_id) !== String(user.id)) {
+  if (!isAdmin && String(existing.seller_id) !== String(user.id)) {
     throw new AppError('Forbidden: You can only modify your own products', HTTP_STATUS.FORBIDDEN);
   }
 
@@ -114,7 +114,9 @@ const getTrendingProducts = async (req, res, next) => {
       currency: p.currency,
       moq: p.moq,
       unit: p.unit,
-      supplier_name: p.supplier_name,
+      seller_id: p.seller_id,
+      user_id: p.seller_id,
+      seller_name: p.seller_name,
       verified: p.verified,
       rating: p.rating,
       city: p.city,
@@ -155,7 +157,9 @@ const getRelatedProducts = async (req, res, next) => {
       price: p.price,
       moq: p.moq,
       unit: p.unit,
-      supplier_name: p.supplier_name,
+      seller_id: p.seller_id,
+      user_id: p.seller_id,
+      seller_name: p.seller_name,
       verified: p.verified,
     }));
 
@@ -171,7 +175,7 @@ const getRelatedProducts = async (req, res, next) => {
 /**
  * PUT /products/:id
  * Update an existing product with optional thumbnail upload.
- * Only the assigned supplier or admin may update the product.
+ * Only the assigned seller or admin may update the product.
  */
 const updateProduct = async (req, res, next) => {
   try {
@@ -180,10 +184,10 @@ const updateProduct = async (req, res, next) => {
     const isAdmin = req.user.role === 'admin';
     if (
       !isAdmin &&
-      req.body.supplier_id !== undefined &&
-      String(req.body.supplier_id) !== String(existing.supplier_id)
+      req.body.seller_id !== undefined &&
+      String(req.body.seller_id) !== String(existing.seller_id)
     ) {
-      return next(new AppError('Forbidden: Cannot change product supplier', HTTP_STATUS.FORBIDDEN));
+      return next(new AppError('Forbidden: Cannot change product seller', HTTP_STATUS.FORBIDDEN));
     }
 
     const product = await productService.updateProduct(
@@ -205,7 +209,7 @@ const parseIdArray = (value) => {
 
 /**
  * DELETE /products/:id/media
- * Remove gallery images and/or videos by ID (DB + S3). Supplier or admin only.
+ * Remove gallery images and/or videos by ID (DB + S3). Seller or admin only.
  */
 const deleteProductMedia = async (req, res, next) => {
   try {

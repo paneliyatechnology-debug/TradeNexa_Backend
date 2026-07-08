@@ -1,5 +1,5 @@
 /**
- * RFQ module routes — buyer, supplier, quotation, and admin under /rfqs.
+ * RFQ module routes — buyer, seller, quotation, and admin under /rfqs.
  */
 const express = require('express');
 const rfqController = require('../controllers/rfqController');
@@ -22,7 +22,7 @@ const router = express.Router();
 const quotationIdParam = [param('quotationId').isInt({ min: 1 }).withMessage('Quotation ID must be a positive integer')];
 
 const buyerRoles = authorize('buyer', 'buyer_seller', 'admin');
-const supplierRoles = authorize('seller', 'buyer_seller', 'admin');
+const sellerRoles = authorize('seller', 'buyer_seller', 'admin');
 const adminRoles = authorize('admin', 'super_admin', 'supporter');
 
 // ==========================================
@@ -43,20 +43,25 @@ router.get('/admin/:id', authenticate, adminRoles, idParam, validate, rfqControl
 router.patch('/admin/:id/status', authenticate, adminRoles, idParam, adminRfqStatusRules, validate, rfqController.updateAdminRfqStatus);
 
 // ==========================================
-// Supplier routes
+// Seller routes (canonical /seller/*; /supplier/* kept for compatibility)
 // ==========================================
 
-router.get('/supplier/feed', authenticate, supplierRoles, rfqListQuery, validate, rfqController.getSupplierRfqs);
-router.get('/supplier/quotations', authenticate, supplierRoles, rfqListQuery, validate, rfqController.getMyQuotations);
-router.get(
-  '/supplier/quotations/:quotationId',
-  authenticate,
-  supplierRoles,
-  quotationIdParam,
-  validate,
-  rfqController.getMyQuotation,
-);
-router.get('/supplier/:id', authenticate, supplierRoles, idParam, validate, rfqController.getSupplierRfq);
+const mountSellerRoutes = (prefix) => {
+  router.get(`/${prefix}/feed`, authenticate, sellerRoles, rfqListQuery, validate, rfqController.getSellerRfqs);
+  router.get(`/${prefix}/quotations`, authenticate, sellerRoles, rfqListQuery, validate, rfqController.getMyQuotations);
+  router.get(
+    `/${prefix}/quotations/:quotationId`,
+    authenticate,
+    sellerRoles,
+    quotationIdParam,
+    validate,
+    rfqController.getMyQuotation,
+  );
+  router.get(`/${prefix}/:id`, authenticate, sellerRoles, idParam, validate, rfqController.getSellerRfq);
+};
+
+mountSellerRoutes('seller');
+mountSellerRoutes('supplier');
 
 // ==========================================
 // Quotation routes
@@ -85,7 +90,7 @@ router.post(
 router.put(
   '/quotations/:quotationId',
   authenticate,
-  supplierRoles,
+  sellerRoles,
   quotationIdParam,
   quotationUpdateRules,
   validate,
@@ -95,7 +100,7 @@ router.put(
 router.post(
   '/quotations/:quotationId/withdraw',
   authenticate,
-  supplierRoles,
+  sellerRoles,
   quotationIdParam,
   validate,
   rfqController.withdrawQuotation,
@@ -114,7 +119,7 @@ router.post(
 router.post(
   '/quotations/:quotationId/revise',
   authenticate,
-  supplierRoles,
+  sellerRoles,
   quotationIdParam,
   quotationUpdateRules,
   validate,
@@ -138,7 +143,7 @@ router.get('/:id/quotations', authenticate, buyerRoles, idParam, validate, rfqCo
 router.post(
   '/:id/quotations',
   authenticate,
-  supplierRoles,
+  sellerRoles,
   idParam,
   quotationCreateRules,
   validate,

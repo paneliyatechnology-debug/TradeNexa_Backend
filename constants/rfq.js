@@ -1,5 +1,5 @@
 /**
- * RFQ module constants — statuses, visibility, and supplier types.
+ * RFQ module constants — statuses, visibility, and seller types.
  */
 
 // ==========================================
@@ -22,13 +22,16 @@ const RFQ_STATUS = {
 /** Statuses that allow buyer update. */
 const RFQ_EDITABLE_STATUSES = [RFQ_STATUS.DRAFT, RFQ_STATUS.OPEN];
 
-/** Statuses visible in supplier feed. */
-const RFQ_SUPPLIER_VISIBLE_STATUSES = [
+/** Statuses visible in seller feed. */
+const RFQ_SELLER_VISIBLE_STATUSES = [
   RFQ_STATUS.PUBLISHED,
   RFQ_STATUS.OPEN,
   RFQ_STATUS.QUOTATION_RECEIVED,
   RFQ_STATUS.NEGOTIATION,
 ];
+
+/** @deprecated Use RFQ_SELLER_VISIBLE_STATUSES */
+const RFQ_SUPPLIER_VISIBLE_STATUSES = RFQ_SELLER_VISIBLE_STATUSES;
 
 // ==========================================
 // Quotation status
@@ -43,11 +46,11 @@ const QUOTATION_STATUS = {
   EXPIRED: 'EXPIRED',
 };
 
-/** Statuses that allow supplier update. */
+/** Statuses that allow seller update. */
 const QUOTATION_EDITABLE_STATUSES = [QUOTATION_STATUS.SUBMITTED, QUOTATION_STATUS.UPDATED];
 
 // ==========================================
-// Visibility & supplier type
+// Visibility & seller type
 // ==========================================
 
 const RFQ_VISIBILITY = {
@@ -55,23 +58,29 @@ const RFQ_VISIBILITY = {
   PRIVATE: 'PRIVATE',
 };
 
-const RFQ_SUPPLIER_TYPE = {
+const RFQ_SELLER_TYPE = {
   ANY: 'ANY',
   VERIFIED: 'VERIFIED',
   PREFERRED: 'PREFERRED',
 };
 
+/** @deprecated Use RFQ_SELLER_TYPE */
+const RFQ_SUPPLIER_TYPE = RFQ_SELLER_TYPE;
+
 // ==========================================
-// RFQ supplier mapping status
+// RFQ seller mapping status
 // ==========================================
 
-const RFQ_SUPPLIER_STATUS = {
+const RFQ_SELLER_STATUS = {
   INVITED: 'INVITED',
   VIEWED: 'VIEWED',
   RESPONDED: 'RESPONDED',
   AWARDED: 'AWARDED',
   REJECTED: 'REJECTED',
 };
+
+/** @deprecated Use RFQ_SELLER_STATUS */
+const RFQ_SUPPLIER_STATUS = RFQ_SELLER_STATUS;
 
 // ==========================================
 // Audit actions
@@ -105,11 +114,14 @@ const RFQ_SORT_BY_VALUES = [
 module.exports = {
   RFQ_STATUS,
   RFQ_EDITABLE_STATUSES,
+  RFQ_SELLER_VISIBLE_STATUSES,
   RFQ_SUPPLIER_VISIBLE_STATUSES,
   QUOTATION_STATUS,
   QUOTATION_EDITABLE_STATUSES,
   RFQ_VISIBILITY,
+  RFQ_SELLER_TYPE,
   RFQ_SUPPLIER_TYPE,
+  RFQ_SELLER_STATUS,
   RFQ_SUPPLIER_STATUS,
   RFQ_AUDIT_ACTION,
   RFQ_SORT_BY_VALUES,

@@ -26,6 +26,7 @@ const formatRow = (row) => {
   if (!row) return null;
   return {
     ...row,
+    user_id: row.seller_id ?? row.user_id ?? undefined,
     thumbnail: resolveMediaUrl(row.thumbnail),
     verified: row.verified !== undefined ? !!row.verified : undefined,
     is_trending: row.is_trending !== undefined ? !!row.is_trending : undefined,
@@ -43,9 +44,10 @@ const formatNamedEntity = (id, name) => ({
 
 /** Seller block with a stable key set for product detail responses. */
 const formatSellerDetail = (row) => ({
-  id: row?.supplier_id ?? null,
+  id: row?.seller_id ?? null,
+  user_id: row?.seller_id ?? null,
   company: {
-    name: row?.supplier_name ?? null,
+    name: row?.seller_name ?? null,
     logo: row?.company_logo ? resolveMediaUrl(row.company_logo) : null,
     business_type: row?.business_type_name ?? null,
     year_established: null,
@@ -56,17 +58,17 @@ const formatSellerDetail = (row) => ({
   },
   rating: {
     average:
-      row?.supplier_rating !== undefined && row?.supplier_rating !== null
-        ? parseFloat(row.supplier_rating)
+      row?.seller_rating !== undefined && row?.seller_rating !== null
+        ? parseFloat(row.seller_rating)
         : null,
     total_reviews: null,
   },
   contact: {
     show_phone: null,
     show_email: null,
-    phone: row?.supplier_phone ?? null,
+    phone: row?.seller_phone ?? null,
     whatsapp: null,
-    email: row?.supplier_email ?? null,
+    email: row?.seller_email ?? null,
     website: null,
   },
   location: {
@@ -162,7 +164,7 @@ const PRODUCT_SORT_FIELDS = {
   rating: 'products.rating',
   is_trending: 'products.is_trending',
   created_at: 'products.created_at',
-  supplier_name: 'company_details.company_name',
+  seller_name: 'company_details.company_name',
 };
 
 /** Apply field-wise sort (default: id desc). */
@@ -174,20 +176,20 @@ const applyProductListSort = (q, filters) => {
 };
 
 /**
- * Find a product by ID with supplier, category, brand, and location joins.
+ * Find a product by ID with seller, category, brand, and location joins.
  * @param {number} id - Product ID
  * @param {{ raw?: boolean }} [options] - Return raw DB row when raw=true
  * @returns {Promise<Object|null>}
  */
 const findProductById = async (id, options = {}) => {
   const result = await db('products')
-    .leftJoin('users as suppliers', 'products.supplier_id', '=', 'suppliers.id')
-    .leftJoin('company_details', 'suppliers.id', '=', 'company_details.user_id')
+    .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
+    .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
     .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
     .leftJoin('categories', 'subcategories.parent_id', '=', 'categories.id')
     .leftJoin('brands', 'products.brand_id', '=', 'brands.id')
     .leftJoin('addresses', function () {
-      this.on('suppliers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
+      this.on('sellers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
     })
     .leftJoin('cities', 'addresses.city_id', '=', 'cities.id')
     .leftJoin('states', 'addresses.state_id', '=', 'states.id')
@@ -195,8 +197,8 @@ const findProductById = async (id, options = {}) => {
     .whereNull('products.deleted_at')
     .select(
       'products.*',
-      'company_details.company_name as supplier_name',
-      'suppliers.is_verified as verified',
+      'company_details.company_name as seller_name',
+      'sellers.is_verified as verified',
       'categories.name as category_name',
       'subcategories.id as subcategory_id',
       'subcategories.name as subcategory_name',
@@ -213,14 +215,14 @@ const findProductById = async (id, options = {}) => {
 /** Base product detail query with seller, category, brand, and address joins. */
 const buildProductDetailQuery = () =>
   db('products')
-    .leftJoin('users as suppliers', 'products.supplier_id', '=', 'suppliers.id')
-    .leftJoin('company_details', 'suppliers.id', '=', 'company_details.user_id')
+    .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
+    .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
     .leftJoin('business_types', 'company_details.business_type_id', '=', 'business_types.id')
     .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
     .leftJoin('categories', 'subcategories.parent_id', '=', 'categories.id')
     .leftJoin('brands', 'products.brand_id', '=', 'brands.id')
     .leftJoin('addresses', function () {
-      this.on('suppliers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
+      this.on('sellers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
     })
     .leftJoin('cities', 'addresses.city_id', '=', 'cities.id')
     .leftJoin('states', 'addresses.state_id', '=', 'states.id')
@@ -237,12 +239,12 @@ const findProductDetailById = async (id) => {
     .where('products.id', id)
     .select(
       'products.*',
-      'company_details.company_name as supplier_name',
+      'company_details.company_name as seller_name',
       'company_details.company_logo',
       'company_details.years_in_business',
-      'company_details.rating as supplier_rating',
-      'suppliers.mobile_number as supplier_phone',
-      'suppliers.email as supplier_email',
+      'company_details.rating as seller_rating',
+      'sellers.mobile_number as seller_phone',
+      'sellers.email as seller_email',
       'categories.id as category_id',
       'categories.name as category_name',
       'subcategories.name as subcategory_name',
@@ -393,11 +395,11 @@ const deleteProductVideo = async (productId, videoId) => {
  */
 const findProducts = async (filters = {}) => {
   const q = db('products')
-    .leftJoin('users as suppliers', 'products.supplier_id', '=', 'suppliers.id')
-    .leftJoin('company_details', 'suppliers.id', '=', 'company_details.user_id')
+    .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
+    .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
     .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
     .leftJoin('addresses', function () {
-      this.on('suppliers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
+      this.on('sellers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
     })
     .leftJoin('cities', 'addresses.city_id', '=', 'cities.id')
     .leftJoin('states', 'addresses.state_id', '=', 'states.id')
@@ -411,8 +413,9 @@ const findProducts = async (filters = {}) => {
       'products.currency',
       'products.moq',
       'products.unit',
-      'company_details.company_name as supplier_name',
-      'suppliers.is_verified as verified',
+      'products.seller_id',
+      'company_details.company_name as seller_name',
+      'sellers.is_verified as verified',
       'products.rating',
       'cities.name as city',
       'states.name as state',
@@ -487,7 +490,7 @@ const createProduct = async (data, userId = null) => {
     currency: data.currency || 'INR',
     moq: data.moq !== undefined ? data.moq : 1,
     unit: data.unit || 'pcs',
-    supplier_id: data.supplier_id,
+    seller_id: data.seller_id,
     subcategory_id: data.subcategory_id,
     brand_id: data.brand_id || null,
     is_trending: data.is_trending !== undefined ? data.is_trending : false,
@@ -519,7 +522,7 @@ const updateProduct = async (id, data, userId = null) => {
   if (data.currency !== undefined) payload.currency = data.currency;
   if (data.moq !== undefined) payload.moq = data.moq;
   if (data.unit !== undefined) payload.unit = data.unit;
-  if (data.supplier_id !== undefined) payload.supplier_id = data.supplier_id;
+  if (data.seller_id !== undefined) payload.seller_id = data.seller_id;
   if (data.subcategory_id !== undefined) {
     await categoryModel.validateSubcategoryForProduct(data.subcategory_id);
     payload.subcategory_id = data.subcategory_id;

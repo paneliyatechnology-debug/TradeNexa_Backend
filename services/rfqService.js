@@ -4,7 +4,7 @@
 const db = require('../database/knex');
 const rfqModel = require('../models/rfqModel');
 const rfqAttachmentModel = require('../models/rfqAttachmentModel');
-const rfqSupplierModel = require('../models/rfqSupplierModel');
+const rfqSellerModel = require('../models/rfqSellerModel');
 const rfqAuditModel = require('../models/rfqAuditModel');
 const quotationModel = require('../models/quotationModel');
 const { generateRfqNumber } = require('../utils/rfqNumbers');
@@ -14,10 +14,10 @@ const {
   RFQ_EDITABLE_STATUSES,
   RFQ_VISIBILITY,
   RFQ_AUDIT_ACTION,
-  RFQ_SUPPLIER_VISIBLE_STATUSES,
+  RFQ_SELLER_VISIBLE_STATUSES,
   QUOTATION_STATUS,
   QUOTATION_EDITABLE_STATUSES,
-  RFQ_SUPPLIER_STATUS,
+  RFQ_SELLER_STATUS,
 } = require('../constants/rfq');
 const quotationHistoryModel = require('../models/quotationHistoryModel');
 const { generateQuotationNumber } = require('../utils/rfqNumbers');
@@ -99,7 +99,7 @@ const getRfqDetail = async (id, options = {}) => {
   if (!rfq) return null;
 
   const attachments = await rfqAttachmentModel.findByRfqId(id);
-  const supplierCount = await rfqSupplierModel.countByRfqId(id);
+  const sellerCount = await rfqSellerModel.countByRfqId(id);
   const quotations = options.includeQuotations
     ? await quotationModel.findByRfqId(id)
     : undefined;
@@ -117,7 +117,7 @@ const getRfqDetail = async (id, options = {}) => {
     category: rfq.category_name,
     subcategory: rfq.subcategory_name,
     product_name: rfq.product_name,
-    supplier_count: supplierCount,
+    seller_count: sellerCount,
     quotation_count: rfq.total_quotations || 0,
     attachments,
     quotations,
@@ -136,8 +136,8 @@ const createDraftRfq = async (data, buyerId) => {
 
     const rfq = await rfqModel.createRfq(payload, trx);
 
-    if (data.supplier_ids?.length) {
-      await rfqSupplierModel.assignSuppliers(rfq.id, data.supplier_ids, trx);
+    if (data.seller_ids?.length) {
+      await rfqSellerModel.assignSellers(rfq.id, data.seller_ids, trx);
     }
 
     if (data.attachments?.length) {
@@ -223,9 +223,9 @@ const updateRfq = async (id, data, actorId, isAdmin = false) => {
 
   await rfqModel.updateRfq(id, { ...payload, updated_by: actorId });
 
-  if (data.supplier_ids) {
-    await rfqSupplierModel.assignSuppliers(id, data.supplier_ids);
-    notify('SUPPLIER_ASSIGNED', { rfqId: id, supplierIds: data.supplier_ids });
+  if (data.seller_ids) {
+    await rfqSellerModel.assignSellers(id, data.seller_ids);
+    notify('SELLER_ASSIGNED', { rfqId: id, sellerIds: data.seller_ids });
   }
 
   await rfqAuditModel.logAction({ rfqId: id, action: RFQ_AUDIT_ACTION.RFQ_UPDATED, actorId });
@@ -274,17 +274,17 @@ const getBuyerRfqs = async (buyerId, filters = {}) => {
   return rfqModel.findRfqs({ ...filters, buyer_id: buyerId });
 };
 
-const getSupplierRfqDetail = async (rfqId, supplierId) => {
+const getSellerRfqDetail = async (rfqId, sellerId) => {
   await rfqModel.expireOverdueRfqs();
   const rfq = await rfqModel.findRfqById(rfqId, { raw: true });
   if (!rfq) throw new AppError('RFQ not found', 404);
 
-  const allowed = await rfqSupplierModel.isSupplierAllowed(rfq, supplierId);
+  const allowed = await rfqSellerModel.isSellerAllowed(rfq, sellerId);
   if (!allowed) throw new AppError('Forbidden: RFQ not available', 403);
 
-  await rfqSupplierModel.markViewed(rfqId, supplierId);
+  await rfqSellerModel.markViewed(rfqId, sellerId);
   await rfqModel.incrementViews(rfqId);
-  notify('SUPPLIER_VIEWED_RFQ', { rfqId, supplierId });
+  notify('SELLER_VIEWED_RFQ', { rfqId, sellerId });
 
   return getRfqDetail(rfqId);
 };
@@ -314,18 +314,18 @@ const calculateTotalAmount = ({ price, quantity, gstPercentage = 0, transportati
   return parseFloat((base + gstAmount + parseFloat(transportationCharge || 0)).toFixed(2));
 };
 
-const assertSupplierCanQuote = async (rfq, supplierId) => {
-  if (getBuyerId(rfq) === supplierId) {
-    throw new AppError('Supplier cannot quote on own RFQ', 400);
+const assertSellerCanQuote = async (rfq, sellerId) => {
+  if (getBuyerId(rfq) === sellerId) {
+    throw new AppError('Seller cannot quote on own RFQ', 400);
   }
-  if (!RFQ_SUPPLIER_VISIBLE_STATUSES.includes(rfq.status) && rfq.status !== RFQ_STATUS.NEGOTIATION) {
+  if (!RFQ_SELLER_VISIBLE_STATUSES.includes(rfq.status) && rfq.status !== RFQ_STATUS.NEGOTIATION) {
     throw new AppError('RFQ is not open for quotations', 400);
   }
-  const allowed = await rfqSupplierModel.isSupplierAllowed(rfq, supplierId);
+  const allowed = await rfqSellerModel.isSellerAllowed(rfq, sellerId);
   if (!allowed) throw new AppError('Forbidden: RFQ not available', 403);
 };
 
-const buildQuotationPayload = (data, rfqId, supplierId, quotationNumber) => {
+const buildQuotationPayload = (data, rfqId, sellerId, quotationNumber) => {
   const gstPercentage = data.gst_percentage ?? 0;
   const transportationCharge = data.transportation_charge ?? 0;
   const quantity = data.quantity ?? null;
@@ -335,7 +335,7 @@ const buildQuotationPayload = (data, rfqId, supplierId, quotationNumber) => {
   return {
     quotation_number: quotationNumber,
     rfq_id: rfqId,
-    supplier_id: supplierId,
+    seller_id: sellerId,
     price: data.price,
     quantity,
     unit: data.unit || null,
@@ -357,16 +357,16 @@ const buildQuotationPayload = (data, rfqId, supplierId, quotationNumber) => {
   };
 };
 
-const submitQuotation = async (rfqId, data, supplierId) => {
+const submitQuotation = async (rfqId, data, sellerId) => {
   await rfqModel.expireOverdueRfqs();
   const rfq = await rfqModel.findRfqById(rfqId, { raw: true });
   if (!rfq) throw new AppError('RFQ not found', 404);
 
-  await assertSupplierCanQuote(rfq, supplierId);
+  await assertSellerCanQuote(rfq, sellerId);
 
-  const existing = await quotationModel.findByRfqAndSupplier(rfqId, supplierId);
+  const existing = await quotationModel.findByRfqAndSeller(rfqId, sellerId);
   if (existing && existing.status !== QUOTATION_STATUS.WITHDRAWN) {
-    throw new AppError('Supplier has already submitted a quotation for this RFQ', 409);
+    throw new AppError('Seller has already submitted a quotation for this RFQ', 409);
   }
 
   return db.transaction(async (trx) => {
@@ -374,13 +374,13 @@ const submitQuotation = async (rfqId, data, supplierId) => {
     const payload = buildQuotationPayload(
       { ...data, unit: data.unit || rfq.unit },
       rfqId,
-      supplierId,
+      sellerId,
       quotationNumber,
     );
     const quotation = await quotationModel.createQuotation(payload, trx);
 
     await rfqModel.incrementQuotationCount(rfqId, trx);
-    await rfqSupplierModel.markResponded(rfqId, supplierId, trx);
+    await rfqSellerModel.markResponded(rfqId, sellerId, trx);
 
     const nextStatus =
       rfq.status === RFQ_STATUS.PUBLISHED || rfq.status === RFQ_STATUS.OPEN
@@ -391,19 +391,19 @@ const submitQuotation = async (rfqId, data, supplierId) => {
     }
 
     await rfqAuditModel.logAction(
-      { rfqId, quotationId: quotation.id, action: RFQ_AUDIT_ACTION.QUOTATION_SUBMITTED, actorId: supplierId },
+      { rfqId, quotationId: quotation.id, action: RFQ_AUDIT_ACTION.QUOTATION_SUBMITTED, actorId: sellerId },
       trx,
     );
-    notify('NEW_QUOTATION', { rfqId, quotationId: quotation.id, supplierId });
+    notify('NEW_QUOTATION', { rfqId, quotationId: quotation.id, sellerId });
 
     return quotationModel.findById(quotation.id);
   });
 };
 
-const updateQuotation = async (quotationId, data, supplierId) => {
+const updateQuotation = async (quotationId, data, sellerId) => {
   const quotation = await quotationModel.findById(quotationId, { raw: true });
   if (!quotation) throw new AppError('Quotation not found', 404);
-  if (quotation.supplier_id !== supplierId) throw new AppError('Forbidden: Access denied', 403);
+  if (quotation.seller_id !== sellerId) throw new AppError('Forbidden: Access denied', 403);
   if (!QUOTATION_EDITABLE_STATUSES.includes(quotation.status)) {
     throw new AppError('Quotation cannot be updated in its current status', 400);
   }
@@ -412,33 +412,33 @@ const updateQuotation = async (quotationId, data, supplierId) => {
   const payload = buildQuotationPayload(
     { ...quotation, ...data },
     quotation.rfq_id,
-    supplierId,
+    sellerId,
     quotation.quotation_number,
   );
   delete payload.quotation_number;
   delete payload.rfq_id;
-  delete payload.supplier_id;
+  delete payload.seller_id;
   payload.status = QUOTATION_STATUS.UPDATED;
 
   return db.transaction(async (trx) => {
     await quotationModel.updateQuotation(quotationId, payload, trx);
     await quotationHistoryModel.createHistory(
-      { quotationId, oldPrice, newPrice: payload.price, remarks: data.remarks, updatedBy: supplierId },
+      { quotationId, oldPrice, newPrice: payload.price, remarks: data.remarks, updatedBy: sellerId },
       trx,
     );
     await rfqAuditModel.logAction(
-      { rfqId: quotation.rfq_id, quotationId, action: RFQ_AUDIT_ACTION.QUOTATION_UPDATED, actorId: supplierId },
+      { rfqId: quotation.rfq_id, quotationId, action: RFQ_AUDIT_ACTION.QUOTATION_UPDATED, actorId: sellerId },
       trx,
     );
-    notify('QUOTATION_UPDATED', { quotationId, supplierId });
+    notify('QUOTATION_UPDATED', { quotationId, sellerId });
     return quotationModel.findById(quotationId);
   });
 };
 
-const withdrawQuotation = async (quotationId, supplierId) => {
+const withdrawQuotation = async (quotationId, sellerId) => {
   const quotation = await quotationModel.findById(quotationId, { raw: true });
   if (!quotation) throw new AppError('Quotation not found', 404);
-  if (quotation.supplier_id !== supplierId) throw new AppError('Forbidden: Access denied', 403);
+  if (quotation.seller_id !== sellerId) throw new AppError('Forbidden: Access denied', 403);
   if (quotation.status === QUOTATION_STATUS.ACCEPTED) {
     throw new AppError('Accepted quotation cannot be withdrawn', 400);
   }
@@ -448,7 +448,7 @@ const withdrawQuotation = async (quotationId, supplierId) => {
     rfqId: quotation.rfq_id,
     quotationId,
     action: RFQ_AUDIT_ACTION.QUOTATION_WITHDRAWN,
-    actorId: supplierId,
+    actorId: sellerId,
   });
   return quotationModel.findById(quotationId);
 };
@@ -468,18 +468,18 @@ const acceptQuotation = async (quotationId, buyerId, isAdmin = false) => {
     await quotationModel.rejectOthersExcept(quotation.rfq_id, quotationId, trx);
     await rfqModel.updateRfq(
       quotation.rfq_id,
-      { status: RFQ_STATUS.AWARDED, awarded_supplier_id: quotation.supplier_id, updated_by: buyerId },
+      { status: RFQ_STATUS.AWARDED, awarded_seller_id: quotation.seller_id, updated_by: buyerId },
       trx,
     );
-    await trx('rfq_suppliers')
-      .where({ rfq_id: quotation.rfq_id, supplier_id: quotation.supplier_id })
-      .update({ status: RFQ_SUPPLIER_STATUS.AWARDED });
+    await trx('rfq_sellers')
+      .where({ rfq_id: quotation.rfq_id, seller_id: quotation.seller_id })
+      .update({ status: RFQ_SELLER_STATUS.AWARDED });
 
     await rfqAuditModel.logAction(
       { rfqId: quotation.rfq_id, quotationId, action: RFQ_AUDIT_ACTION.QUOTATION_ACCEPTED, actorId: buyerId },
       trx,
     );
-    notify('QUOTATION_ACCEPTED', { rfqId: quotation.rfq_id, quotationId, supplierId: quotation.supplier_id });
+    notify('QUOTATION_ACCEPTED', { rfqId: quotation.rfq_id, quotationId, sellerId: quotation.seller_id });
 
     return quotationModel.findById(quotationId);
   });
@@ -531,24 +531,24 @@ const requestRevision = async (quotationId, buyerId, remarks) => {
   return quotationModel.findById(quotationId);
 };
 
-const reviseQuotation = async (quotationId, data, supplierId) => {
+const reviseQuotation = async (quotationId, data, sellerId) => {
   const quotation = await quotationModel.findById(quotationId, { raw: true });
   if (!quotation) throw new AppError('Quotation not found', 404);
-  if (quotation.supplier_id !== supplierId) throw new AppError('Forbidden: Access denied', 403);
+  if (quotation.seller_id !== sellerId) throw new AppError('Forbidden: Access denied', 403);
 
   const rfq = await rfqModel.findRfqById(quotation.rfq_id, { raw: true });
   if (rfq.status !== RFQ_STATUS.NEGOTIATION) {
     throw new AppError('RFQ is not in negotiation', 400);
   }
 
-  const updated = await updateQuotation(quotationId, data, supplierId);
+  const updated = await updateQuotation(quotationId, data, sellerId);
   await rfqAuditModel.logAction({
     rfqId: quotation.rfq_id,
     quotationId,
     action: RFQ_AUDIT_ACTION.NEGOTIATION_COMPLETED,
-    actorId: supplierId,
+    actorId: sellerId,
   });
-  notify('NEGOTIATION_RESPONSE', { quotationId, supplierId });
+  notify('NEGOTIATION_RESPONSE', { quotationId, sellerId });
   return updated;
 };
 
@@ -561,7 +561,7 @@ module.exports = {
   cancelRfq,
   closeRfq,
   getBuyerRfqs,
-  getSupplierRfqDetail,
+  getSellerRfqDetail,
   adminUpdateStatus,
   getBuyerId,
   submitQuotation,

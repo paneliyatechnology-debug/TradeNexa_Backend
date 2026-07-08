@@ -26,13 +26,14 @@ const formatRow = (row) => {
       row.transportation_charge !== undefined ? parseFloat(row.transportation_charge) : undefined,
     total_amount: row.total_amount !== undefined ? parseFloat(row.total_amount) : undefined,
     attachment: row.attachment ? resolveMediaUrl(row.attachment) : null,
-    supplier_rating: row.supplier_rating !== undefined ? parseFloat(row.supplier_rating || 0) : undefined,
+    seller_rating: row.seller_rating !== undefined ? parseFloat(row.seller_rating || 0) : undefined,
+    user_id: row.seller_id ?? row.user_id ?? undefined,
   };
 };
 
 const baseQuotationQuery = () =>
   db('quotations')
-    .leftJoin('users', 'quotations.supplier_id', '=', 'users.id')
+    .leftJoin('users', 'quotations.seller_id', '=', 'users.id')
     .leftJoin('company_details', 'users.id', '=', 'company_details.user_id');
 
 const findById = async (id, options = {}) => {
@@ -40,9 +41,9 @@ const findById = async (id, options = {}) => {
     .where('quotations.id', id)
     .select(
       'quotations.*',
-      'users.full_name as supplier_name',
+      'users.full_name as seller_name',
       'company_details.company_name',
-      'company_details.rating as supplier_rating',
+      'company_details.rating as seller_rating',
     )
     .first();
 
@@ -50,17 +51,17 @@ const findById = async (id, options = {}) => {
   return formatRow(row);
 };
 
-const findByRfqAndSupplier = (rfqId, supplierId) =>
-  db('quotations').where({ rfq_id: rfqId, supplier_id: supplierId }).first();
+const findByRfqAndSeller = (rfqId, sellerId) =>
+  db('quotations').where({ rfq_id: rfqId, seller_id: sellerId }).first();
 
 const findByRfqId = async (rfqId, filters = {}) => {
   const q = baseQuotationQuery()
     .where('quotations.rfq_id', rfqId)
     .select(
       'quotations.*',
-      'users.full_name as supplier_name',
+      'users.full_name as seller_name',
       'company_details.company_name',
-      'company_details.rating as supplier_rating',
+      'company_details.rating as seller_rating',
     );
 
   if (filters.status) {
@@ -71,10 +72,10 @@ const findByRfqId = async (rfqId, filters = {}) => {
   return q.then((rows) => rows.map(formatRow));
 };
 
-const findSupplierQuotations = async (supplierId, filters = {}) => {
+const findSellerQuotations = async (sellerId, filters = {}) => {
   const q = baseQuotationQuery()
     .leftJoin('rfqs', 'quotations.rfq_id', '=', 'rfqs.id')
-    .where('quotations.supplier_id', supplierId)
+    .where('quotations.seller_id', sellerId)
     .whereNull('rfqs.deleted_at')
     .select(
       'quotations.*',
@@ -82,7 +83,7 @@ const findSupplierQuotations = async (supplierId, filters = {}) => {
       'rfqs.rfq_number',
       'rfqs.status as rfq_status',
       'company_details.company_name',
-      'company_details.rating as supplier_rating',
+      'company_details.rating as seller_rating',
     );
 
   if (filters.status) q.where('quotations.status', filters.status);
@@ -113,13 +114,13 @@ const findAllQuotations = async (filters = {}) => {
       'quotations.*',
       'rfqs.title as rfq_title',
       'rfqs.rfq_number',
-      'users.full_name as supplier_name',
+      'users.full_name as seller_name',
       'company_details.company_name',
     );
 
   if (filters.status) q.where('quotations.status', filters.status);
   if (filters.rfq_id) q.where('quotations.rfq_id', filters.rfq_id);
-  if (filters.supplier_id) q.where('quotations.supplier_id', filters.supplier_id);
+  if (filters.seller_id) q.where('quotations.seller_id', filters.seller_id);
 
   applyListSort(q, filters, QUOTATION_SORT_FIELDS);
 
@@ -137,7 +138,7 @@ const compareByRfqId = async (rfqId) => {
     .select(
       'quotations.id',
       'quotations.quotation_number',
-      'quotations.supplier_id',
+      'quotations.seller_id',
       'quotations.price',
       'quotations.gst_percentage',
       'quotations.gst_amount',
@@ -146,16 +147,16 @@ const compareByRfqId = async (rfqId) => {
       'quotations.delivery_days',
       'quotations.status',
       'quotations.created_at',
-      'users.full_name as supplier_name',
+      'users.full_name as seller_name',
       'company_details.company_name',
-      'company_details.rating as supplier_rating',
-      'rfq_suppliers.responded_at',
+      'company_details.rating as seller_rating',
+      'rfq_sellers.responded_at',
     )
-    .leftJoin('rfq_suppliers', function () {
-      this.on('rfq_suppliers.rfq_id', '=', 'quotations.rfq_id').andOn(
-        'rfq_suppliers.supplier_id',
+    .leftJoin('rfq_sellers', function () {
+      this.on('rfq_sellers.rfq_id', '=', 'quotations.rfq_id').andOn(
+        'rfq_sellers.seller_id',
         '=',
-        'quotations.supplier_id',
+        'quotations.seller_id',
       );
     })
     .orderBy('quotations.total_amount', 'asc');
@@ -163,15 +164,16 @@ const compareByRfqId = async (rfqId) => {
   return rows.map((row) => ({
     quotation_id: row.id,
     quotation_number: row.quotation_number,
-    supplier_id: row.supplier_id,
-    supplier_name: row.supplier_name || row.company_name,
+    seller_id: row.seller_id,
+    user_id: row.seller_id,
+    seller_name: row.seller_name || row.company_name,
     price: parseFloat(row.price),
     gst_percentage: parseFloat(row.gst_percentage || 0),
     gst_amount: parseFloat(row.gst_amount || 0),
     transportation_charge: parseFloat(row.transportation_charge || 0),
     total_amount: parseFloat(row.total_amount),
     delivery_days: row.delivery_days,
-    supplier_rating: parseFloat(row.supplier_rating || 0),
+    seller_rating: parseFloat(row.seller_rating || 0),
     response_time: row.responded_at,
     status: row.status,
   }));
@@ -201,9 +203,9 @@ const rejectOthersExcept = async (rfqId, acceptedId, trx = null) => {
 module.exports = {
   formatRow,
   findById,
-  findByRfqAndSupplier,
+  findByRfqAndSeller,
   findByRfqId,
-  findSupplierQuotations,
+  findSellerQuotations,
   findAllQuotations,
   compareByRfqId,
   createQuotation,

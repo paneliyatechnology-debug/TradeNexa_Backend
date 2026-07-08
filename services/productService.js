@@ -45,7 +45,7 @@ const parseProductBody = (body = {}) => {
     price: parseNumber(clean.price, parseFloat),
     moq: parseNumber(clean.moq, (v) => parseInt(v, 10)),
     rating: parseNumber(clean.rating, parseFloat),
-    supplier_id: parseNumber(clean.supplier_id, (v) => parseInt(v, 10)),
+    seller_id: parseNumber(clean.seller_id, (v) => parseInt(v, 10)),
     subcategory_id: parseNumber(clean.subcategory_id, (v) => parseInt(v, 10)),
     brand_id:
       clean.brand_id === '' || clean.brand_id === null

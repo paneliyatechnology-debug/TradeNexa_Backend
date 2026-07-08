@@ -160,6 +160,7 @@ const formatUser = (data) => {
   const roleCode = roles?.[0]?.code || null;
 
   const base = {
+    user_id: user.id,
     uuid: user.uuid,
     full_name: user.full_name,
     mobile_number: user.mobile_number,
@@ -230,6 +231,7 @@ const formatAdminUser = (user) => {
 
   return {
     id: user.id,
+    user_id: user.id,
     uuid: user.uuid,
     full_name: user.full_name,
     email: user.email,

@@ -1,5 +1,5 @@
 /**
- * RFQ module controller — buyer, supplier, quotation, and admin operations.
+ * RFQ module controller — buyer, seller, quotation, and admin operations.
  */
 const rfqService = require('../services/rfqService');
 const rfqModel = require('../models/rfqModel');
@@ -170,21 +170,21 @@ const compareRfqQuotations = async (req, res, next) => {
 };
 
 // ==========================================
-// Supplier RFQ & quotations
+// Seller RFQ & quotations
 // ==========================================
 
-const getSupplierRfqs = async (req, res, next) => {
+const getSellerRfqs = async (req, res, next) => {
   try {
-    const data = await rfqModel.findSupplierFeed(req.user.id, buildListFilters(req));
-    return success(res, 'Supplier RFQ feed retrieved successfully', data);
+    const data = await rfqModel.findSellerFeed(req.user.id, buildListFilters(req));
+    return success(res, 'Seller RFQ feed retrieved successfully', data);
   } catch (err) {
     next(err);
   }
 };
 
-const getSupplierRfq = async (req, res, next) => {
+const getSellerRfq = async (req, res, next) => {
   try {
-    const rfq = await rfqService.getSupplierRfqDetail(req.params.id, req.user.id);
+    const rfq = await rfqService.getSellerRfqDetail(req.params.id, req.user.id);
     return success(res, 'RFQ details retrieved successfully', rfq);
   } catch (err) {
     next(err);
@@ -193,11 +193,11 @@ const getSupplierRfq = async (req, res, next) => {
 
 const getMyQuotations = async (req, res, next) => {
   try {
-    const data = await quotationModel.findSupplierQuotations(req.user.id, {
+    const data = await quotationModel.findSellerQuotations(req.user.id, {
       ...buildListFilters(req),
       status: req.query.status,
     });
-    return success(res, 'Supplier quotations retrieved successfully', data);
+    return success(res, 'Seller quotations retrieved successfully', data);
   } catch (err) {
     next(err);
   }
@@ -207,7 +207,7 @@ const getMyQuotation = async (req, res, next) => {
   try {
     const quotation = await quotationModel.findById(req.params.quotationId);
     if (!quotation) return next(new AppError('Quotation not found', HTTP_STATUS.NOT_FOUND));
-    if (quotation.supplier_id !== req.user.id) {
+    if (quotation.seller_id !== req.user.id) {
       return next(new AppError('Forbidden: Access denied', HTTP_STATUS.FORBIDDEN));
     }
     return success(res, 'Quotation details retrieved successfully', quotation);
@@ -330,7 +330,7 @@ const getAdminQuotations = async (req, res, next) => {
     const data = await quotationModel.findAllQuotations({
       status: req.query.status,
       rfq_id: req.query.rfq_id,
-      supplier_id: req.query.supplier_id,
+      seller_id: req.query.seller_id,
       page: req.query.page,
       limit: req.query.limit,
       sort_by: req.query.sort_by,
@@ -364,8 +364,10 @@ module.exports = {
   closeRfq,
   getRfqQuotations,
   compareRfqQuotations,
-  getSupplierRfqs,
-  getSupplierRfq,
+  getSellerRfqs,
+  getSellerRfq,
+  /** @deprecated */ getSupplierRfqs: getSellerRfqs,
+  /** @deprecated */ getSupplierRfq: getSellerRfq,
   getMyQuotations,
   getMyQuotation,
   submitQuotation,
