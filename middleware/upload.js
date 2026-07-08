@@ -278,7 +278,16 @@ const countUploadedGalleryMedia = (files = {}) =>
 /** Require thumbnail file on product create. Must run after multer upload middleware. */
 const requireProductThumbnailOnCreate = (req, _res, next) => {
   if (!req.files?.thumbnail?.[0]) {
-    return next(new AppError('Thumbnail is required', 400));
+    return next(new AppError('Main image is required', 400));
+  }
+  next();
+};
+
+/** Require at least one gallery image on product create. Must run after multer upload middleware. */
+const requireProductGalleryImagesOnCreate = (req, _res, next) => {
+  const galleryCount = req.files?.image?.length || 0;
+  if (galleryCount < 1) {
+    return next(new AppError('At least one product image is required', 400));
   }
   next();
 };
@@ -346,5 +355,6 @@ module.exports = {
   requireLogoOnCreate,
   rejectEmptyFileFields,
   requireProductThumbnailOnCreate,
+  requireProductGalleryImagesOnCreate,
   validateProductGalleryMediaCount,
 };

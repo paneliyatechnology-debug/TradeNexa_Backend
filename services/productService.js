@@ -38,6 +38,35 @@ const parseNumber = (value, parser = Number) => {
 };
 
 /** Normalize product body from multipart form-data. */
+const parseJsonField = (value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+/** Store search tags as JSON string in DB. */
+const parseSearchTagsForStorage = (value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (Array.isArray(value)) return JSON.stringify(value);
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    if (trimmed.startsWith('[')) return trimmed;
+    return JSON.stringify(
+      trimmed
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    );
+  }
+  return undefined;
+};
+
+/** Normalize product body from multipart form-data. */
 const parseProductBody = (body = {}) => {
   const clean = stripFields(body, PRODUCT_UPLOAD_KEYS);
   return {
@@ -46,13 +75,17 @@ const parseProductBody = (body = {}) => {
     moq: parseNumber(clean.moq, (v) => parseInt(v, 10)),
     rating: parseNumber(clean.rating, parseFloat),
     seller_id: parseNumber(clean.seller_id, (v) => parseInt(v, 10)),
+    category_id: parseNumber(clean.category_id, (v) => parseInt(v, 10)),
     subcategory_id: parseNumber(clean.subcategory_id, (v) => parseInt(v, 10)),
-    brand_id:
-      clean.brand_id === '' || clean.brand_id === null
-        ? null
-        : parseNumber(clean.brand_id, (v) => parseInt(v, 10)),
+    brand_id: parseNumber(clean.brand_id, (v) => parseInt(v, 10)),
+    stock_quantity: parseNumber(clean.stock_quantity, (v) => parseInt(v, 10)),
+    gst_percentage: parseNumber(clean.gst_percentage, parseFloat),
     is_trending: parseBoolean(clean.is_trending),
     is_active: parseBoolean(clean.is_active),
+    show_price: parseBoolean(clean.show_price),
+    accept_inquiry: parseBoolean(clean.accept_inquiry),
+    search_tags: parseSearchTagsForStorage(clean.search_tags),
+    specifications: parseJsonField(clean.specifications),
   };
 };
 

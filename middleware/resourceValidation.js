@@ -8,6 +8,10 @@
  * - optionalRequired* — update-only: validate when sent, skip when omitted
  */
 const { body, param, query } = require('express-validator');
+const {
+  PRODUCT_CONDITION_VALUES,
+  PRODUCT_STOCK_STATUS_VALUES,
+} = require('../constants/product');
 
 // ==========================================
 // Common parameters
@@ -133,6 +137,16 @@ const optionalBooleanField = (field) =>
       if (val === undefined || val === null || val === '') return true;
       if ([true, false, 'true', 'false'].includes(val)) return true;
       throw new Error(`${field} must be a boolean`);
+    });
+
+/** Required boolean on create (multipart sends strings). */
+const requiredBooleanField = (field, label) =>
+  body(field)
+    .notEmpty()
+    .withMessage(`${label} is required`)
+    .custom((val) => {
+      if ([true, false, 'true', 'false'].includes(val)) return true;
+      throw new Error(`${label} must be true or false`);
     });
 
 // ==========================================
@@ -311,38 +325,134 @@ const sellerNearbyRules = [
 // Product validations
 // ==========================================
 
+const parseJsonBodyValue = (value, label) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error(`${label} must be valid JSON`);
+  }
+};
+
 const productCreateRules = [
   body('name').trim().notEmpty().withMessage('Product name is required').isLength({ min: 2, max: 200 }).withMessage('Product name must be 2 to 200 chars'),
-  blockedUploadField('thumbnail', 'Thumbnail'),
-  blockedOptionalUploadField('image', 'Image'),
-  blockedOptionalUploadField('video', 'Video'),
+  body('category_id').isInt({ min: 1 }).withMessage('Category ID is required and must be a positive integer'),
+  body('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required and must be a positive integer'),
+  body('brand_id').isInt({ min: 1 }).withMessage('Brand ID is required and must be a positive integer'),
+  body('short_description')
+    .trim()
+    .notEmpty()
+    .withMessage('Short description is required')
+    .isLength({ min: 10, max: 500 })
+    .withMessage('Short description must be 10 to 500 chars'),
+  blockedUploadField('thumbnail', 'Main image'),
+  blockedOptionalUploadField('image', 'Product image'),
+  blockedOptionalUploadField('video', 'Product video'),
   body('price').isFloat({ min: 0 }).withMessage('Price is required and must be a positive number'),
-  body('currency').optional().trim().isLength({ max: 10 }).withMessage('Currency code too long'),
-  body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
-  body('unit').optional().trim().isLength({ max: 50 }).withMessage('Unit string too long'),
+  body('currency').trim().notEmpty().withMessage('Currency is required').isLength({ max: 10 }).withMessage('Currency code too long'),
+  body('moq').isInt({ min: 1 }).withMessage('MOQ is required and must be at least 1'),
+  body('unit').trim().notEmpty().withMessage('Unit is required').isLength({ max: 50 }).withMessage('Unit string too long'),
+  body('material').trim().notEmpty().withMessage('Material is required').isLength({ max: 150 }).withMessage('Material must be at most 150 chars'),
+  body('country_of_origin').trim().notEmpty().withMessage('Country of origin is required').isLength({ max: 100 }).withMessage('Country of origin too long'),
+  body('product_condition')
+    .trim()
+    .notEmpty()
+    .withMessage('Product condition is required')
+    .isIn(PRODUCT_CONDITION_VALUES)
+    .withMessage(`Product condition must be one of: ${PRODUCT_CONDITION_VALUES.join(', ')}`),
+  body('stock_status')
+    .trim()
+    .notEmpty()
+    .withMessage('Stock status is required')
+    .isIn(PRODUCT_STOCK_STATUS_VALUES)
+    .withMessage(`Stock status must be one of: ${PRODUCT_STOCK_STATUS_VALUES.join(', ')}`),
+  requiredBooleanField('show_price', 'Show price'),
+  requiredBooleanField('accept_inquiry', 'Accept inquiry'),
+  requiredBooleanField('is_active', 'Product status'),
   body('seller_id').isInt().withMessage('Seller ID is required and must be an integer'),
-  body('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required and must be an integer'),
-  body('brand_id').optional({ values: 'falsy' }).isInt().withMessage('Brand ID must be an integer'),
+  body('description').optional({ values: 'falsy' }).trim().isLength({ max: 5000 }).withMessage('Description too long'),
+  body('warranty').optional({ values: 'falsy' }).trim().isLength({ max: 100 }).withMessage('Warranty too long'),
+  body('stock_quantity').optional({ values: 'falsy' }).isInt({ min: 0 }).withMessage('Stock quantity must be a non-negative integer'),
+  body('hsn_code').optional({ values: 'falsy' }).trim().isLength({ max: 20 }).withMessage('HSN code too long'),
+  body('gst_percentage').optional({ values: 'falsy' }).isFloat({ min: 0, max: 100 }).withMessage('GST percentage must be between 0 and 100'),
+  body('search_tags').optional({ values: 'falsy' }).custom((val) => {
+    if (val === undefined || val === null || val === '') return true;
+    if (Array.isArray(val)) return true;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (!trimmed) return true;
+      if (trimmed.startsWith('[')) {
+        parseJsonBodyValue(trimmed, 'search_tags');
+        return true;
+      }
+      return true;
+    }
+    throw new Error('search_tags must be a comma-separated string or JSON array');
+  }),
+  body('specifications').optional({ values: 'falsy' }).custom((val) => {
+    if (val === undefined || val === null || val === '') return true;
+    const parsed = parseJsonBodyValue(val, 'specifications');
+    if (Array.isArray(parsed) || (parsed && typeof parsed === 'object')) return true;
+    throw new Error('specifications must be a JSON object or array');
+  }),
   optionalBooleanField('is_trending'),
-  optionalBooleanField('is_active'),
   body('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5'),
   body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
 ];
 
 const productUpdateRules = [
   optionalRequiredText('name', 'Product name', 2, 200),
-  blockedUploadField('thumbnail', 'Thumbnail'),
-  blockedOptionalUploadField('image', 'Image'),
-  blockedOptionalUploadField('video', 'Video'),
+  optionalRequiredInt('category_id', 'Category ID', { min: 1 }),
+  optionalRequiredInt('subcategory_id', 'Subcategory ID', { min: 1 }),
+  optionalRequiredInt('brand_id', 'Brand ID', { min: 1 }),
+  optionalRequiredText('short_description', 'Short description', 10, 500),
+  blockedUploadField('thumbnail', 'Main image'),
+  blockedOptionalUploadField('image', 'Product image'),
+  blockedOptionalUploadField('video', 'Product video'),
   optionalRequiredFloat('price', 'Price', { min: 0 }),
   body('currency').optional().trim().isLength({ max: 10 }).withMessage('Currency code too long'),
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
   body('unit').optional().trim().isLength({ max: 50 }).withMessage('Unit string too long'),
-  optionalRequiredInt('seller_id', 'Seller ID', { min: 1 }),
-  optionalRequiredInt('subcategory_id', 'Subcategory ID', { min: 1 }),
-  body('brand_id').optional({ values: 'falsy' }).isInt().withMessage('Brand ID must be an integer'),
-  optionalBooleanField('is_trending'),
+  body('material').optional().trim().isLength({ max: 150 }).withMessage('Material must be at most 150 chars'),
+  body('country_of_origin').optional().trim().isLength({ max: 100 }).withMessage('Country of origin too long'),
+  body('product_condition')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isIn(PRODUCT_CONDITION_VALUES)
+    .withMessage(`Product condition must be one of: ${PRODUCT_CONDITION_VALUES.join(', ')}`),
+  body('stock_status')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isIn(PRODUCT_STOCK_STATUS_VALUES)
+    .withMessage(`Stock status must be one of: ${PRODUCT_STOCK_STATUS_VALUES.join(', ')}`),
+  optionalBooleanField('show_price'),
+  optionalBooleanField('accept_inquiry'),
   optionalBooleanField('is_active'),
+  optionalRequiredInt('seller_id', 'Seller ID', { min: 1 }),
+  body('description').optional({ values: 'falsy' }).trim().isLength({ max: 5000 }).withMessage('Description too long'),
+  body('warranty').optional({ values: 'falsy' }).trim().isLength({ max: 100 }).withMessage('Warranty too long'),
+  body('stock_quantity').optional({ values: 'falsy' }).isInt({ min: 0 }).withMessage('Stock quantity must be a non-negative integer'),
+  body('hsn_code').optional({ values: 'falsy' }).trim().isLength({ max: 20 }).withMessage('HSN code too long'),
+  body('gst_percentage').optional({ values: 'falsy' }).isFloat({ min: 0, max: 100 }).withMessage('GST percentage must be between 0 and 100'),
+  body('search_tags').optional({ values: 'falsy' }).custom((val) => {
+    if (val === undefined || val === null || val === '') return true;
+    if (Array.isArray(val)) return true;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (!trimmed) return true;
+      if (trimmed.startsWith('[')) parseJsonBodyValue(trimmed, 'search_tags');
+      return true;
+    }
+    throw new Error('search_tags must be a comma-separated string or JSON array');
+  }),
+  body('specifications').optional({ values: 'falsy' }).custom((val) => {
+    if (val === undefined || val === null || val === '') return true;
+    const parsed = parseJsonBodyValue(val, 'specifications');
+    if (Array.isArray(parsed) || (parsed && typeof parsed === 'object')) return true;
+    throw new Error('specifications must be a JSON object or array');
+  }),
+  optionalBooleanField('is_trending'),
   body('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5'),
   body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
 ];

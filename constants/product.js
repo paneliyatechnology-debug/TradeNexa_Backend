@@ -1,0 +1,26 @@
+/**
+ * Product module constants — condition, stock status, and field enums.
+ */
+
+const PRODUCT_CONDITION = {
+  NEW: 'NEW',
+  USED: 'USED',
+  REFURBISHED: 'REFURBISHED',
+};
+
+const PRODUCT_STOCK_STATUS = {
+  IN_STOCK: 'IN_STOCK',
+  OUT_OF_STOCK: 'OUT_OF_STOCK',
+  LIMITED: 'LIMITED',
+  MADE_TO_ORDER: 'MADE_TO_ORDER',
+};
+
+const PRODUCT_CONDITION_VALUES = Object.values(PRODUCT_CONDITION);
+const PRODUCT_STOCK_STATUS_VALUES = Object.values(PRODUCT_STOCK_STATUS);
+
+module.exports = {
+  PRODUCT_CONDITION,
+  PRODUCT_STOCK_STATUS,
+  PRODUCT_CONDITION_VALUES,
+  PRODUCT_STOCK_STATUS_VALUES,
+};

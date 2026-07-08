@@ -18,9 +18,34 @@ const slugify = (text) =>
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 
+/** Parse JSON stored in DB (string or object). */
+const parseStoredJson = (value, fallback = null) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+/** Parse search_tags for API responses. */
+const formatSearchTags = (value) => {
+  const parsed = parseStoredJson(value, []);
+  if (Array.isArray(parsed)) return parsed;
+  if (typeof parsed === 'string') {
+    return parsed
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
 /**
  * Format a product row for API responses.
  * Resolves thumbnail to a full URL.
+ * Adds extended product fields with null / [] when not stored.
  */
 const formatRow = (row) => {
   if (!row) return null;
@@ -33,6 +58,27 @@ const formatRow = (row) => {
     is_active: row.is_active !== undefined ? !!row.is_active : undefined,
     price: row.price !== undefined ? parseFloat(row.price) : undefined,
     rating: row.rating !== undefined ? parseFloat(row.rating) : undefined,
+    short_description: row.short_description ?? null,
+    description: row.description ?? null,
+    material: row.material ?? null,
+    country_of_origin: row.country_of_origin ?? null,
+    product_condition: row.product_condition ?? null,
+    stock_status: row.stock_status ?? null,
+    stock_quantity:
+      row.stock_quantity !== undefined && row.stock_quantity !== null
+        ? parseInt(row.stock_quantity, 10)
+        : null,
+    warranty: row.warranty ?? null,
+    hsn_code: row.hsn_code ?? null,
+    gst_percentage:
+      row.gst_percentage !== undefined && row.gst_percentage !== null
+        ? parseFloat(row.gst_percentage)
+        : null,
+    show_price: row.show_price !== undefined && row.show_price !== null ? !!row.show_price : null,
+    accept_inquiry:
+      row.accept_inquiry !== undefined && row.accept_inquiry !== null ? !!row.accept_inquiry : null,
+    search_tags: formatSearchTags(row.search_tags),
+    specifications: parseStoredJson(row.specifications, []),
   };
 };
 
@@ -97,22 +143,36 @@ const formatProductDetail = (row, images = [], videos = []) => {
     slug: row.slug ?? null,
     basic_details: {
       name: row.name ?? null,
-      short_description: null,
-      description: null,
+      short_description: row.short_description ?? null,
+      description: row.description ?? null,
       brand: formatNamedEntity(row.brand_id, row.brand_name),
       category: formatNamedEntity(row.category_id, row.category_name),
       subcategory: formatNamedEntity(row.subcategory_id, row.subcategory_name),
-      country_of_origin: null,
+      country_of_origin: row.country_of_origin ?? null,
+      material: row.material ?? null,
+      product_condition: row.product_condition ?? null,
     },
     pricing: {
       price: row.price !== undefined && row.price !== null ? parseFloat(row.price) : null,
+      currency: row.currency ?? null,
       price_type: null,
       minimum_order_quantity:
         row.moq !== undefined && row.moq !== null ? parseInt(row.moq, 10) : null,
       unit: row.unit ?? null,
-      gst_percentage: null,
+      gst_percentage:
+        row.gst_percentage !== undefined && row.gst_percentage !== null
+          ? parseFloat(row.gst_percentage)
+          : null,
       gst_included: null,
-      hsn_code: null,
+      hsn_code: row.hsn_code ?? null,
+      show_price: row.show_price !== undefined ? !!row.show_price : null,
+    },
+    inventory: {
+      stock_status: row.stock_status ?? null,
+      stock_quantity:
+        row.stock_quantity !== undefined && row.stock_quantity !== null
+          ? parseInt(row.stock_quantity, 10)
+          : null,
     },
     images: {
       thumbnail: row.thumbnail ? resolveMediaUrl(row.thumbnail) : null,
@@ -132,6 +192,8 @@ const formatProductDetail = (row, images = [], videos = []) => {
       is_trending: row.is_trending !== undefined ? !!row.is_trending : null,
       is_related: null,
       share_url: null,
+      accept_inquiry: row.accept_inquiry !== undefined ? !!row.accept_inquiry : null,
+      is_active: row.is_active !== undefined ? !!row.is_active : null,
     },
     user_actions: {
       is_favourite: null,
@@ -146,6 +208,9 @@ const formatProductDetail = (row, images = [], videos = []) => {
       breakdown: null,
     },
     reviews: [],
+    warranty: row.warranty ?? null,
+    search_tags: formatSearchTags(row.search_tags),
+    specifications: parseStoredJson(row.specifications, []),
     created_at: row.created_at ?? null,
     updated_at: row.updated_at ?? null,
   };
@@ -473,6 +538,49 @@ const findProducts = async (filters = {}) => {
 // Create & update
 // ==========================================
 
+const buildProductPayload = (data, { forCreate = false } = {}) => {
+  const payload = {};
+
+  if (data.name !== undefined) {
+    payload.name = data.name;
+    if (forCreate || !data.slug) payload.slug = slugify(data.slug || data.name);
+  } else if (data.slug !== undefined) {
+    payload.slug = slugify(data.slug);
+  }
+
+  const assign = (field, transform = (v) => v) => {
+    if (data[field] !== undefined) payload[field] = transform(data[field]);
+  };
+
+  assign('thumbnail');
+  assign('price');
+  assign('currency');
+  assign('moq');
+  assign('unit');
+  assign('seller_id');
+  assign('subcategory_id');
+  assign('brand_id');
+  assign('short_description');
+  assign('description');
+  assign('material');
+  assign('country_of_origin');
+  assign('product_condition');
+  assign('stock_status');
+  assign('warranty');
+  assign('stock_quantity');
+  assign('hsn_code');
+  assign('gst_percentage');
+  assign('search_tags');
+  assign('specifications');
+  assign('is_trending', (v) => !!v);
+  assign('show_price', (v) => !!v);
+  assign('accept_inquiry', (v) => !!v);
+  assign('is_active', (v) => !!v);
+  assign('rating');
+
+  return payload;
+};
+
 /**
  * Insert a new product after validating its subcategory.
  * @param {Object} data - Product creation payload
@@ -480,22 +588,23 @@ const findProducts = async (filters = {}) => {
  * @returns {Promise<Object>}
  */
 const createProduct = async (data, userId = null) => {
-  await categoryModel.validateSubcategoryForProduct(data.subcategory_id);
+  if (data.category_id !== undefined) {
+    await categoryModel.validateCategorySubcategoryMatch(data.category_id, data.subcategory_id);
+  } else {
+    await categoryModel.validateSubcategoryForProduct(data.subcategory_id);
+  }
 
   const payload = {
-    name: data.name,
-    slug: data.slug ? slugify(data.slug) : slugify(data.name),
-    thumbnail: data.thumbnail || null,
-    price: data.price,
+    ...buildProductPayload(data, { forCreate: true }),
     currency: data.currency || 'INR',
     moq: data.moq !== undefined ? data.moq : 1,
     unit: data.unit || 'pcs',
-    seller_id: data.seller_id,
-    subcategory_id: data.subcategory_id,
-    brand_id: data.brand_id || null,
-    is_trending: data.is_trending !== undefined ? data.is_trending : false,
+    is_trending: data.is_trending !== undefined ? !!data.is_trending : false,
     rating: data.rating !== undefined ? data.rating : 0.0,
-    is_active: data.is_active !== undefined ? data.is_active : true,
+    is_active: data.is_active !== undefined ? !!data.is_active : true,
+    show_price: data.show_price !== undefined ? !!data.show_price : true,
+    accept_inquiry: data.accept_inquiry !== undefined ? !!data.accept_inquiry : true,
+    stock_status: data.stock_status || 'IN_STOCK',
     created_by: userId,
   };
 
@@ -511,26 +620,15 @@ const createProduct = async (data, userId = null) => {
  * @returns {Promise<Object>}
  */
 const updateProduct = async (id, data, userId = null) => {
-  const payload = {};
-  if (data.name !== undefined) {
-    payload.name = data.name;
-    if (!data.slug) payload.slug = slugify(data.name);
-  }
-  if (data.slug !== undefined) payload.slug = slugify(data.slug);
-  if (data.thumbnail !== undefined) payload.thumbnail = data.thumbnail;
-  if (data.price !== undefined) payload.price = data.price;
-  if (data.currency !== undefined) payload.currency = data.currency;
-  if (data.moq !== undefined) payload.moq = data.moq;
-  if (data.unit !== undefined) payload.unit = data.unit;
-  if (data.seller_id !== undefined) payload.seller_id = data.seller_id;
+  const payload = buildProductPayload(data);
+
   if (data.subcategory_id !== undefined) {
-    await categoryModel.validateSubcategoryForProduct(data.subcategory_id);
-    payload.subcategory_id = data.subcategory_id;
+    if (data.category_id !== undefined) {
+      await categoryModel.validateCategorySubcategoryMatch(data.category_id, data.subcategory_id);
+    } else {
+      await categoryModel.validateSubcategoryForProduct(data.subcategory_id);
+    }
   }
-  if (data.brand_id !== undefined) payload.brand_id = data.brand_id;
-  if (data.is_trending !== undefined) payload.is_trending = data.is_trending;
-  if (data.rating !== undefined) payload.rating = data.rating;
-  if (data.is_active !== undefined) payload.is_active = data.is_active;
 
   if (Object.keys(payload).length === 0) return findProductById(id);
 

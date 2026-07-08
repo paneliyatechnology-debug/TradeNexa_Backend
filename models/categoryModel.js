@@ -440,6 +440,15 @@ const validateSubcategoryForProduct = async (subcategoryId) => {
   return subcategory;
 };
 
+/** Ensure subcategory belongs to the given parent category. */
+const validateCategorySubcategoryMatch = async (categoryId, subcategoryId) => {
+  const subcategory = await validateSubcategoryForProduct(subcategoryId);
+  if (String(subcategory.parent_id) !== String(categoryId)) {
+    throw new AppError('Subcategory does not belong to the selected category', 400);
+  }
+  return subcategory;
+};
+
 module.exports = {
   findCategoryById,
   findSubcategoryById,
@@ -455,6 +464,7 @@ module.exports = {
   deleteCategory,
   deleteSubcategory,
   validateSubcategoryForProduct,
+  validateCategorySubcategoryMatch,
   formatRow,
   formatSubcategoryRow,
 };

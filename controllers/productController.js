@@ -9,7 +9,42 @@ const { HTTP_STATUS } = require('../constants');
 // Product Operations
 // ==========================================
 
-/** Shared search, filter, sort, and pagination params for product list endpoints. */
+/** Default values for extended product fields (additive only). */
+const PRODUCT_EXTENDED_FIELD_DEFAULTS = {
+  short_description: null,
+  description: null,
+  material: null,
+  country_of_origin: null,
+  product_condition: null,
+  stock_status: null,
+  stock_quantity: null,
+  warranty: null,
+  hsn_code: null,
+  gst_percentage: null,
+  show_price: null,
+  accept_inquiry: null,
+  search_tags: [],
+  specifications: [],
+};
+
+/** Merge extended product fields onto a list/card payload without changing existing keys. */
+const withExtendedProductFields = (product = {}) => ({
+  ...PRODUCT_EXTENDED_FIELD_DEFAULTS,
+  short_description: product.short_description ?? null,
+  description: product.description ?? null,
+  material: product.material ?? null,
+  country_of_origin: product.country_of_origin ?? null,
+  product_condition: product.product_condition ?? null,
+  stock_status: product.stock_status ?? null,
+  stock_quantity: product.stock_quantity ?? null,
+  warranty: product.warranty ?? null,
+  hsn_code: product.hsn_code ?? null,
+  gst_percentage: product.gst_percentage ?? null,
+  show_price: product.show_price ?? null,
+  accept_inquiry: product.accept_inquiry ?? null,
+  search_tags: Array.isArray(product.search_tags) ? product.search_tags : [],
+  specifications: Array.isArray(product.specifications) ? product.specifications : [],
+});
 const pickProductListFilters = (req, extra = {}) => ({
   search: req.query.search,
   brand_id: req.query.brand_id,
@@ -121,6 +156,7 @@ const getTrendingProducts = async (req, res, next) => {
       rating: p.rating,
       city: p.city,
       state: p.state,
+      ...withExtendedProductFields(p),
     }));
 
     return success(res, 'Trending products retrieved successfully', {
@@ -161,6 +197,7 @@ const getRelatedProducts = async (req, res, next) => {
       user_id: p.seller_id,
       seller_name: p.seller_name,
       verified: p.verified,
+      ...withExtendedProductFields(p),
     }));
 
     return success(res, 'Related products retrieved successfully', {
