@@ -11,6 +11,8 @@ const { HTTP_STATUS } = require('../constants');
 
 /** Default values for extended product fields (additive only). */
 const PRODUCT_EXTENDED_FIELD_DEFAULTS = {
+  category_id: null,
+  subcategory_id: null,
   short_description: null,
   description: null,
   material: null,
@@ -30,6 +32,8 @@ const PRODUCT_EXTENDED_FIELD_DEFAULTS = {
 /** Merge extended product fields onto a list/card payload without changing existing keys. */
 const withExtendedProductFields = (product = {}) => ({
   ...PRODUCT_EXTENDED_FIELD_DEFAULTS,
+  category_id: product.category_id ?? null,
+  subcategory_id: product.subcategory_id ?? null,
   short_description: product.short_description ?? null,
   description: product.description ?? null,
   material: product.material ?? null,
@@ -149,6 +153,8 @@ const getTrendingProducts = async (req, res, next) => {
       currency: p.currency,
       moq: p.moq,
       unit: p.unit,
+      category_id: p.category_id ?? null,
+      subcategory_id: p.subcategory_id ?? null,
       seller_id: p.seller_id,
       user_id: p.seller_id,
       seller_name: p.seller_name,
@@ -193,6 +199,8 @@ const getRelatedProducts = async (req, res, next) => {
       price: p.price,
       moq: p.moq,
       unit: p.unit,
+      category_id: p.category_id ?? null,
+      subcategory_id: p.subcategory_id ?? null,
       seller_id: p.seller_id,
       user_id: p.seller_id,
       seller_name: p.seller_name,

@@ -79,6 +79,8 @@ const formatRow = (row) => {
       row.accept_inquiry !== undefined && row.accept_inquiry !== null ? !!row.accept_inquiry : null,
     search_tags: formatSearchTags(row.search_tags),
     specifications: parseStoredJson(row.specifications, []),
+    category_id: row.category_id ?? null,
+    subcategory_id: row.subcategory_id ?? null,
   };
 };
 
@@ -141,6 +143,8 @@ const formatProductDetail = (row, images = [], videos = []) => {
   return {
     id: row.id ?? null,
     slug: row.slug ?? null,
+    category_id: row.category_id ?? null,
+    subcategory_id: row.subcategory_id ?? null,
     basic_details: {
       name: row.name ?? null,
       short_description: row.short_description ?? null,
@@ -251,7 +255,7 @@ const findProductById = async (id, options = {}) => {
     .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
     .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
     .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
-    .leftJoin('categories', 'subcategories.parent_id', '=', 'categories.id')
+    .leftJoin('categories', 'products.category_id', '=', 'categories.id')
     .leftJoin('brands', 'products.brand_id', '=', 'brands.id')
     .leftJoin('addresses', function () {
       this.on('sellers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
@@ -265,7 +269,6 @@ const findProductById = async (id, options = {}) => {
       'company_details.company_name as seller_name',
       'sellers.is_verified as verified',
       'categories.name as category_name',
-      'subcategories.id as subcategory_id',
       'subcategories.name as subcategory_name',
       'brands.name as brand_name',
       'cities.name as city',
@@ -284,7 +287,7 @@ const buildProductDetailQuery = () =>
     .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
     .leftJoin('business_types', 'company_details.business_type_id', '=', 'business_types.id')
     .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
-    .leftJoin('categories', 'subcategories.parent_id', '=', 'categories.id')
+    .leftJoin('categories', 'products.category_id', '=', 'categories.id')
     .leftJoin('brands', 'products.brand_id', '=', 'brands.id')
     .leftJoin('addresses', function () {
       this.on('sellers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
@@ -310,7 +313,6 @@ const findProductDetailById = async (id) => {
       'company_details.rating as seller_rating',
       'sellers.mobile_number as seller_phone',
       'sellers.email as seller_email',
-      'categories.id as category_id',
       'categories.name as category_name',
       'subcategories.name as subcategory_name',
       'brands.name as brand_name',
@@ -463,6 +465,7 @@ const findProducts = async (filters = {}) => {
     .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
     .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
     .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
+    .leftJoin('categories', 'products.category_id', '=', 'categories.id')
     .leftJoin('addresses', function () {
       this.on('sellers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
     })
@@ -479,7 +482,11 @@ const findProducts = async (filters = {}) => {
       'products.moq',
       'products.unit',
       'products.seller_id',
+      'products.category_id',
+      'products.subcategory_id',
       'company_details.company_name as seller_name',
+      'categories.name as category_name',
+      'subcategories.name as subcategory_name',
       'sellers.is_verified as verified',
       'products.rating',
       'cities.name as city',
@@ -493,7 +500,7 @@ const findProducts = async (filters = {}) => {
   }
 
   if (filters.category_id) {
-    q.where('subcategories.parent_id', filters.category_id);
+    q.where('products.category_id', filters.category_id);
   }
 
   if (filters.subcategory_id) {
@@ -558,6 +565,7 @@ const buildProductPayload = (data, { forCreate = false } = {}) => {
   assign('moq');
   assign('unit');
   assign('seller_id');
+  assign('category_id');
   assign('subcategory_id');
   assign('brand_id');
   assign('short_description');
@@ -581,6 +589,15 @@ const buildProductPayload = (data, { forCreate = false } = {}) => {
   return payload;
 };
 
+const resolveProductCategoryId = async (data) => {
+  if (data.category_id !== undefined) {
+    await categoryModel.validateCategorySubcategoryMatch(data.category_id, data.subcategory_id);
+    return data.category_id;
+  }
+  const subcategory = await categoryModel.validateSubcategoryForProduct(data.subcategory_id);
+  return subcategory.parent_id;
+};
+
 /**
  * Insert a new product after validating its subcategory.
  * @param {Object} data - Product creation payload
@@ -588,14 +605,11 @@ const buildProductPayload = (data, { forCreate = false } = {}) => {
  * @returns {Promise<Object>}
  */
 const createProduct = async (data, userId = null) => {
-  if (data.category_id !== undefined) {
-    await categoryModel.validateCategorySubcategoryMatch(data.category_id, data.subcategory_id);
-  } else {
-    await categoryModel.validateSubcategoryForProduct(data.subcategory_id);
-  }
+  const categoryId = await resolveProductCategoryId(data);
 
   const payload = {
     ...buildProductPayload(data, { forCreate: true }),
+    category_id: categoryId,
     currency: data.currency || 'INR',
     moq: data.moq !== undefined ? data.moq : 1,
     unit: data.unit || 'pcs',
@@ -623,11 +637,13 @@ const updateProduct = async (id, data, userId = null) => {
   const payload = buildProductPayload(data);
 
   if (data.subcategory_id !== undefined) {
-    if (data.category_id !== undefined) {
-      await categoryModel.validateCategorySubcategoryMatch(data.category_id, data.subcategory_id);
-    } else {
-      await categoryModel.validateSubcategoryForProduct(data.subcategory_id);
+    payload.category_id = await resolveProductCategoryId(data);
+  } else if (data.category_id !== undefined) {
+    const existing = await db('products').where({ id }).select('subcategory_id').first();
+    if (existing?.subcategory_id) {
+      await categoryModel.validateCategorySubcategoryMatch(data.category_id, existing.subcategory_id);
     }
+    payload.category_id = data.category_id;
   }
 
   if (Object.keys(payload).length === 0) return findProductById(id);
