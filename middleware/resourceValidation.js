@@ -879,6 +879,25 @@ const chatMarkReadRules = [
     .withMessage('last_read_message_id must be a positive integer'),
 ];
 
+// ==========================================
+// Wishlist validations
+// ==========================================
+
+const wishlistAddRules = [
+  body('product_id').isInt({ min: 1 }).withMessage('Product ID is required and must be a positive integer'),
+];
+
+const wishlistToggleRules = [...wishlistAddRules];
+
+const wishlistProductIdParam = [
+  param('product_id').isInt({ min: 1 }).withMessage('Product ID must be a positive integer'),
+];
+
+const wishlistListQuery = [
+  ...paginationQuery,
+  query('search').optional().trim(),
+];
+
 module.exports = {
   idParam,
   categoryIdParam,
@@ -931,4 +950,8 @@ module.exports = {
   chatMessageRules,
   chatMediaMessageRules,
   chatMarkReadRules,
+  wishlistAddRules,
+  wishlistToggleRules,
+  wishlistListQuery,
+  wishlistProductIdParam,
 };

@@ -2,6 +2,7 @@
 
 const productModel = require('../models/productModel');
 const productService = require('../services/productService');
+const wishlistService = require('../services/wishlistService');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
@@ -99,7 +100,8 @@ const getProduct = async (req, res, next) => {
     if (!product) {
       return next(new AppError('Product not found', HTTP_STATUS.NOT_FOUND));
     }
-    return success(res, 'Product details retrieved successfully', product);
+    const withWishlist = await wishlistService.attachWishlistToProductDetail(product, req.user?.id);
+    return success(res, 'Product details retrieved successfully', withWishlist);
   } catch (err) {
     next(err);
   }
@@ -131,7 +133,8 @@ const buildProductListFilters = (req, { defaultActiveOnly = true } = {}) => ({
 const getProducts = async (req, res, next) => {
   try {
     const data = await productModel.findProducts(buildProductListFilters(req));
-    return success(res, 'Products list retrieved successfully', data);
+    const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
+    return success(res, 'Products list retrieved successfully', withWishlist);
   } catch (err) {
     next(err);
   }
@@ -148,7 +151,8 @@ const getMyProducts = async (req, res, next) => {
       seller_id: req.user.id,
     };
     const data = await productModel.findProducts(filters);
-    return success(res, 'Products list retrieved successfully', data);
+    const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
+    return success(res, 'Products list retrieved successfully', withWishlist);
   } catch (err) {
     next(err);
   }
@@ -188,9 +192,11 @@ const getTrendingProducts = async (req, res, next) => {
       ...withExtendedProductFields(p),
     }));
 
+    const results = await wishlistService.attachWishlistFlags(formatted, req.user?.id);
+
     return success(res, 'Trending products retrieved successfully', {
       ...data,
-      results: formatted,
+      results,
     });
   } catch (err) {
     next(err);
@@ -231,9 +237,11 @@ const getRelatedProducts = async (req, res, next) => {
       ...withExtendedProductFields(p),
     }));
 
+    const results = await wishlistService.attachWishlistFlags(formatted, req.user?.id);
+
     return success(res, 'Related products retrieved successfully', {
       ...data,
-      results: formatted,
+      results,
     });
   } catch (err) {
     next(err);

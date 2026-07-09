@@ -168,6 +168,31 @@ const verifyRegistration = (req, _res, next) => {
 };
 
 /**
+ * Optional authentication — attaches req.user when a valid token is sent; continues as guest otherwise.
+ */
+const optionalAuthenticate = async (req, _res, next) => {
+  try {
+    const token = extractAuthToken(req.headers.authorization);
+    if (!token) {
+      return next();
+    }
+
+    const decoded = verifyAccess(token);
+    if (decoded.type !== TOKEN_TYPES.ACCESS) {
+      return next();
+    }
+
+    const user = await userModel.findUserById(decoded.userId);
+    if (user?.is_active) {
+      req.user = user;
+    }
+    next();
+  } catch {
+    next();
+  }
+};
+
+/**
  * Authorization middleware to check if user has required roles.
  * @param {...string} allowedRoles - List of allowed role codes
  */
@@ -199,6 +224,7 @@ module.exports = {
   refreshRules,
   logoutRules,
   authenticate,
+  optionalAuthenticate,
   verifyRegistration,
   authorize,
 };

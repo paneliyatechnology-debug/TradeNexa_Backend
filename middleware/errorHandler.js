@@ -38,6 +38,8 @@ const errorHandler = (err, req, res, _next) => {
       message = 'Product name already exists';
     } else if (sqlMsg.includes('products_slug_unique') || sqlMsg.includes('products.slug')) {
       message = 'Product name already exists';
+    } else if (sqlMsg.includes('wishlist_user_id_product_id_unique')) {
+      message = 'Product already exists in wishlist';
     } else if (sqlMsg.includes('unique')) {
       const match = sqlMsg.match(/key '([^']+)'/);
       if (match && match[1]) {

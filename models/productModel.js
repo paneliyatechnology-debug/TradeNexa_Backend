@@ -82,6 +82,7 @@ const formatRow = (row) => {
     specifications: parseStoredJson(row.specifications, []),
     category_id: row.category_id ?? null,
     subcategory_id: row.subcategory_id ?? null,
+    is_wishlist: row.is_wishlist !== undefined ? !!row.is_wishlist : false,
   };
 };
 
@@ -201,7 +202,8 @@ const formatProductDetail = (row, images = [], videos = []) => {
       is_active: row.is_active !== undefined ? !!row.is_active : null,
     },
     user_actions: {
-      is_favourite: null,
+      is_favourite: false,
+      is_wishlist: false,
       is_inquiry_sent: null,
       can_contact_seller: null,
       can_buy: null,

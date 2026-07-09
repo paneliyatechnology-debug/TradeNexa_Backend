@@ -6,7 +6,7 @@
  */
 const express = require('express');
 const productController = require('../controllers/productController');
-const { authenticate, authorize, validate } = require('../middleware/auth');
+const { authenticate, authorize, optionalAuthenticate, validate } = require('../middleware/auth');
 const {
   handleProductCreateUpload,
   handleProductUpdateUpload,
@@ -30,9 +30,9 @@ const router = express.Router();
 // Public read routes
 // ==========================================
 
-router.get('/', productListQuery, validate, productController.getProducts);
-router.get('/trending', productTrendingQuery, validate, productController.getTrendingProducts);
-router.get('/related', productRelatedQuery, validate, productController.getRelatedProducts);
+router.get('/', optionalAuthenticate, productListQuery, validate, productController.getProducts);
+router.get('/trending', optionalAuthenticate, productTrendingQuery, validate, productController.getTrendingProducts);
+router.get('/related', optionalAuthenticate, productRelatedQuery, validate, productController.getRelatedProducts);
 router.get(
   '/my',
   authenticate,
@@ -41,7 +41,7 @@ router.get(
   validate,
   productController.getMyProducts,
 );
-router.get('/:id', idParam, validate, productController.getProduct);
+router.get('/:id', optionalAuthenticate, idParam, validate, productController.getProduct);
 
 // ==========================================
 // Write routes — seller, buyer_seller, admin
