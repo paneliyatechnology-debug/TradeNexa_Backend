@@ -267,26 +267,39 @@ const bannerUpdateRules = [
 
 const brandCreateRules = [
   body('name').trim().notEmpty().withMessage('Brand name is required').isLength({ min: 2, max: 100 }).withMessage('Name must be 2 to 100 chars'),
+  body('description').trim().notEmpty().withMessage('Description is required').isLength({ min: 10, max: 2000 }).withMessage('Description must be 10 to 2000 chars'),
+  body('country').trim().notEmpty().withMessage('Country is required').isLength({ min: 2, max: 100 }).withMessage('Country must be 2 to 100 chars'),
+  body('website').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Website too long'),
   blockedUploadField('logo', 'Logo'),
   optionalBooleanField('is_popular'),
+  optionalBooleanField('is_featured'),
   optionalBooleanField('is_active'),
 ];
 
 const brandUpdateRules = [
   optionalRequiredText('name', 'Brand name', 2, 100),
+  optionalRequiredText('description', 'Description', 10, 2000),
+  body('country').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 100 }).withMessage('Country must be 2 to 100 chars'),
+  body('website').optional({ values: 'falsy' }).trim().isLength({ max: 500 }).withMessage('Website too long'),
   blockedUploadField('logo', 'Logo'),
   optionalBooleanField('is_popular'),
+  optionalBooleanField('is_featured'),
   optionalBooleanField('is_active'),
 ];
 
-const BRAND_SORT_BY_VALUES = ['id', 'name', 'is_popular', 'is_active', 'created_at'];
+const BRAND_SORT_BY_VALUES = ['id', 'name', 'slug', 'country', 'is_popular', 'is_featured', 'is_active', 'created_at'];
 
 const brandListQuery = [
   ...paginationQuery,
+  query('country').optional().trim().isLength({ max: 100 }).withMessage('Country filter too long'),
   query('is_popular')
     .optional()
     .isIn(['true', 'false'])
     .withMessage('is_popular must be true or false'),
+  query('is_featured')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_featured must be true or false'),
   isActiveQuery(),
   ...listSortQuery(BRAND_SORT_BY_VALUES),
 ];

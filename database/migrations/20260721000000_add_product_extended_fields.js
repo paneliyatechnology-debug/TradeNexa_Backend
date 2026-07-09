@@ -1,47 +1,140 @@
 /**
  * Add extended product fields (nullable / defaults — existing rows are preserved).
+ * Idempotent: safe when columns were already added via manual SQL.
  */
-exports.up = async function (knex) {
-  await knex.schema.alterTable('products', (table) => {
-    table.text('short_description').nullable();
-    table.text('description').nullable();
-    table.string('material', 150).nullable();
-    table.string('country_of_origin', 100).nullable();
-    table.string('product_condition', 30).nullable();
-    table.string('stock_status', 30).nullable().defaultTo('IN_STOCK');
-    table.boolean('show_price').notNullable().defaultTo(true);
-    table.boolean('accept_inquiry').notNullable().defaultTo(true);
-    table.string('warranty', 100).nullable();
-    table.integer('stock_quantity').unsigned().nullable();
-    table.string('hsn_code', 20).nullable();
-    table.decimal('gst_percentage', 5, 2).nullable();
-    table.text('search_tags').nullable();
-    table.json('specifications').nullable();
 
-    table.index('stock_status');
-    table.index('product_condition');
-    table.index('country_of_origin');
+const addColumnIfMissing = async (knex, tableName, columnName, builder) => {
+  if (!(await knex.schema.hasColumn(tableName, columnName))) {
+    await knex.schema.alterTable(tableName, builder);
+  }
+};
+
+exports.up = async function (knex) {
+  await addColumnIfMissing(knex, 'products', 'short_description', (table) => {
+    table.text('short_description').nullable();
   });
+  await addColumnIfMissing(knex, 'products', 'description', (table) => {
+    table.text('description').nullable();
+  });
+  await addColumnIfMissing(knex, 'products', 'material', (table) => {
+    table.string('material', 150).nullable();
+  });
+  await addColumnIfMissing(knex, 'products', 'country_of_origin', (table) => {
+    table.string('country_of_origin', 100).nullable();
+  });
+  await addColumnIfMissing(knex, 'products', 'product_condition', (table) => {
+    table.string('product_condition', 30).nullable();
+  });
+  await addColumnIfMissing(knex, 'products', 'stock_status', (table) => {
+    table.string('stock_status', 30).nullable().defaultTo('IN_STOCK');
+  });
+  await addColumnIfMissing(knex, 'products', 'show_price', (table) => {
+    table.boolean('show_price').notNullable().defaultTo(true);
+  });
+  await addColumnIfMissing(knex, 'products', 'accept_inquiry', (table) => {
+    table.boolean('accept_inquiry').notNullable().defaultTo(true);
+  });
+  await addColumnIfMissing(knex, 'products', 'warranty', (table) => {
+    table.string('warranty', 100).nullable();
+  });
+  await addColumnIfMissing(knex, 'products', 'stock_quantity', (table) => {
+    table.integer('stock_quantity').unsigned().nullable();
+  });
+  await addColumnIfMissing(knex, 'products', 'hsn_code', (table) => {
+    table.string('hsn_code', 20).nullable();
+  });
+  await addColumnIfMissing(knex, 'products', 'gst_percentage', (table) => {
+    table.decimal('gst_percentage', 5, 2).nullable();
+  });
+  await addColumnIfMissing(knex, 'products', 'search_tags', (table) => {
+    table.text('search_tags').nullable();
+  });
+  await addColumnIfMissing(knex, 'products', 'specifications', (table) => {
+    table.json('specifications').nullable();
+  });
+
+  const indexExists = async (indexName) => {
+    const result = await knex.raw(
+      `
+      SELECT COUNT(*) AS cnt
+      FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'products'
+        AND INDEX_NAME = ?
+    `,
+      [indexName],
+    );
+    return Number(result[0][0].cnt) > 0;
+  };
+
+  if (!(await indexExists('products_stock_status_index'))) {
+    await knex.schema.alterTable('products', (table) => {
+      table.index('stock_status');
+    });
+  }
+  if (!(await indexExists('products_product_condition_index'))) {
+    await knex.schema.alterTable('products', (table) => {
+      table.index('product_condition');
+    });
+  }
+  if (!(await indexExists('products_country_of_origin_index'))) {
+    await knex.schema.alterTable('products', (table) => {
+      table.index('country_of_origin');
+    });
+  }
 };
 
 exports.down = async function (knex) {
-  await knex.schema.alterTable('products', (table) => {
-    table.dropIndex(['stock_status']);
-    table.dropIndex(['product_condition']);
-    table.dropIndex(['country_of_origin']);
-    table.dropColumn('short_description');
-    table.dropColumn('description');
-    table.dropColumn('material');
-    table.dropColumn('country_of_origin');
-    table.dropColumn('product_condition');
-    table.dropColumn('stock_status');
-    table.dropColumn('show_price');
-    table.dropColumn('accept_inquiry');
-    table.dropColumn('warranty');
-    table.dropColumn('stock_quantity');
-    table.dropColumn('hsn_code');
-    table.dropColumn('gst_percentage');
-    table.dropColumn('search_tags');
-    table.dropColumn('specifications');
-  });
+  const dropColumnIfExists = async (columnName) => {
+    if (await knex.schema.hasColumn('products', columnName)) {
+      await knex.schema.alterTable('products', (table) => {
+        table.dropColumn(columnName);
+      });
+    }
+  };
+
+  const indexExists = async (indexName) => {
+    const result = await knex.raw(
+      `
+      SELECT COUNT(*) AS cnt
+      FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'products'
+        AND INDEX_NAME = ?
+    `,
+      [indexName],
+    );
+    return Number(result[0][0].cnt) > 0;
+  };
+
+  if (await indexExists('products_stock_status_index')) {
+    await knex.schema.alterTable('products', (table) => {
+      table.dropIndex(['stock_status']);
+    });
+  }
+  if (await indexExists('products_product_condition_index')) {
+    await knex.schema.alterTable('products', (table) => {
+      table.dropIndex(['product_condition']);
+    });
+  }
+  if (await indexExists('products_country_of_origin_index')) {
+    await knex.schema.alterTable('products', (table) => {
+      table.dropIndex(['country_of_origin']);
+    });
+  }
+
+  await dropColumnIfExists('short_description');
+  await dropColumnIfExists('description');
+  await dropColumnIfExists('material');
+  await dropColumnIfExists('country_of_origin');
+  await dropColumnIfExists('product_condition');
+  await dropColumnIfExists('stock_status');
+  await dropColumnIfExists('show_price');
+  await dropColumnIfExists('accept_inquiry');
+  await dropColumnIfExists('warranty');
+  await dropColumnIfExists('stock_quantity');
+  await dropColumnIfExists('hsn_code');
+  await dropColumnIfExists('gst_percentage');
+  await dropColumnIfExists('search_tags');
+  await dropColumnIfExists('specifications');
 };

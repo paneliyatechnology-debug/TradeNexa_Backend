@@ -19,7 +19,7 @@ const createBrand = async (req, res, next) => {
     return success(res, 'Brand created successfully', brand, HTTP_STATUS.CREATED);
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
-      return next(new AppError('Brand name already exists', HTTP_STATUS.CONFLICT));
+      return next(new AppError('Brand name or slug already exists', HTTP_STATUS.CONFLICT));
     }
     next(err);
   }
@@ -50,18 +50,22 @@ const getBrands = async (req, res, next) => {
   try {
     const filters = {
       search: req.query.search,
+      country: req.query.country,
       page: req.query.page,
       limit: req.query.limit,
       is_popular: req.query.is_popular !== undefined ? req.query.is_popular === 'true' : undefined,
+      is_featured: req.query.is_featured !== undefined ? req.query.is_featured === 'true' : undefined,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
       sort_by: req.query.sort_by,
       sort_order: req.query.sort_order,
     };
     const data = await brandModel.findBrands(filters);
-    const message =
-      filters.is_popular === true
-        ? 'Popular brands retrieved successfully'
-        : 'Brands list retrieved successfully';
+    let message = 'Brands list retrieved successfully';
+    if (filters.is_popular === true) {
+      message = 'Popular brands retrieved successfully';
+    } else if (filters.is_featured === true) {
+      message = 'Featured brands retrieved successfully';
+    }
     return success(res, message, data);
   } catch (err) {
     next(err);
@@ -82,7 +86,7 @@ const updateBrand = async (req, res, next) => {
     return success(res, 'Brand updated successfully', brand);
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
-      return next(new AppError('Brand name already exists', HTTP_STATUS.CONFLICT));
+      return next(new AppError('Brand name or slug already exists', HTTP_STATUS.CONFLICT));
     }
     next(err);
   }

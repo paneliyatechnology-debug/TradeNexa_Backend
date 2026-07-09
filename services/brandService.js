@@ -36,6 +36,7 @@ const parseBrandBody = (body = {}) => {
   return {
     ...clean,
     is_popular: parseBoolean(clean.is_popular),
+    is_featured: parseBoolean(clean.is_featured),
     is_active: parseBoolean(clean.is_active),
   };
 };

@@ -2,6 +2,7 @@ const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl, deleteStoredFile } = require('../utils/media');
 const categoryModel = require('./categoryModel');
+const { formatBrandEntity } = require('./brandModel');
 
 // ==========================================
 // Formatting helpers
@@ -149,7 +150,7 @@ const formatProductDetail = (row, images = [], videos = []) => {
       name: row.name ?? null,
       short_description: row.short_description ?? null,
       description: row.description ?? null,
-      brand: formatNamedEntity(row.brand_id, row.brand_name),
+      brand: formatBrandEntity(row),
       category: formatNamedEntity(row.category_id, row.category_name),
       subcategory: formatNamedEntity(row.subcategory_id, row.subcategory_name),
       country_of_origin: row.country_of_origin ?? null,
@@ -316,6 +317,14 @@ const findProductDetailById = async (id) => {
       'categories.name as category_name',
       'subcategories.name as subcategory_name',
       'brands.name as brand_name',
+      'brands.slug as brand_slug',
+      'brands.description as brand_description',
+      'brands.website as brand_website',
+      'brands.country as brand_country',
+      'brands.logo as brand_logo',
+      'brands.is_popular as brand_is_popular',
+      'brands.is_featured as brand_is_featured',
+      'brands.is_active as brand_is_active',
       'business_types.name as business_type_name',
       'addresses.address_line_1',
       'addresses.pincode',
