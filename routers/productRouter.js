@@ -33,6 +33,14 @@ const router = express.Router();
 router.get('/', productListQuery, validate, productController.getProducts);
 router.get('/trending', productTrendingQuery, validate, productController.getTrendingProducts);
 router.get('/related', productRelatedQuery, validate, productController.getRelatedProducts);
+router.get(
+  '/my',
+  authenticate,
+  authorize('seller', 'buyer_seller', 'admin'),
+  productListQuery,
+  validate,
+  productController.getMyProducts,
+);
 router.get('/:id', idParam, validate, productController.getProduct);
 
 // ==========================================

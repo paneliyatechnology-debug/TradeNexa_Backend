@@ -105,24 +105,47 @@ const getProduct = async (req, res, next) => {
   }
 };
 
+const buildProductListFilters = (req, { defaultActiveOnly = true } = {}) => ({
+  search: req.query.search,
+  category_id: req.query.category_id,
+  subcategory_id: req.query.subcategory_id,
+  brand_id: req.query.brand_id,
+  min_price: req.query.min_price,
+  max_price: req.query.max_price,
+  page: req.query.page,
+  limit: req.query.limit,
+  sort_by: req.query.sort_by,
+  sort_order: req.query.sort_order,
+  is_active:
+    req.query.is_active !== undefined
+      ? req.query.is_active === 'true'
+      : defaultActiveOnly
+        ? true
+        : undefined,
+});
+
 /**
  * GET /products
  * List products with search, filters, and pagination.
  */
 const getProducts = async (req, res, next) => {
   try {
+    const data = await productModel.findProducts(buildProductListFilters(req));
+    return success(res, 'Products list retrieved successfully', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /products/my
+ * List the authenticated seller's own products with the same filters as GET /products.
+ */
+const getMyProducts = async (req, res, next) => {
+  try {
     const filters = {
-      search: req.query.search,
-      category_id: req.query.category_id,
-      subcategory_id: req.query.subcategory_id,
-      brand_id: req.query.brand_id,
-      min_price: req.query.min_price,
-      max_price: req.query.max_price,
-      page: req.query.page,
-      limit: req.query.limit,
-      sort_by: req.query.sort_by,
-      sort_order: req.query.sort_order,
-      is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
+      ...buildProductListFilters(req, { defaultActiveOnly: false }),
+      seller_id: req.user.id,
     };
     const data = await productModel.findProducts(filters);
     return success(res, 'Products list retrieved successfully', data);
@@ -296,6 +319,7 @@ module.exports = {
   createProduct,
   getProduct,
   getProducts,
+  getMyProducts,
   getTrendingProducts,
   getRelatedProducts,
   updateProduct,
