@@ -52,6 +52,8 @@ const getWishlist = async (req, res, next) => {
       page: req.query.page,
       limit: req.query.limit,
       search: req.query.search,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
     });
     return success(res, 'Wishlist fetched successfully.', data);
   } catch (err) {

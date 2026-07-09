@@ -248,6 +248,30 @@ const applyProductListSort = (q, filters) => {
 };
 
 /**
+ * Filter products by whether they are in the user's wishlist.
+ * Requires authenticated user_id in filters.
+ */
+const applyWishlistFilterToQuery = (q, userId, isWishlist) => {
+  if (isWishlist) {
+    q.innerJoin('wishlist as user_wishlist', function () {
+      this.on('user_wishlist.product_id', '=', 'products.id').andOn(
+        'user_wishlist.user_id',
+        '=',
+        db.raw('?', [userId]),
+      );
+    });
+    return;
+  }
+
+  q.whereNotExists(function () {
+    this.select(db.raw('1'))
+      .from('wishlist as user_wishlist')
+      .whereRaw('user_wishlist.product_id = products.id')
+      .where('user_wishlist.user_id', userId);
+  });
+};
+
+/**
  * Find a product by ID with seller, category, brand, and location joins.
  * @param {number} id - Product ID
  * @param {{ raw?: boolean }} [options] - Return raw DB row when raw=true
@@ -544,6 +568,10 @@ const findProducts = async (filters = {}) => {
 
   if (filters.exclude_product_id) {
     q.whereNot('products.id', filters.exclude_product_id);
+  }
+
+  if (filters.is_wishlist !== undefined && filters.user_id) {
+    applyWishlistFilterToQuery(q, filters.user_id, filters.is_wishlist);
   }
 
   applyProductListSort(q, filters);

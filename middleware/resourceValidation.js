@@ -507,6 +507,10 @@ const productListFilterSortQuery = [
   query('brand_id').optional().isInt().withMessage('Brand ID must be an integer'),
   query('min_price').optional().isFloat({ min: 0 }).withMessage('Min price must be positive'),
   query('max_price').optional().isFloat({ min: 0 }).withMessage('Max price must be positive'),
+  query('is_wishlist')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_wishlist must be true or false'),
   query('sort_by')
     .optional()
     .isIn(PRODUCT_SORT_BY_VALUES)
@@ -893,9 +897,12 @@ const wishlistProductIdParam = [
   param('product_id').isInt({ min: 1 }).withMessage('Product ID must be a positive integer'),
 ];
 
+const WISHLIST_SORT_BY_VALUES = ['wishlisted_at', 'id', 'name', 'price', 'rating', 'created_at'];
+
 const wishlistListQuery = [
   ...paginationQuery,
   query('search').optional().trim(),
+  ...listSortQuery(WISHLIST_SORT_BY_VALUES),
 ];
 
 module.exports = {

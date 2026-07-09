@@ -62,6 +62,24 @@ const pickProductListFilters = (req, extra = {}) => ({
   ...extra,
 });
 
+/** Merge is_wishlist filter when query param is present (requires authenticated user). */
+const withWishlistFilter = (req, filters) => {
+  if (req.query.is_wishlist === undefined) return filters;
+
+  if (!req.user?.id) {
+    throw new AppError(
+      'Authentication required to filter by is_wishlist',
+      HTTP_STATUS.UNAUTHORIZED,
+    );
+  }
+
+  return {
+    ...filters,
+    is_wishlist: req.query.is_wishlist === 'true',
+    user_id: req.user.id,
+  };
+};
+
 /** Ensure the user may modify a product (assigned seller or admin). */
 const assertCanModifyProduct = async (productId, user) => {
   const existing = await productModel.findProductById(productId, { raw: true });
@@ -132,7 +150,8 @@ const buildProductListFilters = (req, { defaultActiveOnly = true } = {}) => ({
  */
 const getProducts = async (req, res, next) => {
   try {
-    const data = await productModel.findProducts(buildProductListFilters(req));
+    const filters = withWishlistFilter(req, buildProductListFilters(req));
+    const data = await productModel.findProducts(filters);
     const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
     return success(res, 'Products list retrieved successfully', withWishlist);
   } catch (err) {
@@ -146,10 +165,10 @@ const getProducts = async (req, res, next) => {
  */
 const getMyProducts = async (req, res, next) => {
   try {
-    const filters = {
+    const filters = withWishlistFilter(req, {
       ...buildProductListFilters(req, { defaultActiveOnly: false }),
       seller_id: req.user.id,
-    };
+    });
     const data = await productModel.findProducts(filters);
     const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
     return success(res, 'Products list retrieved successfully', withWishlist);
@@ -164,12 +183,15 @@ const getMyProducts = async (req, res, next) => {
  */
 const getTrendingProducts = async (req, res, next) => {
   try {
-    const filters = pickProductListFilters(req, {
-      is_trending: true,
-      is_active: true,
-      category_id: req.query.category_id,
-      subcategory_id: req.query.subcategory_id,
-    });
+    const filters = withWishlistFilter(
+      req,
+      pickProductListFilters(req, {
+        is_trending: true,
+        is_active: true,
+        category_id: req.query.category_id,
+        subcategory_id: req.query.subcategory_id,
+      }),
+    );
     const data = await productModel.findProducts(filters);
 
     const formatted = data.results.map((p) => ({
@@ -210,10 +232,13 @@ const getTrendingProducts = async (req, res, next) => {
  */
 const getRelatedProducts = async (req, res, next) => {
   try {
-    const filters = pickProductListFilters(req, {
-      subcategory_id: req.query.subcategory_id,
-      is_active: true,
-    });
+    const filters = withWishlistFilter(
+      req,
+      pickProductListFilters(req, {
+        subcategory_id: req.query.subcategory_id,
+        is_active: true,
+      }),
+    );
 
     if (req.query.product_id) {
       filters.exclude_product_id = req.query.product_id;

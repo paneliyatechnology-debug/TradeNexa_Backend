@@ -1,7 +1,17 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl } = require('../utils/media');
+const { applyListSort } = require('../utils/listQuery');
 const { formatRow } = require('./productModel');
+
+const WISHLIST_SORT_FIELDS = {
+  wishlisted_at: 'wishlist.created_at',
+  id: 'products.id',
+  name: 'products.name',
+  price: 'products.price',
+  rating: 'products.rating',
+  created_at: 'products.created_at',
+};
 
 // ==========================================
 // Read helpers
@@ -99,12 +109,16 @@ const findUserWishlist = async (userId, filters = {}) => {
       'products.is_active',
       'products.created_at',
       'wishlist.created_at as wishlisted_at',
-    )
-    .orderBy('wishlist.created_at', 'desc');
+    );
 
   if (filters.search) {
     q.where('products.name', 'like', `%${filters.search}%`);
   }
+
+  applyListSort(q, filters, WISHLIST_SORT_FIELDS, {
+    defaultSortBy: 'wishlisted_at',
+    defaultSortOrder: 'desc',
+  });
 
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 20;
