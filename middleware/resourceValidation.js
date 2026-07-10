@@ -539,12 +539,14 @@ const productTrendingQuery = [
   ...paginationQuery,
   query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
   query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   ...productListFilterSortQuery,
 ];
 
 const productRelatedQuery = [
   query('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required'),
   query('product_id').optional().isInt({ min: 1 }).withMessage('Product ID must be a positive integer'),
+  query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   ...paginationQuery,
   ...productListFilterSortQuery,
 ];

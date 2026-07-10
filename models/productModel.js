@@ -1,6 +1,7 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl, deleteStoredFile } = require('../utils/media');
+const { formatAddressResponse } = require('../utils/addressFormat');
 const categoryModel = require('./categoryModel');
 const { formatBrandEntity } = require('./brandModel');
 
@@ -43,6 +44,54 @@ const formatSearchTags = (value) => {
   return [];
 };
 
+/** Strip raw seller address columns after formatting nested `address` object. */
+const SELLER_ADDRESS_ROW_KEYS = [
+  'address_line_1',
+  'address_line_2',
+  'pincode',
+  'country_id',
+  'state_id',
+  'city_id',
+  'city',
+  'state',
+  'country',
+  'latitude',
+  'longitude',
+];
+
+const stripSellerAddressRowFields = (row) => {
+  SELLER_ADDRESS_ROW_KEYS.forEach((key) => {
+    delete row[key];
+  });
+  return row;
+};
+
+/** Join seller primary address with country, state, and city names. */
+const applySellerPrimaryAddressJoins = (q) =>
+  q
+    .leftJoin('addresses', function () {
+      this.on('sellers.id', '=', 'addresses.user_id').andOn(
+        'addresses.is_primary',
+        '=',
+        db.raw('?', [true]),
+      );
+    })
+    .leftJoin('cities', 'addresses.city_id', '=', 'cities.id')
+    .leftJoin('states', 'addresses.state_id', '=', 'states.id')
+    .leftJoin('countries', 'addresses.country_id', '=', 'countries.id');
+
+const SELLER_ADDRESS_SELECT = [
+  'addresses.address_line_1',
+  'addresses.address_line_2',
+  'addresses.pincode',
+  'addresses.country_id',
+  'addresses.state_id',
+  'addresses.city_id',
+  'cities.name as city',
+  'states.name as state',
+  'countries.name as country',
+];
+
 /**
  * Format a product row for API responses.
  * Resolves thumbnail to a full URL.
@@ -50,7 +99,7 @@ const formatSearchTags = (value) => {
  */
 const formatRow = (row) => {
   if (!row) return null;
-  return {
+  const formatted = {
     ...row,
     user_id: row.seller_id ?? row.user_id ?? undefined,
     thumbnail: resolveMediaUrl(row.thumbnail),
@@ -83,7 +132,9 @@ const formatRow = (row) => {
     category_id: row.category_id ?? null,
     subcategory_id: row.subcategory_id ?? null,
     is_wishlist: row.is_wishlist !== undefined ? !!row.is_wishlist : false,
+    address: formatAddressResponse(row),
   };
+  return stripSellerAddressRowFields(formatted);
 };
 
 /** Named entity with id + name; always returned as an object in product detail. */
@@ -121,17 +172,7 @@ const formatSellerDetail = (row) => ({
     email: row?.seller_email ?? null,
     website: null,
   },
-  location: {
-    address: row?.address_line_1 ?? null,
-    city: row?.city ?? null,
-    state: row?.state ?? null,
-    country: row?.country ?? null,
-    postal_code: row?.pincode ?? null,
-    latitude:
-      row?.latitude !== undefined && row?.latitude !== null ? parseFloat(row.latitude) : null,
-    longitude:
-      row?.longitude !== undefined && row?.longitude !== null ? parseFloat(row.longitude) : null,
-  },
+  address: formatAddressResponse(row),
   social_links: {
     website: null,
     facebook: null,
@@ -278,17 +319,14 @@ const applyWishlistFilterToQuery = (q, userId, isWishlist) => {
  * @returns {Promise<Object|null>}
  */
 const findProductById = async (id, options = {}) => {
-  const result = await db('products')
-    .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
-    .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
-    .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
-    .leftJoin('categories', 'products.category_id', '=', 'categories.id')
-    .leftJoin('brands', 'products.brand_id', '=', 'brands.id')
-    .leftJoin('addresses', function () {
-      this.on('sellers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
-    })
-    .leftJoin('cities', 'addresses.city_id', '=', 'cities.id')
-    .leftJoin('states', 'addresses.state_id', '=', 'states.id')
+  const result = await applySellerPrimaryAddressJoins(
+    db('products')
+      .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
+      .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
+      .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
+      .leftJoin('categories', 'products.category_id', '=', 'categories.id')
+      .leftJoin('brands', 'products.brand_id', '=', 'brands.id'),
+  )
     .where('products.id', id)
     .whereNull('products.deleted_at')
     .select(
@@ -298,8 +336,7 @@ const findProductById = async (id, options = {}) => {
       'categories.name as category_name',
       'subcategories.name as subcategory_name',
       'brands.name as brand_name',
-      'cities.name as city',
-      'states.name as state',
+      ...SELLER_ADDRESS_SELECT,
     )
     .first();
 
@@ -309,20 +346,15 @@ const findProductById = async (id, options = {}) => {
 
 /** Base product detail query with seller, category, brand, and address joins. */
 const buildProductDetailQuery = () =>
-  db('products')
-    .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
-    .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
-    .leftJoin('business_types', 'company_details.business_type_id', '=', 'business_types.id')
-    .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
-    .leftJoin('categories', 'products.category_id', '=', 'categories.id')
-    .leftJoin('brands', 'products.brand_id', '=', 'brands.id')
-    .leftJoin('addresses', function () {
-      this.on('sellers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
-    })
-    .leftJoin('cities', 'addresses.city_id', '=', 'cities.id')
-    .leftJoin('states', 'addresses.state_id', '=', 'states.id')
-    .leftJoin('countries', 'addresses.country_id', '=', 'countries.id')
-    .whereNull('products.deleted_at');
+  applySellerPrimaryAddressJoins(
+    db('products')
+      .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
+      .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
+      .leftJoin('business_types', 'company_details.business_type_id', '=', 'business_types.id')
+      .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
+      .leftJoin('categories', 'products.category_id', '=', 'categories.id')
+      .leftJoin('brands', 'products.brand_id', '=', 'brands.id'),
+  ).whereNull('products.deleted_at');
 
 /**
  * Find a product by ID with full detail for the single-product API response.
@@ -352,13 +384,7 @@ const findProductDetailById = async (id) => {
       'brands.is_featured as brand_is_featured',
       'brands.is_active as brand_is_active',
       'business_types.name as business_type_name',
-      'addresses.address_line_1',
-      'addresses.pincode',
-      'addresses.latitude',
-      'addresses.longitude',
-      'cities.name as city',
-      'states.name as state',
-      'countries.name as country',
+      ...SELLER_ADDRESS_SELECT,
     )
     .first();
 
@@ -496,16 +522,13 @@ const deleteProductVideo = async (productId, videoId) => {
  * @returns {Promise<Object>}
  */
 const findProducts = async (filters = {}) => {
-  const q = db('products')
-    .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
-    .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
-    .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
-    .leftJoin('categories', 'products.category_id', '=', 'categories.id')
-    .leftJoin('addresses', function () {
-      this.on('sellers.id', '=', 'addresses.user_id').andOn('addresses.is_primary', '=', db.raw('?', [true]));
-    })
-    .leftJoin('cities', 'addresses.city_id', '=', 'cities.id')
-    .leftJoin('states', 'addresses.state_id', '=', 'states.id')
+  const q = applySellerPrimaryAddressJoins(
+    db('products')
+      .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
+      .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
+      .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
+      .leftJoin('categories', 'products.category_id', '=', 'categories.id'),
+  )
     .whereNull('products.deleted_at')
     .select(
       'products.id',
@@ -524,8 +547,7 @@ const findProducts = async (filters = {}) => {
       'subcategories.name as subcategory_name',
       'sellers.is_verified as verified',
       'products.rating',
-      'cities.name as city',
-      'states.name as state',
+      ...SELLER_ADDRESS_SELECT,
       'products.is_trending',
       'products.created_at',
     );

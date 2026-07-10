@@ -53,6 +53,7 @@ const withExtendedProductFields = (product = {}) => ({
 const pickProductListFilters = (req, extra = {}) => ({
   search: req.query.search,
   brand_id: req.query.brand_id,
+  city_id: req.query.city_id,
   min_price: req.query.min_price,
   max_price: req.query.max_price,
   page: req.query.page,
@@ -210,8 +211,7 @@ const getTrendingProducts = async (req, res, next) => {
       seller_name: p.seller_name,
       verified: p.verified,
       rating: p.rating,
-      city: p.city,
-      state: p.state,
+      address: p.address ?? null,
       ...withExtendedProductFields(p),
     }));
 
@@ -260,6 +260,7 @@ const getRelatedProducts = async (req, res, next) => {
       user_id: p.seller_id,
       seller_name: p.seller_name,
       verified: p.verified,
+      address: p.address ?? null,
       ...withExtendedProductFields(p),
     }));
 

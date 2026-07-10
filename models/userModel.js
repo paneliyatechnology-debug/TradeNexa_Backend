@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const db = require('../database/knex');
 const { resolveMediaUrl } = require('../utils/media');
+const { formatAddressResponse } = require('../utils/addressFormat');
 const { hashToken, compareToken } = require('../utils/jwt');
 const { ROLE_CODES } = require('../constants');
 
@@ -187,7 +188,7 @@ const formatUser = (data) => {
     industry: profile?.industry || null,
     gst_number: profile?.gst_number || null,
     address: address
-      ? {
+      ? formatAddressResponse({
           address_line_1: address.address_line_1,
           address_line_2: address.address_line_2,
           pincode: address.pincode,
@@ -197,7 +198,7 @@ const formatUser = (data) => {
           country: address.country?.name || null,
           state: address.state?.name || null,
           city: address.city?.name || null,
-        }
+        })
       : null,
   };
 
