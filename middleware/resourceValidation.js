@@ -905,6 +905,26 @@ const wishlistListQuery = [
   ...listSortQuery(WISHLIST_SORT_BY_VALUES),
 ];
 
+// ==========================================
+// Location validations
+// ==========================================
+
+const locationStatesQuery = [
+  query('country_id')
+    .notEmpty()
+    .withMessage('country_id is required')
+    .isInt({ min: 1 })
+    .withMessage('country_id must be a positive integer'),
+];
+
+const locationCitiesQuery = [
+  query('state_id')
+    .notEmpty()
+    .withMessage('state_id is required')
+    .isInt({ min: 1 })
+    .withMessage('state_id must be a positive integer'),
+];
+
 module.exports = {
   idParam,
   categoryIdParam,
@@ -961,4 +981,6 @@ module.exports = {
   wishlistToggleRules,
   wishlistListQuery,
   wishlistProductIdParam,
+  locationStatesQuery,
+  locationCitiesQuery,
 };

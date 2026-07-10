@@ -190,10 +190,13 @@ const formatUser = (data) => {
       ? {
           address_line_1: address.address_line_1,
           address_line_2: address.address_line_2,
-          city: address.city?.name || null,
-          state: address.state?.name || null,
-          country: address.country?.name || null,
           pincode: address.pincode,
+          country_id: address.country_id,
+          state_id: address.state_id,
+          city_id: address.city_id,
+          country: address.country?.name || null,
+          state: address.state?.name || null,
+          city: address.city?.name || null,
         }
       : null,
   };

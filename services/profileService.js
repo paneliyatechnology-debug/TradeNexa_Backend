@@ -90,14 +90,13 @@ const updateProfile = async (userId, data, files = {}) => {
 
   // Buyer / buyer_seller primary address
   if ([ROLE_CODES.BUYER, ROLE_CODES.BUYER_SELLER].includes(roleCode)) {
-    const loc = await userModel.findLocationIds(data.city, data.state, data.country);
     await userModel.updateAddress(userId, {
       address_line_1: data.address_line_1,
       address_line_2: data.address_line_2 || null,
-      pincode: data.pincode || null,
-      country_id: loc.country_id,
-      state_id: loc.state_id || null,
-      city_id: loc.city_id || null,
+      pincode: data.pincode,
+      country_id: Number(data.country_id),
+      state_id: Number(data.state_id),
+      city_id: Number(data.city_id),
     });
   }
 

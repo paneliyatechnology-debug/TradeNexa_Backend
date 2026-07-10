@@ -14,6 +14,7 @@ const offerRouter = require('./offerRouter');
 const rfqRouter = require('./rfqRouter');
 const chatRouter = require('./chatRouter');
 const wishlistRouter = require('./wishlistRouter');
+const locationRouter = require('./locationRouter');
 const serviceRouter = require('./serviceRouter');
 const newsRouter = require('./newsRouter');
 const businessTypeRouter = require('./businessTypeRouter');
@@ -40,6 +41,7 @@ router.use('/offers', offerRouter);
 router.use('/rfqs', rfqRouter);
 router.use('/chats', chatRouter);
 router.use('/wishlist', wishlistRouter);
+router.use('/locations', locationRouter);
 router.use('/services', serviceRouter);
 router.use('/news', newsRouter);
 

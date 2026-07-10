@@ -1,5 +1,6 @@
 const { body, validationResult } = require('express-validator');
 const userModel = require('../models/userModel');
+const locationModel = require('../models/locationModel');
 const { AppError } = require('../utils/response');
 const { ROLE_CODES } = require('../constants');
 
@@ -35,6 +36,51 @@ const blockedRules = [
   blockedField('device', 'Device'),
   blockedField('complete_profile', 'complete_profile'),
   blockedField('is_completed_profile', 'is_completed_profile'),
+  blockedField('country', 'country'),
+  blockedField('state', 'state'),
+  blockedField('city', 'city'),
+];
+
+const addressLocationRules = [
+  body('address_line_1')
+    .trim()
+    .notEmpty()
+    .withMessage('Address line 1 is required')
+    .isLength({ min: 3, max: 255 })
+    .withMessage('Address line 1 must be between 3 and 255 characters'),
+  body('address_line_2').optional({ values: 'falsy' }).trim().isLength({ max: 255 }),
+  body('pincode')
+    .trim()
+    .notEmpty()
+    .withMessage('Pincode is required')
+    .matches(PINCODE_REGEX)
+    .withMessage('Invalid pincode'),
+  body('country_id')
+    .notEmpty()
+    .withMessage('Country is required')
+    .isInt({ min: 1 })
+    .withMessage('country_id must be a positive integer'),
+  body('state_id')
+    .notEmpty()
+    .withMessage('State is required')
+    .isInt({ min: 1 })
+    .withMessage('state_id must be a positive integer'),
+  body('city_id')
+    .notEmpty()
+    .withMessage('City is required')
+    .isInt({ min: 1 })
+    .withMessage('city_id must be a positive integer'),
+  body('city_id').custom(async (_cityId, { req }) => {
+    const countryId = Number(req.body.country_id);
+    const stateId = Number(req.body.state_id);
+    const cityId = Number(req.body.city_id);
+
+    const isValid = await locationModel.validateLocationIds(countryId, stateId, cityId);
+    if (!isValid) {
+      throw new Error('Invalid location — city must belong to the selected state and country');
+    }
+    return true;
+  }),
 ];
 
 // ==========================================
@@ -59,12 +105,7 @@ const buyerProfileRules = [
     .trim()
     .matches(GST_REGEX)
     .withMessage('Invalid GST number'),
-  body('address_line_1').trim().notEmpty().withMessage('Address is required').isLength({ min: 3, max: 255 }),
-  body('country').trim().notEmpty().withMessage('Country is required'),
-  body('address_line_2').optional({ values: 'falsy' }).trim(),
-  body('state').optional({ values: 'falsy' }).trim(),
-  body('city').optional({ values: 'falsy' }).trim(),
-  body('pincode').optional({ values: 'falsy' }).trim().matches(PINCODE_REGEX).withMessage('Invalid pincode'),
+  ...addressLocationRules,
 ];
 
 const sellerProfileRules = [
@@ -114,12 +155,7 @@ const buyerSellerProfileRules = [
     .withMessage('Business description is required')
     .isLength({ min: 10 })
     .withMessage('Business description must be at least 10 characters'),
-  body('address_line_1').trim().notEmpty().withMessage('Address is required').isLength({ min: 3, max: 255 }),
-  body('country').trim().notEmpty().withMessage('Country is required'),
-  body('address_line_2').optional({ values: 'falsy' }).trim(),
-  body('state').optional({ values: 'falsy' }).trim(),
-  body('city').optional({ values: 'falsy' }).trim(),
-  body('pincode').optional({ values: 'falsy' }).trim().matches(PINCODE_REGEX).withMessage('Invalid pincode'),
+  ...addressLocationRules,
   body('cin').optional({ values: 'falsy' }).trim(),
   body('iec').optional({ values: 'falsy' }).trim(),
 ];
