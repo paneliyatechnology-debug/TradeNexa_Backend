@@ -492,7 +492,7 @@ const deleteProductVideo = async (productId, videoId) => {
 
 /**
  * Paginated list of products with optional filters and sorting.
- * @param {Object} [filters] - Query filters (search, category_id, subcategory_id, brand_id, price range, sort)
+ * @param {Object} [filters] - Query filters (search, category_id, subcategory_id, city_id, brand_id, price range, sort)
  * @returns {Promise<Object>}
  */
 const findProducts = async (filters = {}) => {
@@ -540,6 +540,10 @@ const findProducts = async (filters = {}) => {
 
   if (filters.subcategory_id) {
     q.where('products.subcategory_id', filters.subcategory_id);
+  }
+
+  if (filters.city_id) {
+    q.where('addresses.city_id', filters.city_id);
   }
 
   if (filters.brand_id) {

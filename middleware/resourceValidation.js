@@ -527,6 +527,7 @@ const productListQuery = [
   query('search').optional().trim(),
   query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
   query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   query('is_active')
     .optional()
     .isIn(['true', 'false'])

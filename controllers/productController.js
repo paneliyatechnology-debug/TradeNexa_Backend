@@ -129,6 +129,7 @@ const buildProductListFilters = (req, { defaultActiveOnly = true } = {}) => ({
   search: req.query.search,
   category_id: req.query.category_id,
   subcategory_id: req.query.subcategory_id,
+  city_id: req.query.city_id,
   brand_id: req.query.brand_id,
   min_price: req.query.min_price,
   max_price: req.query.max_price,
