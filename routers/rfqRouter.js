@@ -13,6 +13,8 @@ const {
   quotationUpdateRules,
   quotationRevisionRules,
   adminRfqStatusRules,
+  quotationListQuery,
+  rfqLatestQuery,
   paginationQuery,
 } = require('../middleware/resourceValidation');
 const { param } = require('express-validator');
@@ -30,7 +32,7 @@ const adminRoles = authorize('admin', 'super_admin', 'supporter');
 // ==========================================
 
 router.get('/', rfqListQuery, validate, rfqController.getRfqs);
-router.get('/latest', rfqController.getLatestRfqs);
+router.get('/latest', rfqLatestQuery, validate, rfqController.getLatestRfqs);
 
 // ==========================================
 // Admin routes (static paths before :id)
@@ -38,7 +40,7 @@ router.get('/latest', rfqController.getLatestRfqs);
 
 router.get('/admin/list', authenticate, adminRoles, rfqListQuery, validate, rfqController.getAdminRfqs);
 router.get('/admin/dashboard/summary', authenticate, adminRoles, rfqController.getRfqSummary);
-router.get('/admin/quotations', authenticate, adminRoles, paginationQuery, validate, rfqController.getAdminQuotations);
+router.get('/admin/quotations', authenticate, adminRoles, quotationListQuery, validate, rfqController.getAdminQuotations);
 router.get('/admin/:id', authenticate, adminRoles, idParam, validate, rfqController.getAdminRfq);
 router.patch('/admin/:id/status', authenticate, adminRoles, idParam, adminRfqStatusRules, validate, rfqController.updateAdminRfqStatus);
 
@@ -48,7 +50,7 @@ router.patch('/admin/:id/status', authenticate, adminRoles, idParam, adminRfqSta
 
 const mountSellerRoutes = (prefix) => {
   router.get(`/${prefix}/feed`, authenticate, sellerRoles, rfqListQuery, validate, rfqController.getSellerRfqs);
-  router.get(`/${prefix}/quotations`, authenticate, sellerRoles, rfqListQuery, validate, rfqController.getMyQuotations);
+  router.get(`/${prefix}/quotations`, authenticate, sellerRoles, quotationListQuery, validate, rfqController.getMyQuotations);
   router.get(
     `/${prefix}/quotations/:quotationId`,
     authenticate,
@@ -138,7 +140,15 @@ router.post('/:id/cancel', authenticate, buyerRoles, idParam, validate, rfqContr
 router.post('/:id/close', authenticate, buyerRoles, idParam, validate, rfqController.closeRfq);
 
 router.get('/:id/quotations/compare', authenticate, buyerRoles, idParam, validate, rfqController.compareRfqQuotations);
-router.get('/:id/quotations', authenticate, buyerRoles, idParam, validate, rfqController.getRfqQuotations);
+router.get(
+  '/:id/quotations',
+  authenticate,
+  buyerRoles,
+  idParam,
+  quotationListQuery,
+  validate,
+  rfqController.getRfqQuotations,
+);
 
 router.post(
   '/:id/quotations',

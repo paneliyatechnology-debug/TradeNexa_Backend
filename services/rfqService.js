@@ -103,7 +103,7 @@ const getRfqDetail = async (id, options = {}) => {
   const attachments = await rfqAttachmentModel.findByRfqId(id);
   const sellerCount = await rfqSellerModel.countByRfqId(id);
   const quotations = options.includeQuotations
-    ? await quotationModel.findByRfqId(id)
+    ? await quotationModel.findByRfqId(id, { paginate: false })
     : undefined;
 
   const formatted = rfqModel.formatRow(rfq);
@@ -115,6 +115,7 @@ const getRfqDetail = async (id, options = {}) => {
       id: getBuyerId(rfq),
       name: rfq.buyer_name,
       email: rfq.buyer_email,
+      company: formatted.company ?? null,
     },
     category: rfq.category_name,
     subcategory: rfq.subcategory_name,

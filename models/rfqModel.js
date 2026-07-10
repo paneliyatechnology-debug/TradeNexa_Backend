@@ -4,6 +4,7 @@
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { applyListSort } = require('../utils/listQuery');
+const { resolveMediaUrl } = require('../utils/media');
 const { RFQ_STATUS } = require('../constants/rfq');
 
 const RFQ_SORT_FIELDS = {
@@ -17,6 +18,36 @@ const RFQ_SORT_FIELDS = {
   quantity: 'rfqs.quantity',
   category: 'categories.name',
   city: 'rfqs.city',
+};
+
+const BUYER_COMPANY_SELECT = [
+  'buyers.id as buyer_id',
+  'buyers.full_name as buyer_name',
+  'buyers.email as buyer_email',
+  'buyer_company.company_name',
+  'buyer_company.industry',
+  'buyer_company.gst_number',
+  db.raw('COALESCE(buyer_company.company_logo, buyers.profile_image) as company_logo'),
+];
+
+/** Nest buyer company fields (same shape as profile company fields). */
+const formatBuyerCompany = (row) => {
+  if (!row) return null;
+  if (row.company && typeof row.company === 'object') return row.company;
+  if (
+    row.company_name == null &&
+    row.industry == null &&
+    row.gst_number == null &&
+    row.company_logo == null
+  ) {
+    return null;
+  }
+  return {
+    company_name: row.company_name ?? null,
+    company_logo: row.company_logo ? resolveMediaUrl(row.company_logo) : null,
+    industry: row.industry ?? null,
+    gst_number: row.gst_number ?? null,
+  };
 };
 
 const formatRow = (row) => {
@@ -34,12 +65,18 @@ const formatRow = (row) => {
     total_views: row.total_views !== undefined ? parseInt(row.total_views, 10) : undefined,
     total_quotations:
       row.total_quotations !== undefined ? parseInt(row.total_quotations, 10) : undefined,
+    company: formatBuyerCompany(row),
   };
 
   // When buyer details are present, expose users.id as user_id
   if (row.buyer_id != null || row.buyer_name !== undefined || row.user_id != null) {
     formatted.user_id = row.user_id ?? row.buyer_id ?? null;
   }
+
+  delete formatted.company_name;
+  delete formatted.industry;
+  delete formatted.gst_number;
+  delete formatted.company_logo;
 
   return formatted;
 };
@@ -50,6 +87,7 @@ const baseRfqQuery = () =>
     .leftJoin('categories as subcategories', 'rfqs.subcategory_id', '=', 'subcategories.id')
     .leftJoin('products', 'rfqs.product_id', '=', 'products.id')
     .leftJoin('users as buyers', 'rfqs.buyer_id', '=', 'buyers.id')
+    .leftJoin('company_details as buyer_company', 'buyers.id', '=', 'buyer_company.user_id')
     .whereNull('rfqs.deleted_at');
 
 const applyRfqFilters = (q, filters = {}) => {
@@ -60,6 +98,7 @@ const applyRfqFilters = (q, filters = {}) => {
         .orWhere('rfqs.rfq_number', 'like', term)
         .orWhere('products.name', 'like', term)
         .orWhere('buyers.full_name', 'like', term)
+        .orWhere('buyer_company.company_name', 'like', term)
         .orWhere('rfqs.city', 'like', term);
     });
   }
@@ -98,8 +137,7 @@ const findRfqById = async (id, options = {}) => {
       'subcategories.name as subcategory_name',
       'products.name as product_name',
       'buyers.id as user_id',
-      'buyers.full_name as buyer_name',
-      'buyers.email as buyer_email',
+      ...BUYER_COMPANY_SELECT,
     )
     .first();
 
@@ -121,6 +159,7 @@ const findRfqs = async (filters = {}) => {
     'rfqs.city',
     'rfqs.unit',
     'categories.name as category',
+    ...BUYER_COMPANY_SELECT,
   );
 
   applyRfqFilters(q, filters);
@@ -162,6 +201,7 @@ const findSellerFeed = async (sellerId, filters = {}) => {
       'rfqs.created_at',
       'rfqs.city',
       'categories.name as category',
+      ...BUYER_COMPANY_SELECT,
     );
 
   applyRfqFilters(q, filters);

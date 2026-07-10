@@ -587,7 +587,7 @@ const offerUpdateRules = [
 // RFQ validations
 // ==========================================
 
-const { RFQ_STATUS, RFQ_VISIBILITY, RFQ_SORT_BY_VALUES } = require('../constants/rfq');
+const { RFQ_STATUS, RFQ_VISIBILITY, RFQ_SORT_BY_VALUES, QUOTATION_STATUS, QUOTATION_SORT_BY_VALUES } = require('../constants/rfq');
 
 const RFQ_PINCODE_REGEX = /^[1-9][0-9]{5}$/;
 
@@ -702,6 +702,19 @@ const quotationRevisionRules = [
 
 const adminRfqStatusRules = [
   body('status').isIn(Object.values(RFQ_STATUS)).withMessage('Invalid RFQ status'),
+];
+
+const quotationListQuery = [
+  ...paginationQuery,
+  query('status').optional().isIn(Object.values(QUOTATION_STATUS)).withMessage('Invalid quotation status'),
+  query('rfq_id').optional().isInt({ min: 1 }).withMessage('rfq_id must be a positive integer'),
+  query('seller_id').optional().isInt({ min: 1 }).withMessage('seller_id must be a positive integer'),
+  ...listSortQuery(QUOTATION_SORT_BY_VALUES),
+];
+
+const rfqLatestQuery = [
+  ...paginationQuery,
+  ...listSortQuery(RFQ_SORT_BY_VALUES),
 ];
 
 // ==========================================
@@ -981,6 +994,8 @@ module.exports = {
   rfqCreateRules,
   rfqUpdateRules,
   rfqListQuery,
+  rfqLatestQuery,
+  quotationListQuery,
   quotationCreateRules,
   quotationUpdateRules,
   quotationRevisionRules,

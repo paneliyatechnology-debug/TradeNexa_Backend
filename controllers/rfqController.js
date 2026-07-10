@@ -31,6 +31,17 @@ const buildListFilters = (req) => ({
   is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : undefined,
 });
 
+const buildQuotationListFilters = (req) => ({
+  search: req.query.search,
+  status: req.query.status,
+  rfq_id: req.query.rfq_id,
+  seller_id: req.query.seller_id,
+  page: req.query.page,
+  limit: req.query.limit,
+  sort_by: req.query.sort_by,
+  sort_order: req.query.sort_order,
+});
+
 // ==========================================
 // Public & buyer RFQ
 // ==========================================
@@ -86,10 +97,11 @@ const getLatestRfqs = async (req, res, next) => {
     const data = await rfqModel.findRfqs({
       page: req.query.page,
       limit: req.query.limit,
+      search: req.query.search,
       is_active: true,
       statuses: ['PUBLISHED', 'QUOTATION_RECEIVED', 'OPEN'],
-      sort_by: 'created_at',
-      sort_order: 'desc',
+      sort_by: req.query.sort_by || 'created_at',
+      sort_order: req.query.sort_order || 'desc',
     });
     const formatted = data.results.map((r) => ({
       id: r.id,
@@ -98,6 +110,7 @@ const getLatestRfqs = async (req, res, next) => {
       category: r.category,
       city: r.city,
       created_at: r.created_at,
+      company: r.company ?? null,
     }));
     return success(res, 'Latest RFQs retrieved successfully', { ...data, results: formatted });
   } catch (err) {
@@ -148,7 +161,7 @@ const getRfqQuotations = async (req, res, next) => {
     if (!isAdmin(req.user) && rfqService.getBuyerId(rfq) !== req.user.id) {
       return next(new AppError('Forbidden: Access denied', HTTP_STATUS.FORBIDDEN));
     }
-    const quotations = await quotationModel.findByRfqId(req.params.id, buildListFilters(req));
+    const quotations = await quotationModel.findByRfqId(req.params.id, buildQuotationListFilters(req));
     return success(res, 'RFQ quotations retrieved successfully', quotations);
   } catch (err) {
     next(err);
@@ -193,10 +206,7 @@ const getSellerRfq = async (req, res, next) => {
 
 const getMyQuotations = async (req, res, next) => {
   try {
-    const data = await quotationModel.findSellerQuotations(req.user.id, {
-      ...buildListFilters(req),
-      status: req.query.status,
-    });
+    const data = await quotationModel.findSellerQuotations(req.user.id, buildQuotationListFilters(req));
     return success(res, 'Seller quotations retrieved successfully', data);
   } catch (err) {
     next(err);
@@ -327,15 +337,7 @@ const updateAdminRfqStatus = async (req, res, next) => {
 
 const getAdminQuotations = async (req, res, next) => {
   try {
-    const data = await quotationModel.findAllQuotations({
-      status: req.query.status,
-      rfq_id: req.query.rfq_id,
-      seller_id: req.query.seller_id,
-      page: req.query.page,
-      limit: req.query.limit,
-      sort_by: req.query.sort_by,
-      sort_order: req.query.sort_order,
-    });
+    const data = await quotationModel.findAllQuotations(buildQuotationListFilters(req));
     return success(res, 'Admin quotations retrieved successfully', data);
   } catch (err) {
     next(err);

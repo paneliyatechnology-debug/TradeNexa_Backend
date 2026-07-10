@@ -109,6 +109,18 @@ const RFQ_SORT_BY_VALUES = [
   'expected_price',
   'total_quotations',
   'title',
+  'budget',
+  'quantity',
+  'category',
+  'city',
+];
+
+const QUOTATION_SORT_BY_VALUES = [
+  'id',
+  'price',
+  'total_amount',
+  'delivery_days',
+  'created_at',
 ];
 
 module.exports = {
@@ -125,4 +137,5 @@ module.exports = {
   RFQ_SUPPLIER_STATUS,
   RFQ_AUDIT_ACTION,
   RFQ_SORT_BY_VALUES,
+  QUOTATION_SORT_BY_VALUES,
 };
