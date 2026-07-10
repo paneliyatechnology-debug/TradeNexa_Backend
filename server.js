@@ -8,9 +8,9 @@ require('dotenv').config();
 const http = require('http');
 const app = require('./app');
 const config = require('./config');
-const logger = require('../utils/logger');
-const s3Service = require('../services/s3Service');
-const db = require('../database/knex');
+const logger = require('./utils/logger');
+const s3Service = require('./services/s3Service');
+const db = require('./database/knex');
 const { initSocket } = require('./sockets');
 
 // ==========================================
