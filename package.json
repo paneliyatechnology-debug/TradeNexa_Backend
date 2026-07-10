@@ -9,6 +9,7 @@
     "migrate": "knex migrate:latest",
     "migrate:rollback": "knex migrate:rollback",
     "seed": "knex seed:run",
+    "sync:cities": "node scripts/sync-cities.js",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.js\""
   },

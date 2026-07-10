@@ -12,6 +12,7 @@ const logger = require('./utils/logger');
 const s3Service = require('./services/s3Service');
 const db = require('./database/knex');
 const { initSocket } = require('./sockets');
+const { startCitySyncCron } = require('./jobs/citySyncCron');
 
 // ==========================================
 // Server bootstrap
@@ -26,12 +27,13 @@ const start = async () => {
     const server = http.createServer(app);
     initSocket(server);
 
-    server.listen(config.port, () => {
+    server.listen(config.port, async () => {
       logger.info(`${config.app.name} running on port ${config.port}`);
       logger.info(`Socket.IO available at path /socket.io`);
       if (s3Service.isEnabled()) {
         logger.info(`S3 storage enabled — media served via ${config.app.url}/media/`);
       }
+      await startCitySyncCron();
     });
   } catch (error) {
     logger.error('Failed to start server', { error: error.message });

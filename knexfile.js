@@ -2,6 +2,7 @@
  * Knex database configuration.
  *
  * MySQL connection settings for development and production environments.
+ * On Railway, use mysql.railway.internal (injected via Railway env vars).
  */
 require('dotenv').config();
 
