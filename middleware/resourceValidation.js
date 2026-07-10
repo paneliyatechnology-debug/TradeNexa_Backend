@@ -909,12 +909,29 @@ const wishlistListQuery = [
 // Location validations
 // ==========================================
 
+const LOCATION_COUNTRY_SORT_BY_VALUES = ['name', 'code', 'id', 'created_at'];
+const LOCATION_STATE_SORT_BY_VALUES = ['name', 'code', 'id', 'created_at'];
+const LOCATION_CITY_SORT_BY_VALUES = ['name', 'id', 'created_at'];
+
+const locationCountriesQuery = [
+  ...paginationQuery,
+  query('search').optional().trim(),
+  query('code').optional().trim().isLength({ max: 10 }).withMessage('code filter too long'),
+  isActiveQuery(),
+  ...listSortQuery(LOCATION_COUNTRY_SORT_BY_VALUES),
+];
+
 const locationStatesQuery = [
   query('country_id')
     .notEmpty()
     .withMessage('country_id is required')
     .isInt({ min: 1 })
     .withMessage('country_id must be a positive integer'),
+  ...paginationQuery,
+  query('search').optional().trim(),
+  query('code').optional().trim().isLength({ max: 10 }).withMessage('code filter too long'),
+  isActiveQuery(),
+  ...listSortQuery(LOCATION_STATE_SORT_BY_VALUES),
 ];
 
 const locationCitiesQuery = [
@@ -923,6 +940,10 @@ const locationCitiesQuery = [
     .withMessage('state_id is required')
     .isInt({ min: 1 })
     .withMessage('state_id must be a positive integer'),
+  ...paginationQuery,
+  query('search').optional().trim(),
+  isActiveQuery(),
+  ...listSortQuery(LOCATION_CITY_SORT_BY_VALUES),
 ];
 
 module.exports = {
@@ -981,6 +1002,7 @@ module.exports = {
   wishlistToggleRules,
   wishlistListQuery,
   wishlistProductIdParam,
+  locationCountriesQuery,
   locationStatesQuery,
   locationCitiesQuery,
 };

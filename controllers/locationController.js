@@ -6,10 +6,10 @@ const { success } = require('../utils/response');
 // ==========================================
 
 /** GET /locations/countries */
-const getCountries = async (_req, res, next) => {
+const getCountries = async (req, res, next) => {
   try {
-    const countries = await locationService.getCountries();
-    return success(res, 'Countries retrieved successfully', countries);
+    const data = await locationService.getCountries(req.query);
+    return success(res, 'Countries retrieved successfully', data);
   } catch (err) {
     next(err);
   }
@@ -18,8 +18,8 @@ const getCountries = async (_req, res, next) => {
 /** GET /locations/states?country_id= */
 const getStates = async (req, res, next) => {
   try {
-    const states = await locationService.getStatesByCountryId(Number(req.query.country_id));
-    return success(res, 'States retrieved successfully', states);
+    const data = await locationService.getStatesByCountryId(Number(req.query.country_id), req.query);
+    return success(res, 'States retrieved successfully', data);
   } catch (err) {
     next(err);
   }
@@ -28,8 +28,8 @@ const getStates = async (req, res, next) => {
 /** GET /locations/cities?state_id= */
 const getCities = async (req, res, next) => {
   try {
-    const cities = await locationService.getCitiesByStateId(Number(req.query.state_id));
-    return success(res, 'Cities retrieved successfully', cities);
+    const data = await locationService.getCitiesByStateId(Number(req.query.state_id), req.query);
+    return success(res, 'Cities retrieved successfully', data);
   } catch (err) {
     next(err);
   }

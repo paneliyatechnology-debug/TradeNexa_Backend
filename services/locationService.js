@@ -5,20 +5,31 @@ const { AppError } = require('../utils/response');
 // Location reference data
 // ==========================================
 
-const getCountries = async () => locationModel.listCountries();
+const parseListFilters = (query) => ({
+  page: query.page,
+  limit: query.limit,
+  search: query.search?.trim() || undefined,
+  code: query.code?.trim() || undefined,
+  is_active:
+    query.is_active === 'true' ? true : query.is_active === 'false' ? false : undefined,
+  sort_by: query.sort_by,
+  sort_order: query.sort_order,
+});
 
-const getStatesByCountryId = async (countryId) => {
+const getCountries = async (query) => locationModel.listCountries(parseListFilters(query));
+
+const getStatesByCountryId = async (countryId, query) => {
   const country = await locationModel.findCountryById(countryId);
   if (!country) throw new AppError('Country not found', 404);
 
-  return locationModel.listStatesByCountryId(countryId);
+  return locationModel.listStatesByCountryId(countryId, parseListFilters(query));
 };
 
-const getCitiesByStateId = async (stateId) => {
+const getCitiesByStateId = async (stateId, query) => {
   const state = await locationModel.findStateById(stateId);
   if (!state) throw new AppError('State not found', 404);
 
-  return locationModel.listCitiesByStateId(stateId);
+  return locationModel.listCitiesByStateId(stateId, parseListFilters(query));
 };
 
 module.exports = {

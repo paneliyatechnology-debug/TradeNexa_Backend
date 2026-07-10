@@ -46,13 +46,4 @@ module.exports = {
     return ['http://localhost:3000'];
   })(),
   bcryptSaltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS, 10) || 12,
-  cscApi: {
-    baseUrl: (process.env.CSC_API_BASE_URL || 'https://api.countrystatecity.in/v1').replace(/\/$/, ''),
-    apiKey: process.env.CSC_API_KEY || '',
-    countryCode: (process.env.CSC_COUNTRY_CODE || 'IN').toUpperCase(),
-    cronEnabled: process.env.CITY_SYNC_CRON_ENABLED === 'true',
-    cronIntervalMs: parseInt(process.env.CITY_SYNC_CRON_INTERVAL_MS, 10) || 90000,
-    requestDelayMs: parseInt(process.env.CITY_SYNC_REQUEST_DELAY_MS, 10) || 1500,
-    maxRetries: parseInt(process.env.CITY_SYNC_MAX_RETRIES, 10) || 3,
-  },
 };

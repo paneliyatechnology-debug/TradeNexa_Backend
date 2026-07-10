@@ -4,11 +4,15 @@
 const express = require('express');
 const locationController = require('../controllers/locationController');
 const { validate } = require('../middleware/auth');
-const { locationStatesQuery, locationCitiesQuery } = require('../middleware/resourceValidation');
+const {
+  locationCountriesQuery,
+  locationStatesQuery,
+  locationCitiesQuery,
+} = require('../middleware/resourceValidation');
 
 const router = express.Router();
 
-router.get('/countries', locationController.getCountries);
+router.get('/countries', locationCountriesQuery, validate, locationController.getCountries);
 
 router.get('/states', locationStatesQuery, validate, locationController.getStates);
 
