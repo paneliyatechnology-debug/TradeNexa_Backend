@@ -68,13 +68,22 @@ const listStatesByCountryId = async (countryId, filters = {}) => {
 };
 
 const listCitiesByStateId = async (stateId, filters = {}) => {
-  const q = db('cities').select('id', 'state_id', 'name', 'is_active', 'created_at');
+  const q = db('cities')
+    .leftJoin('states', 'cities.state_id', '=', 'states.id')
+    .select(
+      'cities.id',
+      'cities.state_id',
+      'states.name as state_name',
+      'cities.name',
+      'cities.is_active',
+      'cities.created_at',
+    );
 
   if (stateId) {
-    q.where({ state_id: stateId });
+    q.where('cities.state_id', stateId);
   }
 
-  applySearch(q, ['cities.name'], filters.search);
+  applySearch(q, ['cities.name', 'states.name'], filters.search);
   applyIsActiveFilter(q, 'cities', filters.is_active);
 
   applyListSort(q, filters, CITY_SORT_FIELDS, { defaultSortBy: 'name', defaultSortOrder: 'asc' });
