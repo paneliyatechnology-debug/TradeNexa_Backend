@@ -634,8 +634,25 @@ const rfqCreateRules = [
   body('required_before').optional({ values: 'falsy' }).isISO8601().withMessage('Required before must be a valid ISO8601 timestamp'),
   body('payment_terms').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
   body('visibility').optional().isIn(Object.values(RFQ_VISIBILITY)).withMessage('Invalid visibility'),
-  body('seller_ids').optional().isArray().withMessage('seller_ids must be an array'),
-  body('seller_ids.*').optional().isInt({ min: 1 }).withMessage('Each seller ID must be a positive integer'),
+  body('seller_ids')
+    .optional()
+    .customSanitizer((value) => {
+      if (value === undefined || value === null || value === '') return undefined;
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {
+          /* fall through */
+        }
+        return value.split(',').map((part) => part.trim()).filter(Boolean);
+      }
+      return value;
+    })
+    .isArray()
+    .withMessage('seller_ids must be an array'),
+  body('seller_ids.*').toInt().isInt({ min: 1 }).withMessage('Each seller ID must be a positive integer'),
 ];
 
 const rfqUpdateRules = [
@@ -652,8 +669,25 @@ const rfqUpdateRules = [
   body('currency').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
   body('payment_terms').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
   body('visibility').optional().isIn(Object.values(RFQ_VISIBILITY)).withMessage('Invalid visibility'),
-  body('seller_ids').optional().isArray(),
-  body('seller_ids.*').optional().isInt({ min: 1 }),
+  body('seller_ids')
+    .optional()
+    .customSanitizer((value) => {
+      if (value === undefined || value === null || value === '') return undefined;
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {
+          /* fall through */
+        }
+        return value.split(',').map((part) => part.trim()).filter(Boolean);
+      }
+      return value;
+    })
+    .isArray()
+    .withMessage('seller_ids must be an array'),
+  body('seller_ids.*').optional().toInt().isInt({ min: 1 }),
   ...rfqDateFields,
 ];
 

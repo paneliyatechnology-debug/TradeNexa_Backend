@@ -14,9 +14,17 @@ const countByRfqId = async (rfqId) => {
 };
 
 const assignSellers = async (rfqId, sellerIds = [], trx = null) => {
-  if (!sellerIds.length) return;
+  const ids = [
+    ...new Set(
+      (Array.isArray(sellerIds) ? sellerIds : [])
+        .map((id) => parseInt(id, 10))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
+  if (!ids.length) return;
+
   const client = trx || db;
-  const rows = sellerIds.map((sellerId) => ({
+  const rows = ids.map((sellerId) => ({
     rfq_id: rfqId,
     seller_id: sellerId,
     status: RFQ_SELLER_STATUS.INVITED,

@@ -96,6 +96,36 @@ const validateRfqDates = (data) => {
   }
 };
 
+const normalizeSellerIds = (sellerIds) => [
+  ...new Set(
+    (Array.isArray(sellerIds) ? sellerIds : [])
+      .map((id) => parseInt(id, 10))
+      .filter((id) => Number.isInteger(id) && id > 0),
+  ),
+];
+
+/**
+ * Resolve visibility + invited sellers.
+ * seller_ids without explicit visibility → PRIVATE so invites land in seller feed.
+ */
+const resolveInviteFields = (data = {}) => {
+  const sellerIds = normalizeSellerIds(data.seller_ids);
+  let visibility = data.visibility || null;
+
+  if (!visibility && sellerIds.length) {
+    visibility = RFQ_VISIBILITY.PRIVATE;
+  }
+  if (!visibility) {
+    visibility = RFQ_VISIBILITY.PUBLIC;
+  }
+
+  if (visibility === RFQ_VISIBILITY.PRIVATE && !sellerIds.length && data.seller_ids !== undefined) {
+    throw new AppError('PRIVATE RFQs require at least one seller_id', 400);
+  }
+
+  return { visibility, sellerIds };
+};
+
 const ADMIN_ROLES = new Set(['admin', 'super_admin', 'supporter']);
 
 /**
@@ -156,18 +186,24 @@ const getRfqDetail = async (id, options = {}) => {
 
 const createDraftRfq = async (data, buyerId) => {
   validateRfqDates(data);
+  const { visibility, sellerIds } = resolveInviteFields(data);
+
+  if (visibility === RFQ_VISIBILITY.PRIVATE && !sellerIds.length) {
+    throw new AppError('PRIVATE RFQs require at least one seller_id', 400);
+  }
 
   const rfqId = await db.transaction(async (trx) => {
     const rfqNumber = await generateRfqNumber(trx);
     const payload = buildRfqPayload(data, buyerId, {
       rfq_number: rfqNumber,
       status: RFQ_STATUS.DRAFT,
+      visibility,
     });
 
     const rfq = await rfqModel.createRfq(payload, trx);
 
-    if (data.seller_ids?.length) {
-      await rfqSellerModel.assignSellers(rfq.id, data.seller_ids, trx);
+    if (sellerIds.length) {
+      await rfqSellerModel.assignSellers(rfq.id, sellerIds, trx);
     }
 
     if (data.attachments?.length) {
@@ -195,6 +231,13 @@ const publishRfq = async (id, buyerId) => {
     throw new AppError('Only draft or open RFQs can be published', 400);
   }
 
+  if (rfq.visibility === RFQ_VISIBILITY.PRIVATE) {
+    const invitedCount = await rfqSellerModel.countByRfqId(id);
+    if (!invitedCount) {
+      throw new AppError('Cannot publish PRIVATE RFQ without assigned sellers (seller_ids)', 400);
+    }
+  }
+
   await rfqModel.updateRfq(id, { status: RFQ_STATUS.PUBLISHED, updated_by: buyerId });
   await rfqAuditModel.logAction({ rfqId: id, action: RFQ_AUDIT_ACTION.RFQ_PUBLISHED, actorId: buyerId });
   notify('RFQ_PUBLISHED', { rfqId: id, buyerId });
@@ -206,56 +249,86 @@ const updateRfq = async (id, data, actorId, isAdmin = false) => {
   const rfq = await rfqModel.findRfqById(id, { raw: true });
   if (!rfq) throw new AppError('RFQ not found', 404);
   if (!isAdmin && getBuyerId(rfq) !== actorId) throw new AppError('Forbidden: Access denied', 403);
-  if (!RFQ_EDITABLE_STATUSES.includes(rfq.status)) {
-    throw new AppError('RFQ cannot be updated in its current status', 400);
-  }
   if ([RFQ_STATUS.AWARDED, RFQ_STATUS.COMPLETED].includes(rfq.status)) {
     throw new AppError('Awarded RFQ cannot be modified', 400);
+  }
+
+  const bodyKeys = Object.keys(data).filter((key) => data[key] !== undefined);
+  const inviteOnlyUpdate =
+    bodyKeys.length > 0 && bodyKeys.every((key) => ['seller_ids', 'visibility'].includes(key));
+
+  if (!RFQ_EDITABLE_STATUSES.includes(rfq.status) && !inviteOnlyUpdate) {
+    throw new AppError('RFQ cannot be updated in its current status', 400);
   }
 
   validateRfqDates(data);
 
   const payload = {};
-  const fields = [
-    'title',
-    'description',
-    'category_id',
-    'subcategory_id',
-    'product_id',
-    'quantity',
-    'unit',
-    'currency',
-    'payment_terms',
-    'visibility',
-    'address_line_1',
-    'address_line_2',
-    'city',
-    'state',
-    'country',
-    'pincode',
-  ];
+  if (RFQ_EDITABLE_STATUSES.includes(rfq.status)) {
+    const fields = [
+      'title',
+      'description',
+      'category_id',
+      'subcategory_id',
+      'product_id',
+      'quantity',
+      'unit',
+      'currency',
+      'payment_terms',
+      'visibility',
+      'address_line_1',
+      'address_line_2',
+      'city',
+      'state',
+      'country',
+      'pincode',
+    ];
 
-  fields.forEach((field) => {
-    if (data[field] !== undefined) payload[field] = data[field];
-  });
+    fields.forEach((field) => {
+      if (data[field] !== undefined) payload[field] = data[field];
+    });
 
-  if (data.expected_price !== undefined || data.budget !== undefined) {
-    const price = data.expected_price ?? data.budget;
-    payload.expected_price = price;
-    payload.budget = price;
+    if (data.expected_price !== undefined || data.budget !== undefined) {
+      const price = data.expected_price ?? data.budget;
+      payload.expected_price = price;
+      payload.budget = price;
+    }
+    if (data.required_before !== undefined) {
+      payload.required_before = data.required_before ? new Date(data.required_before) : null;
+    }
+    if (data.quotation_deadline !== undefined) {
+      payload.quotation_deadline = data.quotation_deadline ? new Date(data.quotation_deadline) : null;
+    }
   }
-  if (data.required_before !== undefined) {
-    payload.required_before = data.required_before ? new Date(data.required_before) : null;
-  }
-  if (data.quotation_deadline !== undefined) {
-    payload.quotation_deadline = data.quotation_deadline ? new Date(data.quotation_deadline) : null;
+
+  if (data.visibility !== undefined || data.seller_ids !== undefined) {
+    const nextVisibility =
+      data.visibility !== undefined
+        ? data.visibility
+        : rfq.visibility || RFQ_VISIBILITY.PUBLIC;
+    const sellerIds =
+      data.seller_ids !== undefined ? normalizeSellerIds(data.seller_ids) : null;
+
+    if (data.visibility !== undefined) {
+      payload.visibility = nextVisibility;
+    }
+
+    if (data.seller_ids !== undefined) {
+      if (nextVisibility === RFQ_VISIBILITY.PRIVATE && !sellerIds.length) {
+        throw new AppError('PRIVATE RFQs require at least one seller_id', 400);
+      }
+      await rfqSellerModel.assignSellers(id, sellerIds);
+      notify('SELLER_ASSIGNED', { rfqId: id, sellerIds });
+    } else if (nextVisibility === RFQ_VISIBILITY.PRIVATE) {
+      const invitedCount = await rfqSellerModel.countByRfqId(id);
+      if (!invitedCount) {
+        throw new AppError('PRIVATE RFQs require at least one assigned seller (seller_ids)', 400);
+      }
+    }
   }
 
-  await rfqModel.updateRfq(id, { ...payload, updated_by: actorId });
-
-  if (data.seller_ids) {
-    await rfqSellerModel.assignSellers(id, data.seller_ids);
-    notify('SELLER_ASSIGNED', { rfqId: id, sellerIds: data.seller_ids });
+  if (Object.keys(payload).length) {
+    await rfqModel.updateRfq(id, { ...payload, updated_by: actorId });
   }
 
   await rfqAuditModel.logAction({ rfqId: id, action: RFQ_AUDIT_ACTION.RFQ_UPDATED, actorId });

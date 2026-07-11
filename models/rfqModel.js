@@ -5,7 +5,7 @@ const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { applyListSort } = require('../utils/listQuery');
 const { resolveMediaUrl } = require('../utils/media');
-const { RFQ_STATUS } = require('../constants/rfq');
+const { RFQ_STATUS, RFQ_VISIBILITY, RFQ_SELLER_VISIBLE_STATUSES } = require('../constants/rfq');
 
 const RFQ_SORT_FIELDS = {
   id: 'rfqs.id',
@@ -163,7 +163,12 @@ const applyRfqFilters = (q, filters = {}) => {
   if (filters.date_from) q.where('rfqs.created_at', '>=', filters.date_from);
   if (filters.date_to) q.where('rfqs.created_at', '<=', filters.date_to);
   if (filters.is_active !== undefined) q.where('rfqs.is_active', filters.is_active);
-  if (filters.visibility) q.where('rfqs.visibility', filters.visibility);
+  if (filters.visibility) {
+    q.where('rfqs.visibility', filters.visibility);
+  } else if (!filters.buyer_id && !filters.include_private) {
+    // Public / latest lists: never leak PRIVATE invite-only RFQs
+    q.where('rfqs.visibility', RFQ_VISIBILITY.PUBLIC);
+  }
 };
 
 const findRfqById = async (id, options = {}) => {
@@ -217,21 +222,26 @@ const findRfqs = async (filters = {}) => {
 };
 
 const findSellerFeed = async (sellerId, filters = {}) => {
+  const sid = parseInt(sellerId, 10);
+  const visibleStatuses = filters.statuses?.length
+    ? filters.statuses
+    : RFQ_SELLER_VISIBLE_STATUSES;
+
   const q = baseRfqQuery()
-    .where(function () {
-      this.where('rfqs.visibility', 'PUBLIC').orWhereExists(function () {
-        this.select(1)
-          .from('rfq_sellers')
-          .whereRaw('rfq_sellers.rfq_id = rfqs.id')
-          .where('rfq_sellers.seller_id', sellerId);
-      });
+    .leftJoin('rfq_sellers as invite', function () {
+      this.on('invite.rfq_id', '=', 'rfqs.id').andOn('invite.seller_id', '=', db.raw('?', [sid]));
     })
-    .whereIn('rfqs.status', filters.statuses || ['PUBLISHED', 'OPEN', 'QUOTATION_RECEIVED', 'NEGOTIATION'])
+    .where(function () {
+      // PUBLIC marketplace RFQs, or PRIVATE RFQs explicitly assigned to this seller
+      this.where('rfqs.visibility', RFQ_VISIBILITY.PUBLIC).orWhereNotNull('invite.id');
+    })
+    .whereIn('rfqs.status', visibleStatuses)
     .select(
       'rfqs.id',
       'rfqs.rfq_number',
       'rfqs.title',
       'rfqs.status',
+      'rfqs.visibility',
       'rfqs.expected_price',
       'rfqs.budget',
       'rfqs.quantity',
@@ -240,11 +250,12 @@ const findSellerFeed = async (sellerId, filters = {}) => {
       'rfqs.created_at',
       'rfqs.city',
       'categories.name as category',
+      'invite.status as invite_status',
       ...PRODUCT_LIST_SELECT,
       ...BUYER_COMPANY_SELECT,
     );
 
-  applyRfqFilters(q, filters);
+  applyRfqFilters(q, { ...filters, include_private: true, visibility: undefined });
   applyListSort(q, filters, RFQ_SORT_FIELDS);
 
   const page = parseInt(filters.page, 10) || 1;

@@ -192,6 +192,7 @@ const compareRfqQuotations = async (req, res, next) => {
 
 const getSellerRfqs = async (req, res, next) => {
   try {
+    await rfqModel.expireOverdueRfqs();
     const data = await rfqModel.findSellerFeed(req.user.id, buildListFilters(req));
     return success(res, 'Seller RFQ feed retrieved successfully', data);
   } catch (err) {
@@ -313,7 +314,7 @@ const reviseQuotation = async (req, res, next) => {
 
 const getAdminRfqs = async (req, res, next) => {
   try {
-    const data = await rfqModel.findRfqs(buildListFilters(req));
+    const data = await rfqModel.findRfqs({ ...buildListFilters(req), include_private: true });
     return success(res, 'Admin RFQs retrieved successfully', data);
   } catch (err) {
     next(err);
