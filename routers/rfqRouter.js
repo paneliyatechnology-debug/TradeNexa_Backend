@@ -26,6 +26,7 @@ const quotationIdParam = [param('quotationId').isInt({ min: 1 }).withMessage('Qu
 const buyerRoles = authorize('buyer', 'buyer_seller', 'admin');
 const sellerRoles = authorize('seller', 'buyer_seller', 'admin');
 const adminRoles = authorize('admin', 'super_admin', 'supporter');
+const buyerOrSellerRoles = authorize('buyer', 'seller', 'buyer_seller', 'admin', 'super_admin', 'supporter');
 
 // ==========================================
 // Public routes
@@ -160,7 +161,7 @@ router.post(
   rfqController.submitQuotation,
 );
 
-router.get('/:id', idParam, validate, rfqController.getRfq);
+router.get('/:id', authenticate, buyerOrSellerRoles, idParam, validate, rfqController.getRfq);
 router.put('/:id', authenticate, idParam, rfqUpdateRules, validate, rfqController.updateRfq);
 router.delete('/:id', authenticate, idParam, validate, rfqController.deleteRfq);
 

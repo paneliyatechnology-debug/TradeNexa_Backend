@@ -66,8 +66,10 @@ const publishRfq = async (req, res, next) => {
 
 const getRfq = async (req, res, next) => {
   try {
-    const rfq = await rfqService.getRfqDetail(req.params.id);
-    if (!rfq) return next(new AppError('RFQ not found', HTTP_STATUS.NOT_FOUND));
+    const rfq = await rfqService.getRfqDetailForUser(req.params.id, {
+      id: req.user.id,
+      role: req.user.role,
+    });
     return success(res, 'RFQ details retrieved successfully', rfq);
   } catch (err) {
     next(err);

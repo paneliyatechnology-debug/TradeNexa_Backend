@@ -2,6 +2,7 @@
  * RFQ seller mapping data access.
  */
 const db = require('../database/knex');
+const { resolveMediaUrl } = require('../utils/media');
 const { RFQ_SELLER_STATUS } = require('../constants/rfq');
 
 const findByRfqAndSeller = (rfqId, sellerId) =>
@@ -55,6 +56,51 @@ const isSellerAllowed = async (rfq, sellerId) => {
   return !!row;
 };
 
+/**
+ * Assigned/invited sellers for an RFQ with basic profile fields.
+ * Used on PRIVATE RFQ detail responses.
+ */
+const listAssignedSellersByRfqId = async (rfqId) => {
+  const rows = await db('rfq_sellers')
+    .leftJoin('users', 'rfq_sellers.seller_id', '=', 'users.id')
+    .leftJoin('company_details', 'users.id', '=', 'company_details.user_id')
+    .where('rfq_sellers.rfq_id', rfqId)
+    .whereNull('users.deleted_at')
+    .select(
+      'rfq_sellers.seller_id',
+      'rfq_sellers.status as invite_status',
+      'rfq_sellers.viewed_at',
+      'rfq_sellers.responded_at',
+      'rfq_sellers.created_at as invited_at',
+      'users.full_name',
+      'users.email',
+      'users.mobile_number',
+      'users.is_verified',
+      'company_details.company_name',
+      'company_details.rating',
+      db.raw('COALESCE(company_details.company_logo, users.profile_image) as company_logo'),
+    )
+    .orderBy('rfq_sellers.id', 'asc');
+
+  return rows.map((row) => ({
+    id: row.seller_id,
+    user_id: row.seller_id,
+    full_name: row.full_name ?? null,
+    email: row.email ?? null,
+    mobile_number: row.mobile_number ?? null,
+    is_verified: !!row.is_verified,
+    invite_status: row.invite_status ?? null,
+    viewed_at: row.viewed_at ?? null,
+    responded_at: row.responded_at ?? null,
+    invited_at: row.invited_at ?? null,
+    company: {
+      company_name: row.company_name ?? null,
+      company_logo: row.company_logo ? resolveMediaUrl(row.company_logo) : null,
+      rating: row.rating != null ? parseFloat(row.rating) : null,
+    },
+  }));
+};
+
 module.exports = {
   findByRfqAndSeller,
   countByRfqId,
@@ -62,4 +108,5 @@ module.exports = {
   markViewed,
   markResponded,
   isSellerAllowed,
+  listAssignedSellersByRfqId,
 };

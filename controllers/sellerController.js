@@ -1,6 +1,20 @@
 const sellerModel = require('../models/sellerModel');
+const userModel = require('../models/userModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
+
+const SELLER_ROLES = new Set(['seller', 'buyer_seller']);
+
+/**
+ * When the caller is an authenticated seller, exclude their own row from list APIs.
+ */
+const resolveExcludeSellerId = async (req) => {
+  if (!req.user?.id) return undefined;
+  const roles = await userModel.getUserRoles(req.user.id);
+  const roleCode = roles?.[0]?.code;
+  if (!SELLER_ROLES.has(roleCode)) return undefined;
+  return req.user.id;
+};
 
 // ==========================================
 // Seller Queries
@@ -25,6 +39,7 @@ const getSeller = async (req, res, next) => {
 /**
  * GET /sellers
  * List sellers with search, filters, and pagination.
+ * Optional Bearer: authenticated sellers do not see themselves in the list.
  */
 const getSellers = async (req, res, next) => {
   try {
@@ -36,6 +51,7 @@ const getSellers = async (req, res, next) => {
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
       sort_by: req.query.sort_by,
       sort_order: req.query.sort_order,
+      exclude_seller_id: await resolveExcludeSellerId(req),
     };
     const data = await sellerModel.findSellers(filters);
     return success(res, 'Sellers list retrieved successfully', data);
@@ -47,6 +63,7 @@ const getSellers = async (req, res, next) => {
 /**
  * GET /sellers/verified
  * List verified sellers formatted for buyer home display.
+ * Optional Bearer: authenticated sellers do not see themselves in the list.
  */
 const getVerifiedSellers = async (req, res, next) => {
   try {
@@ -55,9 +72,10 @@ const getVerifiedSellers = async (req, res, next) => {
       limit: req.query.limit,
       is_verified: true,
       is_active: true,
+      exclude_seller_id: await resolveExcludeSellerId(req),
     };
     const data = await sellerModel.findSellers(filters);
-    
+
     // Format output as per spec: id, company_name, logo, verified, rating, response_rate, years_in_business, city, state
     const formatted = data.results.map((s) => ({
       id: s.id,
@@ -80,15 +98,20 @@ const getVerifiedSellers = async (req, res, next) => {
 /**
  * GET /sellers/nearby
  * List sellers near the given coordinates formatted for buyer home display.
+ * Optional Bearer: authenticated sellers do not see themselves in the list.
  */
 const getNearbySellers = async (req, res, next) => {
   try {
     const { latitude, longitude, max_distance, page, limit } = req.query;
-    const filters = { page, limit };
+    const filters = {
+      page,
+      limit,
+      exclude_seller_id: await resolveExcludeSellerId(req),
+    };
     const maxDist = max_distance ? parseFloat(max_distance) : 50;
 
     const data = await sellerModel.findNearbySellers(latitude, longitude, maxDist, filters);
-    
+
     // Format output as per spec: id, company_name, distance, city, state, rating
     const formatted = data.results.map((s) => ({
       id: s.id,

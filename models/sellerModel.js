@@ -105,6 +105,9 @@ const findSellers = async (filters = {}) => {
   if (filters.is_active !== undefined) {
     q.where('users.is_active', filters.is_active);
   }
+  if (filters.exclude_seller_id) {
+    q.whereNot('users.id', filters.exclude_seller_id);
+  }
 
   applyListSort(q, filters, SELLER_SORT_FIELDS);
 
@@ -143,6 +146,10 @@ const findNearbySellers = async (latitude, longitude, maxDistance = 50, filters 
     )
     .orderBy('distance', 'asc')
     .orderBy('users.id', 'desc');
+
+  if (filters.exclude_seller_id) {
+    q.whereNot('users.id', filters.exclude_seller_id);
+  }
 
   const paginated = await paginate(q, filters.page, filters.limit);
   paginated.results = paginated.results.map(formatSellerRow);

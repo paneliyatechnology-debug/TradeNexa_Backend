@@ -96,12 +96,36 @@ const validateRfqDates = (data) => {
   }
 };
 
+const ADMIN_ROLES = new Set(['admin', 'super_admin', 'supporter']);
+
+/**
+ * Authenticated access for GET /rfqs/:id.
+ * Owner & admin: always. PUBLIC: any buyer/seller. PRIVATE: owner or invited seller.
+ */
+const assertRfqViewAccess = async (rfq, viewer = {}) => {
+  const userId = viewer.id;
+  const role = viewer.role;
+  if (!userId) throw new AppError('Unauthorized', 401);
+
+  if (ADMIN_ROLES.has(role) || getBuyerId(rfq) === userId) return;
+
+  if (rfq.visibility === RFQ_VISIBILITY.PUBLIC) return;
+
+  const allowed = await rfqSellerModel.isSellerAllowed(rfq, userId);
+  if (!allowed) throw new AppError('Forbidden: RFQ not available', 403);
+};
+
 const getRfqDetail = async (id, options = {}) => {
   const rfq = await rfqModel.findRfqById(id);
   if (!rfq) return null;
 
+  if (options.viewer) {
+    await assertRfqViewAccess(rfq, options.viewer);
+  }
+
   const attachments = await rfqAttachmentModel.findByRfqId(id);
   const sellerCount = await rfqSellerModel.countByRfqId(id);
+  const assignedSellers = await rfqSellerModel.listAssignedSellersByRfqId(id);
   const quotations = options.includeQuotations
     ? await quotationModel.findByRfqId(id, { paginate: false })
     : undefined;
@@ -123,6 +147,7 @@ const getRfqDetail = async (id, options = {}) => {
     product: formatted.product ?? null,
     product_name: formatted.product?.name ?? null,
     seller_count: sellerCount,
+    assigned_sellers: assignedSellers,
     quotation_count: rfq.total_quotations || 0,
     attachments,
     quotations,
@@ -291,6 +316,29 @@ const getSellerRfqDetail = async (rfqId, sellerId) => {
   await rfqSellerModel.markViewed(rfqId, sellerId);
   await rfqModel.incrementViews(rfqId);
   notify('SELLER_VIEWED_RFQ', { rfqId, sellerId });
+
+  return getRfqDetail(rfqId, { viewer: { id: sellerId, role: 'seller' } });
+};
+
+/**
+ * Shared GET /rfqs/:id for buyer and seller (token required).
+ * Allowed sellers also get the invite marked as viewed.
+ */
+const getRfqDetailForUser = async (rfqId, user) => {
+  await rfqModel.expireOverdueRfqs();
+  const rfq = await rfqModel.findRfqById(rfqId, { raw: true });
+  if (!rfq) throw new AppError('RFQ not found', 404);
+
+  await assertRfqViewAccess(rfq, user);
+
+  const isOwner = getBuyerId(rfq) === user.id;
+  const isAdmin = ADMIN_ROLES.has(user.role);
+  const isSellerRole = user.role === 'seller' || user.role === 'buyer_seller';
+  if (!isOwner && !isAdmin && isSellerRole) {
+    await rfqSellerModel.markViewed(rfqId, user.id);
+    await rfqModel.incrementViews(rfqId);
+    notify('SELLER_VIEWED_RFQ', { rfqId, sellerId: user.id });
+  }
 
   return getRfqDetail(rfqId);
 };
@@ -627,6 +675,7 @@ module.exports = {
   closeRfq,
   getBuyerRfqs,
   getSellerRfqDetail,
+  getRfqDetailForUser,
   adminUpdateStatus,
   getBuyerId,
   submitQuotation,
