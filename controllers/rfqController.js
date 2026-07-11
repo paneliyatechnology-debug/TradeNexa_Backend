@@ -110,6 +110,8 @@ const getLatestRfqs = async (req, res, next) => {
       category: r.category,
       city: r.city,
       created_at: r.created_at,
+      product_id: r.product_id ?? null,
+      product: r.product ?? null,
       company: r.company ?? null,
     }));
     return success(res, 'Latest RFQs retrieved successfully', { ...data, results: formatted });

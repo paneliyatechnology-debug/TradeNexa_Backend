@@ -30,6 +30,17 @@ const BUYER_COMPANY_SELECT = [
   db.raw('COALESCE(buyer_company.company_logo, buyers.profile_image) as company_logo'),
 ];
 
+const PRODUCT_LIST_SELECT = [
+  'rfqs.product_id',
+  'products.name as product_name',
+  'products.slug as product_slug',
+  'products.thumbnail as product_thumbnail',
+  'products.price as product_price',
+  'products.currency as product_currency',
+  'products.unit as product_unit',
+  'products.moq as product_moq',
+];
+
 /** Nest buyer company fields (same shape as profile company fields). */
 const formatBuyerCompany = (row) => {
   if (!row) return null;
@@ -50,6 +61,24 @@ const formatBuyerCompany = (row) => {
   };
 };
 
+/** Nest linked product summary for RFQ list/detail. */
+const formatProduct = (row) => {
+  if (!row) return null;
+  if (row.product && typeof row.product === 'object') return row.product;
+  if (row.product_id == null) return null;
+
+  return {
+    id: Number(row.product_id),
+    name: row.product_name ?? null,
+    slug: row.product_slug ?? null,
+    thumbnail: row.product_thumbnail ? resolveMediaUrl(row.product_thumbnail) : null,
+    price: row.product_price != null ? parseFloat(row.product_price) : null,
+    currency: row.product_currency ?? null,
+    unit: row.product_unit ?? null,
+    moq: row.product_moq != null ? parseInt(row.product_moq, 10) : null,
+  };
+};
+
 const formatRow = (row) => {
   if (!row) return null;
   const formatted = {
@@ -65,6 +94,8 @@ const formatRow = (row) => {
     total_views: row.total_views !== undefined ? parseInt(row.total_views, 10) : undefined,
     total_quotations:
       row.total_quotations !== undefined ? parseInt(row.total_quotations, 10) : undefined,
+    product_id: row.product_id != null ? Number(row.product_id) : null,
+    product: formatProduct(row),
     company: formatBuyerCompany(row),
   };
 
@@ -77,6 +108,13 @@ const formatRow = (row) => {
   delete formatted.industry;
   delete formatted.gst_number;
   delete formatted.company_logo;
+  delete formatted.product_name;
+  delete formatted.product_slug;
+  delete formatted.product_thumbnail;
+  delete formatted.product_price;
+  delete formatted.product_currency;
+  delete formatted.product_unit;
+  delete formatted.product_moq;
 
   return formatted;
 };
@@ -135,7 +173,7 @@ const findRfqById = async (id, options = {}) => {
       'rfqs.*',
       'categories.name as category_name',
       'subcategories.name as subcategory_name',
-      'products.name as product_name',
+      ...PRODUCT_LIST_SELECT,
       'buyers.id as user_id',
       ...BUYER_COMPANY_SELECT,
     )
@@ -159,6 +197,7 @@ const findRfqs = async (filters = {}) => {
     'rfqs.city',
     'rfqs.unit',
     'categories.name as category',
+    ...PRODUCT_LIST_SELECT,
     ...BUYER_COMPANY_SELECT,
   );
 
@@ -201,6 +240,7 @@ const findSellerFeed = async (sellerId, filters = {}) => {
       'rfqs.created_at',
       'rfqs.city',
       'categories.name as category',
+      ...PRODUCT_LIST_SELECT,
       ...BUYER_COMPANY_SELECT,
     );
 
