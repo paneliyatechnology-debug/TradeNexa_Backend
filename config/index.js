@@ -46,4 +46,17 @@ module.exports = {
     return ['http://localhost:3000'];
   })(),
   bcryptSaltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS, 10) || 12,
+  rateLimit: {
+    /**
+     * Global /api/v1 limiter. Set RATE_LIMIT_ENABLED=false to disable.
+     * Defaults: enabled in production, disabled in development/test.
+     */
+    enabled:
+      process.env.RATE_LIMIT_ENABLED != null
+        ? process.env.RATE_LIMIT_ENABLED === 'true'
+        : (process.env.NODE_ENV || 'development') === 'production',
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
+    /** Per-IP max requests in the window (default 5000 — enough for app + Postman). */
+    max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 5000,
+  },
 };

@@ -25,6 +25,10 @@ firebase.init();
 
 const app = express();
 
+// Railway / reverse proxies — required so rate limits use the real client IP
+// (without this, all users share one bucket and hit 429 Too Many Requests).
+app.set('trust proxy', 1);
+
 // ==========================================
 // Global middleware
 // ==========================================
