@@ -505,6 +505,10 @@ const PRODUCT_SORT_BY_VALUES = [
 
 const productListFilterSortQuery = [
   query('brand_id').optional().isInt().withMessage('Brand ID must be an integer'),
+  query('seller_id')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('seller_id must be a positive integer'),
   query('min_price').optional().isFloat({ min: 0 }).withMessage('Min price must be positive'),
   query('max_price').optional().isFloat({ min: 0 }).withMessage('Max price must be positive'),
   query('is_wishlist')
@@ -951,11 +955,7 @@ const locationStatesQuery = [
 ];
 
 const locationCitiesQuery = [
-  query('state_id')
-    .notEmpty()
-    .withMessage('state_id is required')
-    .isInt({ min: 1 })
-    .withMessage('state_id must be a positive integer'),
+  query('state_id').optional().isInt({ min: 1 }).withMessage('state_id must be a positive integer'),
   ...paginationQuery,
   query('search').optional().trim(),
   isActiveQuery(),

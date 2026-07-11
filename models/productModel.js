@@ -592,6 +592,10 @@ const findProducts = async (filters = {}) => {
     q.where('products.seller_id', filters.seller_id);
   }
 
+  if (filters.exclude_seller_id) {
+    q.whereNot('products.seller_id', filters.exclude_seller_id);
+  }
+
   if (filters.exclude_product_id) {
     q.whereNot('products.id', filters.exclude_product_id);
   }

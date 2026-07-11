@@ -54,6 +54,8 @@ const pickProductListFilters = (req, extra = {}) => ({
   search: req.query.search,
   brand_id: req.query.brand_id,
   city_id: req.query.city_id,
+  // On public list APIs, seller_id excludes that seller's products (hide own listings).
+  exclude_seller_id: req.query.seller_id,
   min_price: req.query.min_price,
   max_price: req.query.max_price,
   page: req.query.page,
@@ -132,6 +134,8 @@ const buildProductListFilters = (req, { defaultActiveOnly = true } = {}) => ({
   subcategory_id: req.query.subcategory_id,
   city_id: req.query.city_id,
   brand_id: req.query.brand_id,
+  // On public list APIs, seller_id excludes that seller's products (hide own listings).
+  exclude_seller_id: req.query.seller_id,
   min_price: req.query.min_price,
   max_price: req.query.max_price,
   page: req.query.page,
@@ -170,6 +174,7 @@ const getMyProducts = async (req, res, next) => {
     const filters = withWishlistFilter(req, {
       ...buildProductListFilters(req, { defaultActiveOnly: false }),
       seller_id: req.user.id,
+      exclude_seller_id: undefined,
     });
     const data = await productModel.findProducts(filters);
     const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);

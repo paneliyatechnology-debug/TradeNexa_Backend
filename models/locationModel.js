@@ -68,9 +68,11 @@ const listStatesByCountryId = async (countryId, filters = {}) => {
 };
 
 const listCitiesByStateId = async (stateId, filters = {}) => {
-  const q = db('cities')
-    .where({ state_id: stateId })
-    .select('id', 'state_id', 'name', 'is_active', 'created_at');
+  const q = db('cities').select('id', 'state_id', 'name', 'is_active', 'created_at');
+
+  if (stateId) {
+    q.where({ state_id: stateId });
+  }
 
   applySearch(q, ['cities.name'], filters.search);
   applyIsActiveFilter(q, 'cities', filters.is_active);

@@ -25,10 +25,11 @@ const getStates = async (req, res, next) => {
   }
 };
 
-/** GET /locations/cities?state_id= */
+/** GET /locations/cities?state_id= (optional — omit to list all cities) */
 const getCities = async (req, res, next) => {
   try {
-    const data = await locationService.getCitiesByStateId(Number(req.query.state_id), req.query);
+    const stateId = req.query.state_id ? Number(req.query.state_id) : null;
+    const data = await locationService.getCitiesByStateId(stateId, req.query);
     return success(res, 'Cities retrieved successfully', data);
   } catch (err) {
     next(err);

@@ -26,10 +26,12 @@ const getStatesByCountryId = async (countryId, query) => {
 };
 
 const getCitiesByStateId = async (stateId, query) => {
-  const state = await locationModel.findStateById(stateId);
-  if (!state) throw new AppError('State not found', 404);
+  if (stateId) {
+    const state = await locationModel.findStateById(stateId);
+    if (!state) throw new AppError('State not found', 404);
+  }
 
-  return locationModel.listCitiesByStateId(stateId, parseListFilters(query));
+  return locationModel.listCitiesByStateId(stateId || null, parseListFilters(query));
 };
 
 module.exports = {
