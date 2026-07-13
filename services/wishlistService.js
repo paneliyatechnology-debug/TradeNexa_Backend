@@ -21,6 +21,9 @@ const assertProductForWishlist = async (productId, { requireActive = true } = {}
   if (requireActive && !product.is_active) {
     throw new AppError('Product is not active', HTTP_STATUS.BAD_REQUEST);
   }
+  if (requireActive && product.approval_status && product.approval_status !== 'approved') {
+    throw new AppError('Product is not available', HTTP_STATUS.BAD_REQUEST);
+  }
   return product;
 };
 

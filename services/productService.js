@@ -162,26 +162,70 @@ const applyVideoUploads = async (productId, files = {}, mode = 'direct') => {
 
 /**
  * Create a product with optional thumbnail, gallery images, and videos.
+ * New products start as `in_review` and are not buyer-visible until approved.
+ * Writes the first `submitted` review-history row via productReviewService.
+ *
+ * @param {Object} data - Multipart / JSON body
+ * @param {Object} [files] - Multer files
+ * @param {number|null} [userId] - Acting user (seller)
+ * @param {string} [actorRole='seller']
+ * @returns {Promise<Object>}
  */
-const createProduct = async (data, files = {}, userId = null) => {
+const createProduct = async (data, files = {}, userId = null, actorRole = 'seller') => {
   const payload = parseProductBody(data);
+  delete payload.approval_status;
   const product = await productModel.createProduct(payload, userId);
   await applyCreateThumbnail(product.id, files);
   await applyImageUploads(product.id, files, 'inbox');
   await applyVideoUploads(product.id, files, 'inbox');
+
+  const productReviewService = require('./productReviewService');
+  await productReviewService.recordInitialSubmission(product, userId, actorRole);
   return productModel.findProductById(product.id);
 };
 
 /**
  * Update a product. Text fields and media uploads are all optional.
+ * - Rejected products cannot be updated.
+ * - Material edits (or media changes) on approved products auto-send back to `in_review`.
+ *
+ * @param {number} id
+ * @param {Object} data
+ * @param {Object} [files]
+ * @param {number|null} [userId]
+ * @param {string} [actorRole='seller']
+ * @returns {Promise<Object>}
  */
-const updateProduct = async (id, data, files = {}, userId = null) => {
+const updateProduct = async (id, data, files = {}, userId = null, actorRole = 'seller') => {
+  const productReviewService = require('./productReviewService');
   const payload = parseProductBody(data);
+  delete payload.approval_status;
+
   const existing = await productModel.findProductById(id, { raw: true });
+  if (!existing) {
+    const { AppError } = require('../utils/response');
+    const { HTTP_STATUS } = require('../constants');
+    throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
+  }
+
+  if (existing.approval_status === 'rejected') {
+    const { AppError } = require('../utils/response');
+    const { HTTP_STATUS } = require('../constants');
+    throw new AppError('Rejected products cannot be updated', HTTP_STATUS.CONFLICT);
+  }
+
   const thumbnailUpdates = await applyUpdateThumbnail(id, files, existing || {});
-  await productModel.updateProduct(id, { ...payload, ...thumbnailUpdates }, userId);
-  await applyImageUploads(id, files, 'direct');
-  await applyVideoUploads(id, files, 'direct');
+  const hasThumb = Object.keys(thumbnailUpdates || {}).length > 0;
+  const merged = { ...payload, ...thumbnailUpdates };
+  await productModel.updateProduct(id, merged, userId);
+  const images = await applyImageUploads(id, files, 'direct');
+  const videos = await applyVideoUploads(id, files, 'direct');
+
+  if (hasThumb || images.length || videos.length) {
+    merged.__has_media_change = true;
+  }
+
+  await productReviewService.handleSellerUpdateApproval(existing, merged, userId, actorRole);
   return productModel.findProductById(id);
 };
 

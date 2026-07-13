@@ -2,9 +2,11 @@
 
 const productModel = require('../models/productModel');
 const productService = require('../services/productService');
+const productReviewService = require('../services/productReviewService');
 const wishlistService = require('../services/wishlistService');
 const { success, AppError } = require('../utils/response');
-const { HTTP_STATUS } = require('../constants');
+const { HTTP_STATUS, ADMIN_PANEL_ROLE_CODES } = require('../constants');
+const { PRODUCT_APPROVAL_STATUS } = require('../constants/product');
 
 // ==========================================
 // Product Operations
@@ -28,6 +30,13 @@ const PRODUCT_EXTENDED_FIELD_DEFAULTS = {
   accept_inquiry: null,
   search_tags: [],
   specifications: [],
+  approval_status: null,
+  review_version: null,
+  submitted_at: null,
+  resubmitted_at: null,
+  reviewed_at: null,
+  reviewed_by: null,
+  latest_review_remarks: null,
 };
 
 /** Merge extended product fields onto a list/card payload without changing existing keys. */
@@ -49,12 +58,21 @@ const withExtendedProductFields = (product = {}) => ({
   accept_inquiry: product.accept_inquiry ?? null,
   search_tags: Array.isArray(product.search_tags) ? product.search_tags : [],
   specifications: Array.isArray(product.specifications) ? product.specifications : [],
+  approval_status: product.approval_status ?? null,
+  review_version: product.review_version ?? null,
+  submitted_at: product.submitted_at ?? null,
+  resubmitted_at: product.resubmitted_at ?? null,
+  reviewed_at: product.reviewed_at ?? null,
+  reviewed_by: product.reviewed_by ?? null,
+  latest_review_remarks: product.latest_review_remarks ?? null,
 });
+
+const isAdminUser = (user) => ADMIN_PANEL_ROLE_CODES.includes(user?.role);
+
 const pickProductListFilters = (req, extra = {}) => ({
   search: req.query.search,
   brand_id: req.query.brand_id,
   city_id: req.query.city_id,
-  // On public list APIs, seller_id excludes that seller's products (hide own listings).
   exclude_seller_id: req.query.seller_id,
   min_price: req.query.min_price,
   max_price: req.query.max_price,
@@ -90,22 +108,44 @@ const assertCanModifyProduct = async (productId, user) => {
     throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
   }
 
-  const isAdmin = user.role === 'admin';
-  if (!isAdmin && String(existing.seller_id) !== String(user.id)) {
+  if (!isAdminUser(user) && String(existing.seller_id) !== String(user.id)) {
     throw new AppError('Forbidden: You can only modify your own products', HTTP_STATUS.FORBIDDEN);
   }
 
   return existing;
 };
 
+/** Buyers only see approved+active; owner/admin can see any status. */
+const assertCanViewProduct = (product, user) => {
+  const approved =
+    product.approval_status === PRODUCT_APPROVAL_STATUS.APPROVED || !product.approval_status;
+  const active = product.is_active !== false && product.is_active !== 0;
+
+  if (approved && active) return true;
+  if (!user) return false;
+  if (isAdminUser(user)) return true;
+  if (String(product.seller_id) === String(user.id)) return true;
+  return false;
+};
+
 /**
  * POST /products
- * Create a new product listing with optional thumbnail upload (seller or admin).
+ * Create a new product listing — starts in_review (not buyer-visible until approved).
  */
 const createProduct = async (req, res, next) => {
   try {
-    const product = await productService.createProduct(req.body, req.files, req.user?.id);
-    return success(res, 'Product created successfully', product, HTTP_STATUS.CREATED);
+    const product = await productService.createProduct(
+      req.body,
+      req.files,
+      req.user?.id,
+      req.user?.role,
+    );
+    return success(
+      res,
+      'Product created successfully and submitted for review',
+      product,
+      HTTP_STATUS.CREATED,
+    );
   } catch (err) {
     next(err);
   }
@@ -113,14 +153,19 @@ const createProduct = async (req, res, next) => {
 
 /**
  * GET /products/:id
- * Retrieve a single product by ID.
+ * Retrieve a single product by ID (public only if approved).
  */
 const getProduct = async (req, res, next) => {
   try {
-    const product = await productModel.findProductDetailById(req.params.id);
-    if (!product) {
+    const raw = await productModel.findProductById(req.params.id, { raw: true });
+    if (!raw) {
       return next(new AppError('Product not found', HTTP_STATUS.NOT_FOUND));
     }
+    if (!assertCanViewProduct(raw, req.user)) {
+      return next(new AppError('Product not found', HTTP_STATUS.NOT_FOUND));
+    }
+
+    const product = await productModel.findProductDetailById(req.params.id);
     const withWishlist = await wishlistService.attachWishlistToProductDetail(product, req.user?.id);
     return success(res, 'Product details retrieved successfully', withWishlist);
   } catch (err) {
@@ -128,13 +173,12 @@ const getProduct = async (req, res, next) => {
   }
 };
 
-const buildProductListFilters = (req, { defaultActiveOnly = true } = {}) => ({
+const buildProductListFilters = (req, { defaultActiveOnly = true, publicOnly = false } = {}) => ({
   search: req.query.search,
   category_id: req.query.category_id,
   subcategory_id: req.query.subcategory_id,
   city_id: req.query.city_id,
   brand_id: req.query.brand_id,
-  // On public list APIs, seller_id excludes that seller's products (hide own listings).
   exclude_seller_id: req.query.seller_id,
   min_price: req.query.min_price,
   max_price: req.query.max_price,
@@ -142,6 +186,8 @@ const buildProductListFilters = (req, { defaultActiveOnly = true } = {}) => ({
   limit: req.query.limit,
   sort_by: req.query.sort_by,
   sort_order: req.query.sort_order,
+  approval_status: req.query.approval_status,
+  public_only: publicOnly || undefined,
   is_active:
     req.query.is_active !== undefined
       ? req.query.is_active === 'true'
@@ -152,11 +198,11 @@ const buildProductListFilters = (req, { defaultActiveOnly = true } = {}) => ({
 
 /**
  * GET /products
- * List products with search, filters, and pagination.
+ * Public product list — approved + active only.
  */
 const getProducts = async (req, res, next) => {
   try {
-    const filters = withWishlistFilter(req, buildProductListFilters(req));
+    const filters = withWishlistFilter(req, buildProductListFilters(req, { publicOnly: true }));
     const data = await productModel.findProducts(filters);
     const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
     return success(res, 'Products list retrieved successfully', withWishlist);
@@ -167,14 +213,15 @@ const getProducts = async (req, res, next) => {
 
 /**
  * GET /products/my
- * List the authenticated seller's own products with the same filters as GET /products.
+ * Seller's own products (all approval statuses).
  */
 const getMyProducts = async (req, res, next) => {
   try {
     const filters = withWishlistFilter(req, {
-      ...buildProductListFilters(req, { defaultActiveOnly: false }),
+      ...buildProductListFilters(req, { defaultActiveOnly: false, publicOnly: false }),
       seller_id: req.user.id,
       exclude_seller_id: undefined,
+      public_only: false,
     });
     const data = await productModel.findProducts(filters);
     const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
@@ -186,7 +233,6 @@ const getMyProducts = async (req, res, next) => {
 
 /**
  * GET /products/trending
- * List products flagged is_trending=true, ordered by id desc (newest first).
  */
 const getTrendingProducts = async (req, res, next) => {
   try {
@@ -195,6 +241,7 @@ const getTrendingProducts = async (req, res, next) => {
       pickProductListFilters(req, {
         is_trending: true,
         is_active: true,
+        public_only: true,
         category_id: req.query.category_id,
         subcategory_id: req.query.subcategory_id,
       }),
@@ -233,8 +280,6 @@ const getTrendingProducts = async (req, res, next) => {
 
 /**
  * GET /products/related
- * List related products for a subcategory (ordered by id desc).
- * Optional product_id excludes that product from results (e.g. current product detail page).
  */
 const getRelatedProducts = async (req, res, next) => {
   try {
@@ -243,6 +288,7 @@ const getRelatedProducts = async (req, res, next) => {
       pickProductListFilters(req, {
         subcategory_id: req.query.subcategory_id,
         is_active: true,
+        public_only: true,
       }),
     );
 
@@ -282,16 +328,13 @@ const getRelatedProducts = async (req, res, next) => {
 
 /**
  * PUT /products/:id
- * Update an existing product with optional thumbnail upload.
- * Only the assigned seller or admin may update the product.
  */
 const updateProduct = async (req, res, next) => {
   try {
     const existing = await assertCanModifyProduct(req.params.id, req.user);
 
-    const isAdmin = req.user.role === 'admin';
     if (
-      !isAdmin &&
+      !isAdminUser(req.user) &&
       req.body.seller_id !== undefined &&
       String(req.body.seller_id) !== String(existing.seller_id)
     ) {
@@ -303,6 +346,7 @@ const updateProduct = async (req, res, next) => {
       req.body,
       req.files,
       req.user?.id,
+      req.user?.role,
     );
     return success(res, 'Product updated successfully', product);
   } catch (err) {
@@ -317,11 +361,13 @@ const parseIdArray = (value) => {
 
 /**
  * DELETE /products/:id/media
- * Remove gallery images and/or videos by ID (DB + S3). Seller or admin only.
  */
 const deleteProductMedia = async (req, res, next) => {
   try {
-    await assertCanModifyProduct(req.params.id, req.user);
+    const existing = await assertCanModifyProduct(req.params.id, req.user);
+    if (existing.approval_status === PRODUCT_APPROVAL_STATUS.REJECTED) {
+      return next(new AppError('Rejected products cannot be updated', HTTP_STATUS.CONFLICT));
+    }
 
     const result = await productService.deleteProductMedia(req.params.id, {
       imageIds: parseIdArray(req.body.image_ids),
@@ -332,6 +378,16 @@ const deleteProductMedia = async (req, res, next) => {
       return next(new AppError('No matching product media found to delete', HTTP_STATUS.NOT_FOUND));
     }
 
+    if (existing.approval_status === PRODUCT_APPROVAL_STATUS.APPROVED) {
+      await productReviewService.handleSellerUpdateApproval(
+        existing,
+        { __has_media_change: true },
+        req.user.id,
+        req.user.role,
+      );
+      result.product = await productModel.findProductDetailById(req.params.id);
+    }
+
     return success(res, 'Product media deleted successfully', result);
   } catch (err) {
     next(err);
@@ -340,16 +396,187 @@ const deleteProductMedia = async (req, res, next) => {
 
 /**
  * DELETE /products/:id
- * Soft-delete a product (seller or admin).
+ * Soft-delete a product (seller owner or admin).
  */
 const deleteProduct = async (req, res, next) => {
   try {
-    const existing = await productModel.findProductById(req.params.id);
-    if (!existing) {
-      return next(new AppError('Product not found', HTTP_STATUS.NOT_FOUND));
-    }
+    await assertCanModifyProduct(req.params.id, req.user);
     await productModel.deleteProduct(req.params.id, req.user?.id);
     return success(res, 'Product deleted successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ==========================================
+// Approval workflow — seller
+// ==========================================
+
+/**
+ * POST /products/:id/submit
+ * Seller resubmits after `revision_required` → `in_review`.
+ */
+const submitProductForReview = async (req, res, next) => {
+  try {
+    const product = await productReviewService.submitForReview(
+      req.params.id,
+      req.user.id,
+      req.user.role,
+    );
+    return success(res, 'Product resubmitted for review', product);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /products/:id/reviews
+ * Append-only review history (product owner or admin).
+ */
+const getProductReviews = async (req, res, next) => {
+  try {
+    const data = await productReviewService.getReviewHistory(req.params.id, req.user, {
+      page: req.query.page,
+      limit: req.query.limit,
+    });
+    return success(res, 'Product review history retrieved successfully', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ==========================================
+// Approval workflow — admin
+// ==========================================
+
+/**
+ * GET /products/admin/reviews
+ * Admin moderation queue (filter by approval_status, search, sort).
+ */
+const getAdminProductReviews = async (req, res, next) => {
+  try {
+    const sortBy =
+      req.query.sort_by ||
+      (req.query.sort === 'oldest_pending'
+        ? 'submitted_at'
+        : req.query.sort === 'recently_updated'
+          ? 'updated_at'
+          : 'submitted_at');
+    const sortOrder =
+      req.query.sort_order || (req.query.sort === 'oldest_pending' ? 'asc' : 'desc');
+
+    const filters = {
+      search: req.query.search,
+      approval_status: req.query.approval_status || PRODUCT_APPROVAL_STATUS.IN_REVIEW,
+      category_id: req.query.category_id,
+      brand_id: req.query.brand_id,
+      seller_id: req.query.seller_id,
+      page: req.query.page,
+      limit: req.query.limit,
+      sort_by: sortBy,
+      sort_order: sortOrder,
+      admin_search: true,
+      is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : undefined,
+      public_only: false,
+    };
+
+    // `all` = no status filter (full catalog for admins)
+    if (filters.approval_status === 'all') {
+      delete filters.approval_status;
+    }
+
+    const data = await productModel.findProducts(filters);
+    return success(res, 'Admin product review queue retrieved successfully', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** POST /products/:id/approve — status → approved (public when is_active). */
+const approveProduct = async (req, res, next) => {
+  try {
+    const product = await productReviewService.approveProduct(
+      req.params.id,
+      req.user.id,
+      req.user.role,
+      req.body.remarks,
+    );
+    return success(res, 'Product approved successfully', product);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** POST /products/:id/request-revision — remarks required. */
+const requestProductRevision = async (req, res, next) => {
+  try {
+    const product = await productReviewService.requestRevision(
+      req.params.id,
+      req.user.id,
+      req.user.role,
+      req.body.remarks,
+    );
+    return success(res, 'Product revision requested', product);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** POST /products/:id/reject — terminal; remarks required. */
+const rejectProduct = async (req, res, next) => {
+  try {
+    const product = await productReviewService.rejectProduct(
+      req.params.id,
+      req.user.id,
+      req.user.role,
+      req.body.remarks,
+    );
+    return success(res, 'Product rejected', product);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** POST /products/admin/bulk-approve */
+const bulkApproveProducts = async (req, res, next) => {
+  try {
+    const data = await productReviewService.bulkApprove(
+      req.body.product_ids,
+      req.user.id,
+      req.user.role,
+      req.body.remarks,
+    );
+    return success(res, 'Bulk approve completed', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** POST /products/admin/bulk-request-revision */
+const bulkRequestRevisionProducts = async (req, res, next) => {
+  try {
+    const data = await productReviewService.bulkRequestRevision(
+      req.body.product_ids,
+      req.user.id,
+      req.user.role,
+      req.body.remarks,
+    );
+    return success(res, 'Bulk revision request completed', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** POST /products/admin/bulk-reject */
+const bulkRejectProducts = async (req, res, next) => {
+  try {
+    const data = await productReviewService.bulkReject(
+      req.body.product_ids,
+      req.user.id,
+      req.user.role,
+      req.body.remarks,
+    );
+    return success(res, 'Bulk reject completed', data);
   } catch (err) {
     next(err);
   }
@@ -365,4 +592,13 @@ module.exports = {
   updateProduct,
   deleteProductMedia,
   deleteProduct,
+  submitProductForReview,
+  getProductReviews,
+  getAdminProductReviews,
+  approveProduct,
+  requestProductRevision,
+  rejectProduct,
+  bulkApproveProducts,
+  bulkRequestRevisionProducts,
+  bulkRejectProducts,
 };

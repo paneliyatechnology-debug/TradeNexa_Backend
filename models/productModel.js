@@ -106,6 +106,16 @@ const formatRow = (row) => {
     verified: row.verified !== undefined ? !!row.verified : undefined,
     is_trending: row.is_trending !== undefined ? !!row.is_trending : undefined,
     is_active: row.is_active !== undefined ? !!row.is_active : undefined,
+    approval_status: row.approval_status ?? undefined,
+    review_version:
+      row.review_version !== undefined && row.review_version !== null
+        ? parseInt(row.review_version, 10)
+        : undefined,
+    submitted_at: row.submitted_at ?? undefined,
+    resubmitted_at: row.resubmitted_at ?? undefined,
+    reviewed_at: row.reviewed_at ?? undefined,
+    reviewed_by: row.reviewed_by ?? undefined,
+    latest_review_remarks: row.latest_review_remarks ?? undefined,
     price: row.price !== undefined ? parseFloat(row.price) : undefined,
     rating: row.rating !== undefined ? parseFloat(row.rating) : undefined,
     short_description: row.short_description ?? null,
@@ -242,6 +252,19 @@ const formatProductDetail = (row, images = [], videos = []) => {
       accept_inquiry: row.accept_inquiry !== undefined ? !!row.accept_inquiry : null,
       is_active: row.is_active !== undefined ? !!row.is_active : null,
     },
+    approval: {
+      status: row.approval_status ?? null,
+      review_version:
+        row.review_version !== undefined && row.review_version !== null
+          ? parseInt(row.review_version, 10)
+          : null,
+      submitted_at: row.submitted_at ?? null,
+      resubmitted_at: row.resubmitted_at ?? null,
+      reviewed_at: row.reviewed_at ?? null,
+      reviewed_by: row.reviewed_by ?? null,
+      latest_review_remarks: row.latest_review_remarks ?? null,
+      can_resubmit: row.approval_status === 'revision_required',
+    },
     user_actions: {
       is_favourite: false,
       is_wishlist: false,
@@ -277,6 +300,9 @@ const PRODUCT_SORT_FIELDS = {
   rating: 'products.rating',
   is_trending: 'products.is_trending',
   created_at: 'products.created_at',
+  updated_at: 'products.updated_at',
+  submitted_at: 'products.submitted_at',
+  reviewed_at: 'products.reviewed_at',
   seller_name: 'company_details.company_name',
 };
 
@@ -527,7 +553,8 @@ const findProducts = async (filters = {}) => {
       .leftJoin('users as sellers', 'products.seller_id', '=', 'sellers.id')
       .leftJoin('company_details', 'sellers.id', '=', 'company_details.user_id')
       .leftJoin('categories as subcategories', 'products.subcategory_id', '=', 'subcategories.id')
-      .leftJoin('categories', 'products.category_id', '=', 'categories.id'),
+      .leftJoin('categories', 'products.category_id', '=', 'categories.id')
+      .leftJoin('brands', 'products.brand_id', '=', 'brands.id'),
   )
     .whereNull('products.deleted_at')
     .select(
@@ -549,11 +576,31 @@ const findProducts = async (filters = {}) => {
       'products.rating',
       ...SELLER_ADDRESS_SELECT,
       'products.is_trending',
+      'products.is_active',
+      'products.approval_status',
+      'products.review_version',
+      'products.submitted_at',
+      'products.resubmitted_at',
+      'products.reviewed_at',
+      'products.reviewed_by',
+      'products.latest_review_remarks',
       'products.created_at',
     );
 
   if (filters.search) {
-    q.where('products.name', 'like', `%${filters.search}%`);
+    const term = `%${filters.search}%`;
+    if (filters.admin_search) {
+      q.where(function () {
+        this.where('products.name', 'like', term)
+          .orWhere('products.id', parseInt(filters.search, 10) || 0)
+          .orWhere('company_details.company_name', 'like', term)
+          .orWhere('sellers.full_name', 'like', term)
+          .orWhere('categories.name', 'like', term)
+          .orWhere('brands.name', 'like', term);
+      });
+    } else {
+      q.where('products.name', 'like', term);
+    }
   }
 
   if (filters.category_id) {
@@ -586,6 +633,14 @@ const findProducts = async (filters = {}) => {
 
   if (filters.is_active !== undefined) {
     q.where('products.is_active', filters.is_active);
+  }
+
+  // Public marketplace: only approved products (is_active usually also applied by caller)
+  if (filters.public_only) {
+    q.where('products.approval_status', 'approved');
+  } else if (filters.approval_status) {
+    // Seller my-list / admin queue status filter
+    q.where('products.approval_status', filters.approval_status);
   }
 
   if (filters.seller_id) {
@@ -658,6 +713,7 @@ const buildProductPayload = (data, { forCreate = false } = {}) => {
   assign('accept_inquiry', (v) => !!v);
   assign('is_active', (v) => !!v);
   assign('rating');
+  // approval_status / review_* are owned by productReviewService — never set from client body
 
   return payload;
 };
@@ -692,6 +748,9 @@ const createProduct = async (data, userId = null) => {
     show_price: data.show_price !== undefined ? !!data.show_price : true,
     accept_inquiry: data.accept_inquiry !== undefined ? !!data.accept_inquiry : true,
     stock_status: data.stock_status || 'IN_STOCK',
+    approval_status: 'in_review',
+    review_version: 1,
+    submitted_at: db.fn.now(),
     created_by: userId,
   };
 

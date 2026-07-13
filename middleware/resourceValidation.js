@@ -11,6 +11,7 @@ const { body, param, query } = require('express-validator');
 const {
   PRODUCT_CONDITION_VALUES,
   PRODUCT_STOCK_STATUS_VALUES,
+  PRODUCT_APPROVAL_STATUS_VALUES,
 } = require('../constants/product');
 
 // ==========================================
@@ -500,6 +501,9 @@ const PRODUCT_SORT_BY_VALUES = [
   'rating',
   'is_trending',
   'created_at',
+  'updated_at',
+  'submitted_at',
+  'reviewed_at',
   'seller_name',
 ];
 
@@ -515,6 +519,10 @@ const productListFilterSortQuery = [
     .optional()
     .isIn(['true', 'false'])
     .withMessage('is_wishlist must be true or false'),
+  query('approval_status')
+    .optional()
+    .isIn([...PRODUCT_APPROVAL_STATUS_VALUES, 'all'])
+    .withMessage(`approval_status must be one of: ${PRODUCT_APPROVAL_STATUS_VALUES.join(', ')}, all`),
   query('sort_by')
     .optional()
     .isIn(PRODUCT_SORT_BY_VALUES)
@@ -553,6 +561,71 @@ const productRelatedQuery = [
   query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   ...paginationQuery,
   ...productListFilterSortQuery,
+];
+
+/** Admin remarks optional on approve (service may accept empty). */
+const productReviewRemarksRules = [
+  body('remarks')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isLength({ min: 10, max: 2000 })
+    .withMessage('Remarks must be 10 to 2000 characters'),
+];
+
+/** Remarks required for request-revision / reject. */
+const productRequiredRemarksRules = [
+  body('remarks')
+    .trim()
+    .notEmpty()
+    .withMessage('Remarks are required')
+    .isLength({ min: 10, max: 2000 })
+    .withMessage('Remarks must be 10 to 2000 characters'),
+];
+
+/** Bulk approve — remarks optional. */
+const productBulkReviewRules = [
+  body('product_ids').isArray({ min: 1, max: 100 }).withMessage('product_ids must be an array of 1 to 100 IDs'),
+  body('product_ids.*').isInt({ min: 1 }).withMessage('Each product ID must be a positive integer'),
+  body('remarks')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isLength({ min: 10, max: 2000 })
+    .withMessage('Remarks must be 10 to 2000 characters'),
+];
+
+/** Bulk revision / reject — shared remarks required for all IDs. */
+const productBulkRevisionOrRejectRules = [
+  body('product_ids').isArray({ min: 1, max: 100 }).withMessage('product_ids must be an array of 1 to 100 IDs'),
+  body('product_ids.*').isInt({ min: 1 }).withMessage('Each product ID must be a positive integer'),
+  body('remarks')
+    .trim()
+    .notEmpty()
+    .withMessage('Remarks are required')
+    .isLength({ min: 10, max: 2000 })
+    .withMessage('Remarks must be 10 to 2000 characters'),
+];
+
+/** GET /products/admin/reviews query params. */
+const productAdminReviewQuery = [
+  ...paginationQuery,
+  query('approval_status')
+    .optional()
+    .isIn([...PRODUCT_APPROVAL_STATUS_VALUES, 'all'])
+    .withMessage(`approval_status must be one of: ${PRODUCT_APPROVAL_STATUS_VALUES.join(', ')}, all`),
+  query('category_id').optional().isInt({ min: 1 }),
+  query('brand_id').optional().isInt({ min: 1 }),
+  query('seller_id').optional().isInt({ min: 1 }),
+  query('search').optional().trim(),
+  query('sort')
+    .optional()
+    .isIn(['recently_submitted', 'oldest_pending', 'recently_updated'])
+    .withMessage('sort must be recently_submitted | oldest_pending | recently_updated'),
+  query('sort_by')
+    .optional()
+    .isIn(PRODUCT_SORT_BY_VALUES)
+    .withMessage(`sort_by must be one of: ${PRODUCT_SORT_BY_VALUES.join(', ')}`),
+  query('sort_order').optional().isIn(['asc', 'desc']),
+  query('is_active').optional().isIn(['true', 'false']),
 ];
 
 // ==========================================
@@ -1022,6 +1095,11 @@ module.exports = {
   productListQuery,
   productTrendingQuery,
   productRelatedQuery,
+  productReviewRemarksRules,
+  productRequiredRemarksRules,
+  productBulkReviewRules,
+  productBulkRevisionOrRejectRules,
+  productAdminReviewQuery,
   offerCreateRules,
   offerUpdateRules,
   offerListQuery,
