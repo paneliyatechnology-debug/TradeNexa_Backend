@@ -34,7 +34,7 @@ const assignSellers = async (rfqId, sellerIds = [], trx = null) => {
 
 const markViewed = async (rfqId, sellerId, trx = null) => {
   const client = trx || db;
-  const existing = await findByRfqAndSeller(rfqId, sellerId);
+  const existing = await client('rfq_sellers').where({ rfq_id: rfqId, seller_id: sellerId }).first();
   if (existing) {
     if (!existing.viewed_at) {
       await client('rfq_sellers')

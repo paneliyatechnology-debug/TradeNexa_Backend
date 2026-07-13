@@ -153,12 +153,13 @@ const getRfqDetail = async (id, options = {}) => {
     await assertRfqViewAccess(rfq, options.viewer);
   }
 
-  const attachments = await rfqAttachmentModel.findByRfqId(id);
-  const sellerCount = await rfqSellerModel.countByRfqId(id);
-  const assignedSellers = await rfqSellerModel.listAssignedSellersByRfqId(id);
-  const quotations = options.includeQuotations
-    ? await quotationModel.findByRfqId(id, { paginate: false })
-    : undefined;
+  const [attachments, assignedSellers, quotations] = await Promise.all([
+    rfqAttachmentModel.findByRfqId(id),
+    rfqSellerModel.listAssignedSellersByRfqId(id),
+    options.includeQuotations
+      ? quotationModel.findByRfqId(id, { paginate: false })
+      : Promise.resolve(undefined),
+  ]);
 
   const formatted = rfqModel.formatRow(rfq);
 
@@ -176,7 +177,7 @@ const getRfqDetail = async (id, options = {}) => {
     product_id: formatted.product_id ?? null,
     product: formatted.product ?? null,
     product_name: formatted.product?.name ?? null,
-    seller_count: sellerCount,
+    seller_count: assignedSellers.length,
     assigned_sellers: assignedSellers,
     quotation_count: rfq.total_quotations || 0,
     attachments,

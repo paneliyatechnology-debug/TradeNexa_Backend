@@ -12,8 +12,9 @@ const formatRow = (row) => {
   };
 };
 
-const findByRfqId = async (rfqId) => {
-  const rows = await db('rfq_attachments').where({ rfq_id: rfqId }).orderBy('id', 'asc');
+const findByRfqId = async (rfqId, trx = null) => {
+  const client = trx || db;
+  const rows = await client('rfq_attachments').where({ rfq_id: rfqId }).orderBy('id', 'asc');
   return rows.map(formatRow);
 };
 
@@ -27,7 +28,9 @@ const createAttachments = async (rfqId, attachments = [], trx = null) => {
     file_type: file.file_type || null,
   }));
   await client('rfq_attachments').insert(payload);
-  return findByRfqId(rfqId);
+  // Must use same connection/trx — querying via global `db` while trx is open
+  // causes InnoDB lock waits (often 15–50s) against uncommitted rows.
+  return findByRfqId(rfqId, client);
 };
 
 const deleteByRfqId = async (rfqId, trx = null) => {

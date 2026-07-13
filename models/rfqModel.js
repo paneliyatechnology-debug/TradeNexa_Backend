@@ -268,7 +268,7 @@ const findSellerFeed = async (sellerId, filters = {}) => {
 const createRfq = async (data, trx = null) => {
   const client = trx || db;
   const [id] = await client('rfqs').insert(data);
-  return client('rfqs').where({ id }).first();
+  return { id, ...data };
 };
 
 const updateRfq = async (id, data, trx = null) => {

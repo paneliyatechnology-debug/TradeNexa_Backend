@@ -16,9 +16,11 @@ const generateSequentialNumber = async (dbOrTrx, table, column, prefix) => {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const dayPrefix = `${prefix}-${date}-`;
 
+  // Prefer latest matching number (indexed unique column) over scanning by id.
   const last = await dbOrTrx(table)
     .where(column, 'like', `${dayPrefix}%`)
-    .orderBy('id', 'desc')
+    .orderBy(column, 'desc')
+    .select(column)
     .first();
 
   const lastSeq = last?.[column] ? parseInt(String(last[column]).split('-').pop(), 10) : 0;
