@@ -451,20 +451,10 @@ const getProductReviews = async (req, res, next) => {
 
 /**
  * GET /products/admin/reviews
- * Admin moderation queue (filter by approval_status, search, sort).
+ * Admin moderation queue (filter by approval_status, search, sort_by / sort_order).
  */
 const getAdminProductReviews = async (req, res, next) => {
   try {
-    const sortBy =
-      req.query.sort_by ||
-      (req.query.sort === 'oldest_pending'
-        ? 'submitted_at'
-        : req.query.sort === 'recently_updated'
-          ? 'updated_at'
-          : 'submitted_at');
-    const sortOrder =
-      req.query.sort_order || (req.query.sort === 'oldest_pending' ? 'asc' : 'desc');
-
     const filters = {
       search: req.query.search,
       approval_status: req.query.approval_status || PRODUCT_APPROVAL_STATUS.IN_REVIEW,
@@ -473,8 +463,8 @@ const getAdminProductReviews = async (req, res, next) => {
       seller_id: req.query.seller_id,
       page: req.query.page,
       limit: req.query.limit,
-      sort_by: sortBy,
-      sort_order: sortOrder,
+      sort_by: req.query.sort_by || 'submitted_at',
+      sort_order: req.query.sort_order || 'desc',
       admin_search: true,
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : undefined,
       public_only: false,
@@ -492,91 +482,46 @@ const getAdminProductReviews = async (req, res, next) => {
   }
 };
 
-/** POST /products/:id/approve — status → approved (public when is_active). */
-const approveProduct = async (req, res, next) => {
+/** POST /products/admin/approve — body.product_ids[] (1 or many); remarks optional. */
+const approveProducts = async (req, res, next) => {
   try {
-    const product = await productReviewService.approveProduct(
-      req.params.id,
+    const data = await productReviewService.approveProducts(
+      req.body.product_ids,
       req.user.id,
       req.user.role,
       req.body.remarks,
     );
-    return success(res, 'Product approved successfully', product);
+    return success(res, 'Product approval completed', data);
   } catch (err) {
     next(err);
   }
 };
 
-/** POST /products/:id/request-revision — remarks required. */
+/** POST /products/admin/request-revision — body.product_ids[] + required remarks. */
 const requestProductRevision = async (req, res, next) => {
   try {
-    const product = await productReviewService.requestRevision(
-      req.params.id,
-      req.user.id,
-      req.user.role,
-      req.body.remarks,
-    );
-    return success(res, 'Product revision requested', product);
-  } catch (err) {
-    next(err);
-  }
-};
-
-/** POST /products/:id/reject — terminal; remarks required. */
-const rejectProduct = async (req, res, next) => {
-  try {
-    const product = await productReviewService.rejectProduct(
-      req.params.id,
-      req.user.id,
-      req.user.role,
-      req.body.remarks,
-    );
-    return success(res, 'Product rejected', product);
-  } catch (err) {
-    next(err);
-  }
-};
-
-/** POST /products/admin/bulk-approve */
-const bulkApproveProducts = async (req, res, next) => {
-  try {
-    const data = await productReviewService.bulkApprove(
+    const data = await productReviewService.requestRevision(
       req.body.product_ids,
       req.user.id,
       req.user.role,
       req.body.remarks,
     );
-    return success(res, 'Bulk approve completed', data);
+    return success(res, 'Product revision requested', data);
   } catch (err) {
     next(err);
   }
 };
 
-/** POST /products/admin/bulk-request-revision */
-const bulkRequestRevisionProducts = async (req, res, next) => {
+/** POST /products/admin/reject — body.product_ids[] + required remarks. */
+const rejectProducts = async (req, res, next) => {
   try {
-    const data = await productReviewService.bulkRequestRevision(
+    const data = await productReviewService.rejectProducts(
       req.body.product_ids,
       req.user.id,
       req.user.role,
       req.body.remarks,
     );
-    return success(res, 'Bulk revision request completed', data);
-  } catch (err) {
-    next(err);
-  }
-};
-
-/** POST /products/admin/bulk-reject */
-const bulkRejectProducts = async (req, res, next) => {
-  try {
-    const data = await productReviewService.bulkReject(
-      req.body.product_ids,
-      req.user.id,
-      req.user.role,
-      req.body.remarks,
-    );
-    return success(res, 'Bulk reject completed', data);
+    return success(res, 'Product rejection completed', data);
   } catch (err) {
     next(err);
   }
@@ -595,10 +540,7 @@ module.exports = {
   submitProductForReview,
   getProductReviews,
   getAdminProductReviews,
-  approveProduct,
+  approveProducts,
   requestProductRevision,
-  rejectProduct,
-  bulkApproveProducts,
-  bulkRequestRevisionProducts,
-  bulkRejectProducts,
+  rejectProducts,
 };

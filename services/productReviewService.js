@@ -2,8 +2,8 @@
  * Product approval / moderation business logic.
  *
  * Owns status transitions, review history writes, seller resubmit,
- * admin approve/revision/reject (including bulk), and re-review on
- * material edits to already-approved products.
+ * admin approve/revision/reject (always via product_ids[] — one or many),
+ * and re-review on material edits to already-approved products.
  */
 const db = require('../database/knex');
 const productModel = require('../models/productModel');
@@ -289,11 +289,40 @@ const handleSellerUpdateApproval = async (existing, updatePayload, actorId, acto
 };
 
 // ==========================================
-// Admin review actions
+// Admin review actions (always product_ids[])
 // ==========================================
 
-/** Admin approve → product becomes buyer-visible (with is_active). */
-const approveProduct = async (productId, adminId, role, remarks = null) => {
+/**
+ * Apply a per-product handler across product_ids (1–100).
+ * Continues on failures so partial success is returned.
+ * @returns {{ succeeded: Array, failed: Array, total: number }}
+ */
+const runForProductIds = async (productIds, handler) => {
+  const ids = [...new Set((productIds || []).map((id) => parseInt(id, 10)).filter((id) => id > 0))];
+  if (!ids.length) {
+    throw new AppError('product_ids must be a non-empty array', HTTP_STATUS.BAD_REQUEST);
+  }
+  if (ids.length > 100) {
+    throw new AppError('Maximum 100 products per request', HTTP_STATUS.BAD_REQUEST);
+  }
+
+  const succeeded = [];
+  const failed = [];
+
+  for (const id of ids) {
+    try {
+      const product = await handler(id);
+      succeeded.push({ id, approval_status: product.approval_status });
+    } catch (err) {
+      failed.push({ id, message: err.message || 'Failed' });
+    }
+  }
+
+  return { succeeded, failed, total: ids.length };
+};
+
+/** Approve one product → buyer-visible when is_active. */
+const approveOne = async (productId, adminId, role, remarks = null) => {
   const product = await productModel.findProductById(productId, { raw: true });
   if (!product) throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
 
@@ -310,8 +339,8 @@ const approveProduct = async (productId, adminId, role, remarks = null) => {
   return updated;
 };
 
-/** Admin request changes — remarks mandatory; seller can edit then submit. */
-const requestRevision = async (productId, adminId, role, remarks) => {
+/** Request revision on one product — remarks mandatory. */
+const requestRevisionOne = async (productId, adminId, role, remarks) => {
   const product = await productModel.findProductById(productId, { raw: true });
   if (!product) throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
 
@@ -333,8 +362,8 @@ const requestRevision = async (productId, adminId, role, remarks) => {
   return updated;
 };
 
-/** Admin permanent reject — remarks mandatory; no resubmit allowed. */
-const rejectProduct = async (productId, adminId, role, remarks) => {
+/** Reject one product — remarks mandatory; terminal. */
+const rejectOne = async (productId, adminId, role, remarks) => {
   const product = await productModel.findProductById(productId, { raw: true });
   if (!product) throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
 
@@ -356,49 +385,27 @@ const rejectProduct = async (productId, adminId, role, remarks) => {
   return updated;
 };
 
-// ==========================================
-// Bulk admin actions
-// ==========================================
+/**
+ * Admin approve — always pass product_ids as an array (single or multiple).
+ * Example: `{ "product_ids": [12] }` or `{ "product_ids": [12, 15, 18] }`
+ */
+const approveProducts = (productIds, adminId, role, remarks = null) =>
+  runForProductIds(productIds, (id) => approveOne(id, adminId, role, remarks));
 
 /**
- * Run a per-product handler; continue on failures (partial success).
- * @returns {{ succeeded: Array, failed: Array, total: number }}
+ * Admin request revision — product_ids[] + required remarks (shared for all).
  */
-const runBulk = async (productIds, handler) => {
-  const ids = [...new Set((productIds || []).map((id) => parseInt(id, 10)).filter((id) => id > 0))];
-  if (!ids.length) {
-    throw new AppError('product_ids must be a non-empty array', HTTP_STATUS.BAD_REQUEST);
-  }
-  if (ids.length > 100) {
-    throw new AppError('Maximum 100 products per bulk action', HTTP_STATUS.BAD_REQUEST);
-  }
-
-  const succeeded = [];
-  const failed = [];
-
-  for (const id of ids) {
-    try {
-      const product = await handler(id);
-      succeeded.push({ id, approval_status: product.approval_status });
-    } catch (err) {
-      failed.push({ id, message: err.message || 'Failed' });
-    }
-  }
-
-  return { succeeded, failed, total: ids.length };
+const requestRevision = (productIds, adminId, role, remarks) => {
+  requireRemarks(remarks);
+  return runForProductIds(productIds, (id) => requestRevisionOne(id, adminId, role, remarks));
 };
 
-const bulkApprove = (productIds, adminId, role, remarks) =>
-  runBulk(productIds, (id) => approveProduct(id, adminId, role, remarks));
-
-const bulkRequestRevision = (productIds, adminId, role, remarks) => {
+/**
+ * Admin reject — product_ids[] + required remarks (shared for all).
+ */
+const rejectProducts = (productIds, adminId, role, remarks) => {
   requireRemarks(remarks);
-  return runBulk(productIds, (id) => requestRevision(id, adminId, role, remarks));
-};
-
-const bulkReject = (productIds, adminId, role, remarks) => {
-  requireRemarks(remarks);
-  return runBulk(productIds, (id) => rejectProduct(id, adminId, role, remarks));
+  return runForProductIds(productIds, (id) => rejectOne(id, adminId, role, remarks));
 };
 
 // ==========================================
@@ -421,12 +428,9 @@ const getReviewHistory = async (productId, viewer, filters = {}) => {
 module.exports = {
   recordInitialSubmission,
   submitForReview,
-  approveProduct,
+  approveProducts,
   requestRevision,
-  rejectProduct,
-  bulkApprove,
-  bulkRequestRevision,
-  bulkReject,
+  rejectProducts,
   handleSellerUpdateApproval,
   getReviewHistory,
   isAdminRole,

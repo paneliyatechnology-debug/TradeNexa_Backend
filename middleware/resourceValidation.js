@@ -563,27 +563,11 @@ const productRelatedQuery = [
   ...productListFilterSortQuery,
 ];
 
-/** Admin remarks optional on approve (service may accept empty). */
-const productReviewRemarksRules = [
-  body('remarks')
-    .optional({ values: 'falsy' })
-    .trim()
-    .isLength({ min: 10, max: 2000 })
-    .withMessage('Remarks must be 10 to 2000 characters'),
-];
-
-/** Remarks required for request-revision / reject. */
-const productRequiredRemarksRules = [
-  body('remarks')
-    .trim()
-    .notEmpty()
-    .withMessage('Remarks are required')
-    .isLength({ min: 10, max: 2000 })
-    .withMessage('Remarks must be 10 to 2000 characters'),
-];
-
-/** Bulk approve — remarks optional. */
-const productBulkReviewRules = [
+/**
+ * Admin approve — product_ids always an array (1–100), remarks optional.
+ * Use [12] for one product or [12, 15, 18] for many.
+ */
+const productApproveRules = [
   body('product_ids').isArray({ min: 1, max: 100 }).withMessage('product_ids must be an array of 1 to 100 IDs'),
   body('product_ids.*').isInt({ min: 1 }).withMessage('Each product ID must be a positive integer'),
   body('remarks')
@@ -593,8 +577,10 @@ const productBulkReviewRules = [
     .withMessage('Remarks must be 10 to 2000 characters'),
 ];
 
-/** Bulk revision / reject — shared remarks required for all IDs. */
-const productBulkRevisionOrRejectRules = [
+/**
+ * Admin request-revision / reject — product_ids[] + required shared remarks.
+ */
+const productRevisionOrRejectRules = [
   body('product_ids').isArray({ min: 1, max: 100 }).withMessage('product_ids must be an array of 1 to 100 IDs'),
   body('product_ids.*').isInt({ min: 1 }).withMessage('Each product ID must be a positive integer'),
   body('remarks')
@@ -616,15 +602,14 @@ const productAdminReviewQuery = [
   query('brand_id').optional().isInt({ min: 1 }),
   query('seller_id').optional().isInt({ min: 1 }),
   query('search').optional().trim(),
-  query('sort')
-    .optional()
-    .isIn(['recently_submitted', 'oldest_pending', 'recently_updated'])
-    .withMessage('sort must be recently_submitted | oldest_pending | recently_updated'),
   query('sort_by')
     .optional()
     .isIn(PRODUCT_SORT_BY_VALUES)
     .withMessage(`sort_by must be one of: ${PRODUCT_SORT_BY_VALUES.join(', ')}`),
-  query('sort_order').optional().isIn(['asc', 'desc']),
+  query('sort_order')
+    .optional()
+    .isIn(['asc', 'desc'])
+    .withMessage('sort_order must be asc or desc'),
   query('is_active').optional().isIn(['true', 'false']),
 ];
 
@@ -1095,10 +1080,8 @@ module.exports = {
   productListQuery,
   productTrendingQuery,
   productRelatedQuery,
-  productReviewRemarksRules,
-  productRequiredRemarksRules,
-  productBulkReviewRules,
-  productBulkRevisionOrRejectRules,
+  productApproveRules,
+  productRevisionOrRejectRules,
   productAdminReviewQuery,
   offerCreateRules,
   offerUpdateRules,

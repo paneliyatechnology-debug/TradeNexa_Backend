@@ -3,7 +3,7 @@
  *
  * Public read endpoints (list, trending, related) and role-based write operations.
  * Create/update support multipart thumbnail uploads.
- * Approval workflow: seller submit + admin review / bulk actions.
+ * Approval workflow: seller submit + admin review (product_ids[] for one or many).
  */
 const express = require('express');
 const productController = require('../controllers/productController');
@@ -23,10 +23,8 @@ const {
   productListQuery,
   productTrendingQuery,
   productRelatedQuery,
-  productReviewRemarksRules,
-  productRequiredRemarksRules,
-  productBulkReviewRules,
-  productBulkRevisionOrRejectRules,
+  productApproveRules,
+  productRevisionOrRejectRules,
   productAdminReviewQuery,
   paginationQuery,
 } = require('../middleware/resourceValidation');
@@ -48,7 +46,7 @@ router.get('/related', optionalAuthenticate, productRelatedQuery, validate, prod
 router.get('/my', authenticate, sellerRoles, productListQuery, validate, productController.getMyProducts);
 
 // ==========================================
-// Admin review queue (static paths before :id)
+// Admin review (static paths before :id)
 // ==========================================
 
 /** Moderation queue with status filters / search / sort. */
@@ -61,31 +59,37 @@ router.get(
   productController.getAdminProductReviews,
 );
 
+/**
+ * Approve — always send product_ids as an array (single or multiple).
+ * POST /products/admin/approve  body: { product_ids: [1] } or { product_ids: [1,2,3] }
+ */
 router.post(
-  '/admin/bulk-approve',
+  '/admin/approve',
   authenticate,
   adminRoles,
-  productBulkReviewRules,
+  productApproveRules,
   validate,
-  productController.bulkApproveProducts,
+  productController.approveProducts,
 );
 
+/** Request revision — product_ids[] + required remarks. */
 router.post(
-  '/admin/bulk-request-revision',
+  '/admin/request-revision',
   authenticate,
   adminRoles,
-  productBulkRevisionOrRejectRules,
+  productRevisionOrRejectRules,
   validate,
-  productController.bulkRequestRevisionProducts,
+  productController.requestProductRevision,
 );
 
+/** Reject — product_ids[] + required remarks (terminal). */
 router.post(
-  '/admin/bulk-reject',
+  '/admin/reject',
   authenticate,
   adminRoles,
-  productBulkRevisionOrRejectRules,
+  productRevisionOrRejectRules,
   validate,
-  productController.bulkRejectProducts,
+  productController.rejectProducts,
 );
 
 /** Public detail — buyers get 404 unless approved; owner/admin can view any status. */
@@ -140,36 +144,6 @@ router.get(
   paginationQuery,
   validate,
   productController.getProductReviews,
-);
-
-router.post(
-  '/:id/approve',
-  authenticate,
-  adminRoles,
-  idParam,
-  productReviewRemarksRules,
-  validate,
-  productController.approveProduct,
-);
-
-router.post(
-  '/:id/request-revision',
-  authenticate,
-  adminRoles,
-  idParam,
-  productRequiredRemarksRules,
-  validate,
-  productController.requestProductRevision,
-);
-
-router.post(
-  '/:id/reject',
-  authenticate,
-  adminRoles,
-  idParam,
-  productRequiredRemarksRules,
-  validate,
-  productController.rejectProduct,
 );
 
 router.delete(
