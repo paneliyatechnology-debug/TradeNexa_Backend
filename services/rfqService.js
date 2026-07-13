@@ -376,7 +376,8 @@ const closeRfq = async (id, buyerId, isAdmin = false) => {
 
 const getBuyerRfqs = async (buyerId, filters = {}) => {
   await rfqModel.expireOverdueRfqs();
-  return rfqModel.findRfqs({ ...filters, buyer_id: buyerId });
+  // Always scope to this buyer; ignore any exclude_buyer_id from query
+  return rfqModel.findRfqs({ ...filters, buyer_id: buyerId, exclude_buyer_id: undefined });
 };
 
 const getSellerRfqDetail = async (rfqId, sellerId) => {

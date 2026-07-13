@@ -147,7 +147,10 @@ const applyRfqFilters = (q, filters = {}) => {
   if (filters.city) q.where('rfqs.city', 'like', `%${filters.city}%`);
   if (filters.state) q.where('rfqs.state', 'like', `%${filters.state}%`);
   if (filters.country) q.where('rfqs.country', 'like', `%${filters.country}%`);
+  // Include filter (e.g. GET /rfqs/my, admin filter by buyer)
   if (filters.buyer_id) q.where('rfqs.buyer_id', filters.buyer_id);
+  // Exclude filter (public list — hide caller’s own RFQs, same pattern as products.seller_id)
+  if (filters.exclude_buyer_id) q.whereNot('rfqs.buyer_id', filters.exclude_buyer_id);
   if (filters.min_budget || filters.min_expected_price) {
     const min = filters.min_expected_price || filters.min_budget;
     q.where(function () {

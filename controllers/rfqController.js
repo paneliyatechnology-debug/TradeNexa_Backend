@@ -9,7 +9,14 @@ const { HTTP_STATUS, ADMIN_PANEL_ROLE_CODES } = require('../constants');
 
 const isAdmin = (user) => ADMIN_PANEL_ROLE_CODES.includes(user?.role);
 
-const buildListFilters = (req) => ({
+/**
+ * @param {object} req
+ * @param {{ excludeOwnBuyer?: boolean }} [options]
+ *   When true (public RFQ list), query `buyer_id` excludes that buyer’s RFQs
+ *   — same pattern as products list `seller_id` → exclude_seller_id.
+ *   When false (admin / my), `buyer_id` filters TO that buyer.
+ */
+const buildListFilters = (req, { excludeOwnBuyer = false } = {}) => ({
   search: req.query.search,
   status: req.query.status,
   category_id: req.query.category_id,
@@ -17,7 +24,9 @@ const buildListFilters = (req) => ({
   city: req.query.city,
   state: req.query.state,
   country: req.query.country,
-  buyer_id: req.query.buyer_id,
+  ...(excludeOwnBuyer
+    ? { exclude_buyer_id: req.query.buyer_id }
+    : { buyer_id: req.query.buyer_id }),
   min_budget: req.query.min_budget,
   max_budget: req.query.max_budget,
   min_expected_price: req.query.min_expected_price,
@@ -78,7 +87,8 @@ const getRfq = async (req, res, next) => {
 
 const getRfqs = async (req, res, next) => {
   try {
-    const data = await rfqModel.findRfqs(buildListFilters(req));
+    // buyer_id query param = hide that buyer’s RFQs (e.g. logged-in buyer’s own posts)
+    const data = await rfqModel.findRfqs(buildListFilters(req, { excludeOwnBuyer: true }));
     return success(res, 'RFQs list retrieved successfully', data);
   } catch (err) {
     next(err);
@@ -104,6 +114,8 @@ const getLatestRfqs = async (req, res, next) => {
       statuses: ['PUBLISHED', 'QUOTATION_RECEIVED', 'OPEN'],
       sort_by: req.query.sort_by || 'created_at',
       sort_order: req.query.sort_order || 'desc',
+      // Same as list: optional buyer_id hides that buyer’s RFQs
+      exclude_buyer_id: req.query.buyer_id,
     });
     const formatted = data.results.map((r) => ({
       id: r.id,
@@ -193,7 +205,11 @@ const compareRfqQuotations = async (req, res, next) => {
 const getSellerRfqs = async (req, res, next) => {
   try {
     await rfqModel.expireOverdueRfqs();
-    const data = await rfqModel.findSellerFeed(req.user.id, buildListFilters(req));
+    // buyer_id query = hide that buyer’s RFQs (e.g. buyer_seller’s own posts)
+    const data = await rfqModel.findSellerFeed(
+      req.user.id,
+      buildListFilters(req, { excludeOwnBuyer: true }),
+    );
     return success(res, 'Seller RFQ feed retrieved successfully', data);
   } catch (err) {
     next(err);

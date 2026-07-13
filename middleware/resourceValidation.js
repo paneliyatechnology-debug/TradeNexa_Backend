@@ -810,6 +810,7 @@ const quotationListQuery = [
 
 const rfqLatestQuery = [
   ...paginationQuery,
+  query('buyer_id').optional().isInt({ min: 1 }).withMessage('Buyer ID must be a positive integer'),
   ...listSortQuery(RFQ_SORT_BY_VALUES),
 ];
 
