@@ -136,6 +136,9 @@ const authenticate = async (req, _res, next) => {
     const user = await userModel.findUserById(decoded.userId);
     if (!user?.is_active) return next(new AppError('User not found or inactive', 401));
 
+    // Attach role code (users table only has role_id; authorize also sets this)
+    const roles = await userModel.getUserRoles(user.id);
+    user.role = roles?.[0]?.code || null;
     req.user = user;
     next();
   } catch {
@@ -169,6 +172,7 @@ const verifyRegistration = (req, _res, next) => {
 
 /**
  * Optional authentication — attaches req.user when a valid token is sent; continues as guest otherwise.
+ * Also attaches role code so handlers can detect admin/seller without requiring authorize().
  */
 const optionalAuthenticate = async (req, _res, next) => {
   try {
@@ -184,6 +188,8 @@ const optionalAuthenticate = async (req, _res, next) => {
 
     const user = await userModel.findUserById(decoded.userId);
     if (user?.is_active) {
+      const roles = await userModel.getUserRoles(user.id);
+      user.role = roles?.[0]?.code || null;
       req.user = user;
     }
     next();

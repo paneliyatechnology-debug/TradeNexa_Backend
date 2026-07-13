@@ -67,7 +67,17 @@ const withExtendedProductFields = (product = {}) => ({
   latest_review_remarks: product.latest_review_remarks ?? null,
 });
 
-const isAdminUser = (user) => ADMIN_PANEL_ROLE_CODES.includes(user?.role);
+/** Resolve role code from req.user (string, { code }, or role_code). */
+const resolveRoleCode = (user) => {
+  if (!user) return null;
+  if (typeof user.role === 'string') return user.role;
+  if (user.role?.code) return user.role.code;
+  if (typeof user.role_code === 'string') return user.role_code;
+  return null;
+};
+
+/** True when user has an admin-panel role (admin | super_admin | supporter). */
+const isAdminUser = (user) => ADMIN_PANEL_ROLE_CODES.includes(resolveRoleCode(user));
 
 const pickProductListFilters = (req, extra = {}) => ({
   search: req.query.search,
@@ -115,7 +125,7 @@ const assertCanModifyProduct = async (productId, user) => {
   return existing;
 };
 
-/** Buyers only see approved+active; owner/admin can see any status. */
+/** Buyers only see approved+active; owner/admin can see any status (incl. revision_required). */
 const assertCanViewProduct = (product, user) => {
   const approved =
     product.approval_status === PRODUCT_APPROVAL_STATUS.APPROVED || !product.approval_status;
