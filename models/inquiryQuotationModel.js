@@ -82,7 +82,10 @@ const findByInquiryId = async (inquiryId, { raw = false } = {}) => {
 
 /** Paginated list of quotes submitted by a seller. */
 const listBySeller = async (sellerId, filters = {}) => {
-  const q = baseQuery()
+  // Build query directly — avoid double .select() from baseQuery (causes Duplicate column 'id' in COUNT subquery)
+  const q = db('inquiry_quotations')
+    .leftJoin('users', 'inquiry_quotations.seller_id', '=', 'users.id')
+    .leftJoin('company_details', 'users.id', '=', 'company_details.user_id')
     .leftJoin('inquiries', 'inquiry_quotations.inquiry_id', '=', 'inquiries.id')
     .where('inquiry_quotations.seller_id', sellerId)
     .whereNull('inquiries.deleted_at')
