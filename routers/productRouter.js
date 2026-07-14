@@ -125,16 +125,6 @@ router.put(
   productController.updateProduct,
 );
 
-/** Seller resubmit after revision_required → in_review. */
-router.post(
-  '/:id/submit',
-  authenticate,
-  sellerRoles,
-  idParam,
-  validate,
-  productController.submitProductForReview,
-);
-
 /** Append-only review timeline for seller owner or admin. */
 router.get(
   '/:id/reviews',

@@ -263,7 +263,7 @@ const formatProductDetail = (row, images = [], videos = []) => {
       reviewed_at: row.reviewed_at ?? null,
       reviewed_by: row.reviewed_by ?? null,
       latest_review_remarks: row.latest_review_remarks ?? null,
-      can_resubmit: row.approval_status === 'revision_required',
+      can_resubmit: row.approval_status === 'revision_required', // seller should PUT /products/:id to resubmit
     },
     user_actions: {
       is_favourite: false,

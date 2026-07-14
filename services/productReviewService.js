@@ -200,46 +200,11 @@ const recordInitialSubmission = async (product, actorId, actorRole = 'seller', t
 };
 
 /**
- * Seller resubmit after revision_required → in_review (bumps review_version).
- * Rejected products cannot be resubmitted.
- */
-const submitForReview = async (productId, sellerId, role) => {
-  const product = await productModel.findProductById(productId, { raw: true });
-  if (!product) throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
-
-  const admin = isAdminRole(role);
-  if (!admin && String(product.seller_id) !== String(sellerId)) {
-    throw new AppError('Forbidden: You can only submit your own products', HTTP_STATUS.FORBIDDEN);
-  }
-
-  if (product.approval_status === PRODUCT_APPROVAL_STATUS.REJECTED) {
-    throw new AppError('Rejected products cannot be resubmitted', HTTP_STATUS.CONFLICT);
-  }
-
-  if (product.approval_status !== PRODUCT_APPROVAL_STATUS.REVISION_REQUIRED) {
-    throw new AppError(
-      'Only products with revision_required status can be submitted for review',
-      HTTP_STATUS.CONFLICT,
-    );
-  }
-
-  const updated = await applyStatusChange(product, {
-    toStatus: PRODUCT_APPROVAL_STATUS.IN_REVIEW,
-    action: PRODUCT_REVIEW_ACTION.RESUBMITTED,
-    actorId: sellerId,
-    actorRole: role || 'seller',
-    actorType: 'seller',
-    bumpVersion: true,
-  });
-
-  notify('PRODUCT_RESUBMITTED', { productId, sellerId });
-  return updated;
-};
-
-/**
- * After seller update: block rejected; force re-review when material fields
- * (or media) change on an already-approved product.
- * Soft updates (e.g. stock_quantity, is_active) keep approved status.
+ * After seller update: keep approval workflow consistent with status.
+ * - Rejected → blocked
+ * - revision_required → any successful update resubmits to in_review (replaces old POST /submit)
+ * - approved + material/media change → back to in_review
+ * - in_review → edits allowed, status unchanged
  *
  * @param {Object} existing - Product row before update
  * @param {Object} updatePayload - Fields being written; may include `__has_media_change`
@@ -254,7 +219,28 @@ const handleSellerUpdateApproval = async (existing, updatePayload, actorId, acto
     throw new AppError('Rejected products cannot be updated', HTTP_STATUS.CONFLICT);
   }
 
-  // Still in queue or revision — edits allowed without status change
+  // Seller fixed items after admin revision — update itself is the resubmit
+  if (status === PRODUCT_APPROVAL_STATUS.REVISION_REQUIRED) {
+    delete updatePayload.__has_media_change;
+    const refreshed = await productModel.findProductById(existing.id, { raw: true });
+    const updated = await applyStatusChange(refreshed, {
+      toStatus: PRODUCT_APPROVAL_STATUS.IN_REVIEW,
+      action: PRODUCT_REVIEW_ACTION.RESUBMITTED,
+      actorId,
+      actorRole: actorRole || 'seller',
+      actorType: 'seller',
+      bumpVersion: true,
+      metadata: { reason: 'update_after_revision_required' },
+    });
+
+    notify('PRODUCT_RESUBMITTED', {
+      productId: existing.id,
+      sellerId: actorId,
+      reason: 'revision_update',
+    });
+    return updated;
+  }
+
   if (status !== PRODUCT_APPROVAL_STATUS.APPROVED) {
     return null;
   }
@@ -427,7 +413,6 @@ const getReviewHistory = async (productId, viewer, filters = {}) => {
 
 module.exports = {
   recordInitialSubmission,
-  submitForReview,
   approveProducts,
   requestRevision,
   rejectProducts,

@@ -60,7 +60,7 @@ const PRODUCT_APPROVAL_TRANSITIONS = {
     [PRODUCT_APPROVAL_STATUS.REJECTED]: { actor: 'admin', remarksRequired: true },
   },
   [PRODUCT_APPROVAL_STATUS.REVISION_REQUIRED]: {
-    // Seller submit-for-review only
+    // Seller updates product (PUT) to resubmit
     [PRODUCT_APPROVAL_STATUS.IN_REVIEW]: { actor: 'seller', remarksRequired: false },
   },
   [PRODUCT_APPROVAL_STATUS.APPROVED]: {

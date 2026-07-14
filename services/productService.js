@@ -187,7 +187,8 @@ const createProduct = async (data, files = {}, userId = null, actorRole = 'selle
 /**
  * Update a product. Text fields and media uploads are all optional.
  * - Rejected products cannot be updated.
- * - Material edits (or media changes) on approved products auto-send back to `in_review`.
+ * - revision_required → successful update auto-resubmits to in_review (replaces POST /submit).
+ * - Material edits (or media changes) on approved products auto-send back to in_review.
  *
  * @param {number} id
  * @param {Object} data

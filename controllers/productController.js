@@ -338,6 +338,7 @@ const getRelatedProducts = async (req, res, next) => {
 
 /**
  * PUT /products/:id
+ * Seller/admin update. If status is revision_required, update auto-resubmits to in_review.
  */
 const updateProduct = async (req, res, next) => {
   try {
@@ -351,6 +352,9 @@ const updateProduct = async (req, res, next) => {
       return next(new AppError('Forbidden: Cannot change product seller', HTTP_STATUS.FORBIDDEN));
     }
 
+    const wasRevisionRequired =
+      existing.approval_status === PRODUCT_APPROVAL_STATUS.REVISION_REQUIRED;
+
     const product = await productService.updateProduct(
       req.params.id,
       req.body,
@@ -358,7 +362,13 @@ const updateProduct = async (req, res, next) => {
       req.user?.id,
       req.user?.role,
     );
-    return success(res, 'Product updated successfully', product);
+
+    const message =
+      wasRevisionRequired && product?.approval_status === PRODUCT_APPROVAL_STATUS.IN_REVIEW
+        ? 'Product updated and resubmitted for review'
+        : 'Product updated successfully';
+
+    return success(res, message, product);
   } catch (err) {
     next(err);
   }
@@ -388,7 +398,10 @@ const deleteProductMedia = async (req, res, next) => {
       return next(new AppError('No matching product media found to delete', HTTP_STATUS.NOT_FOUND));
     }
 
-    if (existing.approval_status === PRODUCT_APPROVAL_STATUS.APPROVED) {
+    if (
+      existing.approval_status === PRODUCT_APPROVAL_STATUS.APPROVED ||
+      existing.approval_status === PRODUCT_APPROVAL_STATUS.REVISION_REQUIRED
+    ) {
       await productReviewService.handleSellerUpdateApproval(
         existing,
         { __has_media_change: true },
@@ -421,23 +434,6 @@ const deleteProduct = async (req, res, next) => {
 // ==========================================
 // Approval workflow — seller
 // ==========================================
-
-/**
- * POST /products/:id/submit
- * Seller resubmits after `revision_required` → `in_review`.
- */
-const submitProductForReview = async (req, res, next) => {
-  try {
-    const product = await productReviewService.submitForReview(
-      req.params.id,
-      req.user.id,
-      req.user.role,
-    );
-    return success(res, 'Product resubmitted for review', product);
-  } catch (err) {
-    next(err);
-  }
-};
 
 /**
  * GET /products/:id/reviews
@@ -547,7 +543,6 @@ module.exports = {
   updateProduct,
   deleteProductMedia,
   deleteProduct,
-  submitProductForReview,
   getProductReviews,
   getAdminProductReviews,
   approveProducts,
