@@ -36,6 +36,7 @@ const generateQuotationNumber = (dbOrTrx) =>
   generateSequentialNumber(dbOrTrx, 'quotations', 'quotation_number', 'QT');
 
 module.exports = {
+  generateSequentialNumber,
   generateRfqNumber,
   generateQuotationNumber,
 };

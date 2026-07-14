@@ -2,7 +2,7 @@
  * Chat message data access.
  *
  * Supports TEXT, IMAGE, DOCUMENT, PRODUCT, QUOTATION, and SYSTEM message types.
- * Metadata JSON stores attachments, product/quotation refs, and RFQ event payloads.
+ * Each message has is_read / read_at for per-message read receipts.
  */
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
@@ -13,7 +13,6 @@ const { CHAT_MESSAGE_TYPE } = require('../constants/chat');
 // Metadata helpers
 // ==========================================
 
-/** Parse JSON metadata from DB (string or object). */
 const parseMetadata = (value) => {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value === 'object') return value;
@@ -24,7 +23,6 @@ const parseMetadata = (value) => {
   }
 };
 
-/** Serialize metadata for MySQL JSON column writes. */
 const serializeMetadataForDb = (value) => {
   if (value === undefined || value === null) return null;
   if (typeof value === 'string') {
@@ -39,7 +37,6 @@ const serializeMetadataForDb = (value) => {
 // Formatting helpers
 // ==========================================
 
-/** Format a message row for API output (resolves media URLs in metadata). */
 const formatMessageRow = (row) => {
   const metadata = parseMetadata(row.metadata);
   const formattedMetadata = metadata ? { ...metadata } : null;
@@ -56,14 +53,16 @@ const formatMessageRow = (row) => {
     sender_company_name: row.sender_company_name || null,
     message_type: row.message_type,
     content: row.content,
+    message: row.content,
     metadata: formattedMetadata,
     reply_to_message_id: row.reply_to_message_id,
+    is_read: row.is_read !== undefined ? !!row.is_read : false,
+    read_at: row.read_at || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 };
 
-/** Build inbox preview text from message type and content. */
 const buildPreview = (messageType, content, metadata) => {
   switch (messageType) {
     case CHAT_MESSAGE_TYPE.TEXT:
@@ -89,7 +88,6 @@ const buildPreview = (messageType, content, metadata) => {
 // Query builders
 // ==========================================
 
-/** Base query with sender name and company joins. */
 const baseMessageQuery = () =>
   db('chat_messages')
     .leftJoin('users', 'users.id', 'chat_messages.sender_id')
@@ -105,22 +103,16 @@ const baseMessageQuery = () =>
 // Read operations
 // ==========================================
 
-/** Find a single message by ID with formatted output. */
 const findById = async (id) => {
   const row = await baseMessageQuery().where('chat_messages.id', id).first();
   return row ? formatMessageRow(row) : null;
 };
 
-/** Find raw message row (for transactions/internal use). */
 const findRawById = (id, trx = null) => {
   const client = trx || db;
   return client('chat_messages').where({ id }).whereNull('deleted_at').first();
 };
 
-/**
- * Paginated message list for a conversation.
- * Supports cursor pagination via before_id / after_id.
- */
 const listMessages = async (conversationId, filters = {}) => {
   const q = baseMessageQuery().where('chat_messages.conversation_id', conversationId);
 
@@ -143,7 +135,6 @@ const listMessages = async (conversationId, filters = {}) => {
   return paginated;
 };
 
-/** Latest message ID in a conversation (used for read receipts). */
 const getLatestMessageId = async (conversationId, trx = null) => {
   const client = trx || db;
   const row = await client('chat_messages')
@@ -155,15 +146,40 @@ const getLatestMessageId = async (conversationId, trx = null) => {
   return row?.id || null;
 };
 
+/**
+ * Mark unread messages from other participants as read for this viewer.
+ * @returns {Promise<number[]>} IDs of messages that were marked read
+ */
+const markMessagesReadForViewer = async (conversationId, viewerId, upToMessageId = null, trx = null) => {
+  const client = trx || db;
+  const q = client('chat_messages')
+    .where({ conversation_id: conversationId, is_read: false })
+    .whereNull('deleted_at')
+    .where((builder) => {
+      builder.whereNot('sender_id', viewerId).orWhereNull('sender_id');
+    });
+
+  if (upToMessageId) {
+    q.where('id', '<=', upToMessageId);
+  }
+
+  const rows = await q.clone().select('id');
+  const ids = rows.map((r) => r.id);
+  if (!ids.length) return [];
+
+  await client('chat_messages').whereIn('id', ids).update({
+    is_read: true,
+    read_at: client.fn.now(),
+    updated_at: client.fn.now(),
+  });
+
+  return ids;
+};
+
 // ==========================================
 // Write operations
 // ==========================================
 
-/**
- * Insert a new chat message.
- * @param {Object} data - Message payload
- * @param {Object|null} [trx] - Optional Knex transaction
- */
 const createMessage = async (data, trx = null) => {
   const client = trx || db;
   const [id] = await client('chat_messages').insert({
@@ -173,15 +189,13 @@ const createMessage = async (data, trx = null) => {
     content: data.content ?? null,
     metadata: serializeMetadataForDb(data.metadata),
     reply_to_message_id: data.reply_to_message_id ?? null,
+    is_read: data.is_read !== undefined ? !!data.is_read : false,
+    read_at: data.read_at || null,
     created_at: client.fn.now(),
     updated_at: client.fn.now(),
   });
   return client('chat_messages').where({ id }).first();
 };
-
-// ==========================================
-// Exports
-// ==========================================
 
 module.exports = {
   formatMessageRow,
@@ -192,5 +206,6 @@ module.exports = {
   findRawById,
   listMessages,
   getLatestMessageId,
+  markMessagesReadForViewer,
   buildPreview,
 };

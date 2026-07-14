@@ -384,7 +384,7 @@ const productCreateRules = [
   requiredBooleanField('show_price', 'Show price'),
   requiredBooleanField('accept_inquiry', 'Accept inquiry'),
   requiredBooleanField('is_active', 'Product status'),
-  body('seller_id').isInt().withMessage('Seller ID is required and must be an integer'),
+  // seller_id comes from JWT — do not accept from body
   body('description').optional({ values: 'falsy' }).trim().isLength({ max: 5000 }).withMessage('Description too long'),
   body('warranty').optional({ values: 'falsy' }).trim().isLength({ max: 100 }).withMessage('Warranty too long'),
   body('stock_quantity').optional({ values: 'falsy' }).isInt({ min: 0 }).withMessage('Stock quantity must be a non-negative integer'),
@@ -443,7 +443,7 @@ const productUpdateRules = [
   optionalBooleanField('show_price'),
   optionalBooleanField('accept_inquiry'),
   optionalBooleanField('is_active'),
-  optionalRequiredInt('seller_id', 'Seller ID', { min: 1 }),
+  // seller_id comes from JWT / existing owner — ignore body
   body('description').optional({ values: 'falsy' }).trim().isLength({ max: 5000 }).withMessage('Description too long'),
   body('warranty').optional({ values: 'falsy' }).trim().isLength({ max: 100 }).withMessage('Warranty too long'),
   body('stock_quantity').optional({ values: 'falsy' }).isInt({ min: 0 }).withMessage('Stock quantity must be a non-negative integer'),
@@ -650,6 +650,58 @@ const offerUpdateRules = [
 // ==========================================
 
 const { RFQ_STATUS, RFQ_VISIBILITY, RFQ_SORT_BY_VALUES, QUOTATION_STATUS, QUOTATION_SORT_BY_VALUES } = require('../constants/rfq');
+const {
+  INQUIRY_STATUS_VALUES,
+  INQUIRY_SORT_BY_VALUES,
+} = require('../constants/inquiry');
+
+// ==========================================
+// Inquiry validations (/inquiries)
+// ==========================================
+
+/** POST /inquiries — buyer product inquiry form. */
+const inquiryCreateRules = [
+  body('product_id').isInt({ min: 1 }).withMessage('product_id is required and must be a positive integer'),
+  body('quantity').isInt({ min: 1 }).withMessage('quantity is required and must be at least 1'),
+  body('message')
+    .trim()
+    .notEmpty()
+    .withMessage('message is required')
+    .isLength({ min: 10, max: 2000 })
+    .withMessage('message must be 10 to 2000 characters'),
+  body('unit').optional({ values: 'falsy' }).trim().isLength({ max: 50 }).withMessage('Unit must be at most 50 characters'),
+  body('expected_price').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('expected_price must be positive'),
+  body('currency').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
+  body('required_before').optional({ values: 'falsy' }).isISO8601().withMessage('required_before must be a valid ISO8601 timestamp'),
+];
+
+/** PUT /inquiries/:id — buyer may update while pending. */
+const inquiryUpdateRules = [
+  body('quantity').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('quantity must be at least 1'),
+  body('message')
+    .optional()
+    .trim()
+    .isLength({ min: 10, max: 2000 })
+    .withMessage('message must be 10 to 2000 characters'),
+  body('unit').optional({ values: 'falsy' }).trim().isLength({ max: 50 }),
+  body('expected_price').optional({ values: 'falsy' }).isFloat({ min: 0 }),
+  body('currency').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
+  body('required_before').optional({ values: 'falsy' }).isISO8601(),
+];
+
+/** GET /inquiries/my and /inquiries/seller list query. */
+const inquiryListQuery = [
+  ...paginationQuery,
+  query('status').optional().isIn(INQUIRY_STATUS_VALUES).withMessage('Invalid inquiry status'),
+  query('product_id').optional().isInt({ min: 1 }).withMessage('product_id must be a positive integer'),
+  ...listSortQuery(INQUIRY_SORT_BY_VALUES),
+];
+
+/** POST /inquiries/:id/reject — optional seller reason. */
+const inquiryRejectRules = [
+  body('reason').optional({ values: 'falsy' }).trim().isLength({ max: 1000 }),
+  body('reject_reason').optional({ values: 'falsy' }).trim().isLength({ max: 1000 }),
+];
 
 const RFQ_PINCODE_REGEX = /^[1-9][0-9]{5}$/;
 
@@ -804,13 +856,13 @@ const quotationListQuery = [
   ...paginationQuery,
   query('status').optional().isIn(Object.values(QUOTATION_STATUS)).withMessage('Invalid quotation status'),
   query('rfq_id').optional().isInt({ min: 1 }).withMessage('rfq_id must be a positive integer'),
+  query('inquiry_id').optional().isInt({ min: 1 }).withMessage('inquiry_id must be a positive integer'),
   query('seller_id').optional().isInt({ min: 1 }).withMessage('seller_id must be a positive integer'),
   ...listSortQuery(QUOTATION_SORT_BY_VALUES),
 ];
 
 const rfqLatestQuery = [
   ...paginationQuery,
-  query('buyer_id').optional().isInt({ min: 1 }).withMessage('Buyer ID must be a positive integer'),
   ...listSortQuery(RFQ_SORT_BY_VALUES),
 ];
 
@@ -917,6 +969,8 @@ const { CHAT_MESSAGE_TYPE_VALUES, CHAT_CONVERSATION_SORT_BY_VALUES } = require('
 const chatConversationListQuery = [
   ...paginationQuery,
   query('rfq_id').optional().isInt({ min: 1 }).withMessage('rfq_id must be a positive integer'),
+  query('inquiry_id').optional().isInt({ min: 1 }).withMessage('inquiry_id must be a positive integer'),
+  query('context_type').optional().isIn(['rfq', 'inquiry']).withMessage('context_type must be rfq or inquiry'),
   query('role').optional().isIn(['buyer', 'seller']).withMessage('role must be buyer or seller'),
   query('search').optional().trim(),
   ...listSortQuery(CHAT_CONVERSATION_SORT_BY_VALUES),
@@ -930,13 +984,28 @@ const chatMessageListQuery = [
   query('order').optional().isIn(['asc', 'desc']).withMessage('order must be asc or desc'),
 ];
 
-/** POST /chats/conversations — start or get existing RFQ thread. */
+/** POST /chats/conversations — start or get RFQ or inquiry thread. */
 const chatStartConversationRules = [
-  body('rfq_id').isInt({ min: 1 }).withMessage('rfq_id is required and must be a positive integer'),
+  body('rfq_id')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 1 })
+    .withMessage('rfq_id must be a positive integer'),
+  body('inquiry_id')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 1 })
+    .withMessage('inquiry_id must be a positive integer'),
   body('seller_id')
     .optional({ values: 'falsy' })
     .isInt({ min: 1 })
     .withMessage('seller_id must be a positive integer'),
+  body().custom((_, { req }) => {
+    const hasRfq = !!req.body.rfq_id;
+    const hasInquiry = !!req.body.inquiry_id;
+    if (hasRfq === hasInquiry) {
+      throw new Error('Provide exactly one of rfq_id or inquiry_id');
+    }
+    return true;
+  }),
 ];
 
 /** POST /chats/conversations/:id/messages — TEXT, PRODUCT, QUOTATION body rules. */
@@ -1096,6 +1165,10 @@ module.exports = {
   quotationUpdateRules,
   quotationRevisionRules,
   adminRfqStatusRules,
+  inquiryCreateRules,
+  inquiryUpdateRules,
+  inquiryListQuery,
+  inquiryRejectRules,
   serviceCreateRules,
   serviceUpdateRules,
   serviceListQuery,

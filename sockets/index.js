@@ -1,8 +1,8 @@
 /**
- * Socket.IO server — JWT authentication, chat rooms, typing, presence, and read receipts.
+ * Socket.IO server — JWT auth, chat rooms, typing, presence, send_message, read receipts.
  *
- * Mounted from server.js on the shared HTTP server at path /socket.io.
- * Clients authenticate via handshake.auth.token or Authorization header.
+ * Canonical client events: send_message, typing_start, typing_stop, mark_messages_read
+ * Legacy aliases still supported for older clients.
  */
 const { Server } = require('socket.io');
 const { verifyAccess } = require('../utils/jwt');
@@ -11,18 +11,12 @@ const userModel = require('../models/userModel');
 const userPresenceModel = require('../models/userPresenceModel');
 const chatService = require('../services/chatService');
 const chatSocketEmitter = require('../services/chatSocketEmitter');
-const { CHAT_PRESENCE_STATUS, CHAT_SOCKET_EVENT } = require('../constants/chat');
+const { CHAT_PRESENCE_STATUS, CHAT_SOCKET_EVENT, CHAT_MESSAGE_TYPE } = require('../constants/chat');
 const config = require('../config');
 const logger = require('../utils/logger');
 
-// ==========================================
-// In-memory connection tracking
-// ==========================================
-
-/** userId → Set<socketId> — supports multiple tabs/devices per user. */
 const onlineUsers = new Map();
 
-/** Extract JWT from Socket.IO handshake (auth.token, query, or Authorization header). */
 const extractToken = (socket) => {
   const authToken = socket.handshake.auth?.token || socket.handshake.query?.token;
   if (authToken) return String(authToken).replace(/^Bearer\s+/i, '').trim();
@@ -38,7 +32,6 @@ const addOnlineSocket = (userId, socketId) => {
   onlineUsers.get(userId).add(socketId);
 };
 
-/** Remove socket; returns false when user has no remaining connections. */
 const removeOnlineSocket = (userId, socketId) => {
   const sockets = onlineUsers.get(userId);
   if (!sockets) return false;
@@ -52,15 +45,6 @@ const removeOnlineSocket = (userId, socketId) => {
 
 const isUserOnline = (userId) => onlineUsers.has(userId);
 
-// ==========================================
-// Server bootstrap
-// ==========================================
-
-/**
- * Initialize Socket.IO on the HTTP server and register chat event handlers.
- * @param {import('http').Server} httpServer
- * @returns {import('socket.io').Server}
- */
 const initSocket = (httpServer) => {
   const corsOrigins = config.corsOrigins === '*' ? '*' : config.corsOrigins;
 
@@ -74,10 +58,6 @@ const initSocket = (httpServer) => {
   });
 
   chatSocketEmitter.setIo(io);
-
-  // ==========================================
-  // JWT authentication middleware
-  // ==========================================
 
   io.use(async (socket, next) => {
     try {
@@ -97,10 +77,6 @@ const initSocket = (httpServer) => {
     }
   });
 
-  // ==========================================
-  // Connection lifecycle
-  // ==========================================
-
   io.on('connection', async (socket) => {
     const userId = socket.user.id;
     socket.join(chatSocketEmitter.userRoom(userId));
@@ -117,7 +93,7 @@ const initSocket = (httpServer) => {
     }
 
     // ==========================================
-    // Conversation room events
+    // Conversation rooms
     // ==========================================
 
     socket.on(CHAT_SOCKET_EVENT.CONVERSATION_JOIN, async ({ conversation_id: conversationId }) => {
@@ -136,11 +112,40 @@ const initSocket = (httpServer) => {
     });
 
     // ==========================================
-    // Typing indicators
+    // Send message (socket)
     // ==========================================
 
-    socket.on(CHAT_SOCKET_EVENT.TYPING_START, async ({ conversation_id: conversationId }) => {
+    const handleSendMessage = async (payload = {}) => {
       try {
+        const conversationId = payload.conversation_id;
+        if (!conversationId) {
+          socket.emit(CHAT_SOCKET_EVENT.ERROR, { message: 'conversation_id is required' });
+          return;
+        }
+
+        await chatService.assertUserCanJoinConversation(conversationId, userId);
+        // Persist + broadcast (receive_message / message:new) via chatService
+        await chatService.sendMessage(conversationId, userId, {
+          message_type: payload.message_type || CHAT_MESSAGE_TYPE.TEXT,
+          content: payload.content || payload.message,
+          product_id: payload.product_id,
+          quotation_id: payload.quotation_id,
+          reply_to_message_id: payload.reply_to_message_id,
+        });
+      } catch (error) {
+        socket.emit(CHAT_SOCKET_EVENT.ERROR, { message: error.message });
+      }
+    };
+
+    socket.on(CHAT_SOCKET_EVENT.SEND_MESSAGE, handleSendMessage);
+
+    // ==========================================
+    // Typing
+    // ==========================================
+
+    const handleTypingStart = async ({ conversation_id: conversationId } = {}) => {
+      try {
+        if (!conversationId) return;
         await chatService.assertUserCanJoinConversation(conversationId, userId);
         chatSocketEmitter.emitTyping(conversationId, {
           user_id: userId,
@@ -149,10 +154,11 @@ const initSocket = (httpServer) => {
       } catch (error) {
         socket.emit(CHAT_SOCKET_EVENT.ERROR, { message: error.message });
       }
-    });
+    };
 
-    socket.on(CHAT_SOCKET_EVENT.TYPING_STOP, async ({ conversation_id: conversationId }) => {
+    const handleTypingStop = async ({ conversation_id: conversationId } = {}) => {
       try {
+        if (!conversationId) return;
         await chatService.assertUserCanJoinConversation(conversationId, userId);
         chatSocketEmitter.emitTyping(conversationId, {
           user_id: userId,
@@ -161,25 +167,39 @@ const initSocket = (httpServer) => {
       } catch (error) {
         socket.emit(CHAT_SOCKET_EVENT.ERROR, { message: error.message });
       }
-    });
+    };
+
+    socket.on(CHAT_SOCKET_EVENT.TYPING_START, handleTypingStart);
+    socket.on(CHAT_SOCKET_EVENT.TYPING_STOP, handleTypingStop);
+    socket.on(CHAT_SOCKET_EVENT.TYPING_START_LEGACY, handleTypingStart);
+    socket.on(CHAT_SOCKET_EVENT.TYPING_STOP_LEGACY, handleTypingStop);
 
     // ==========================================
-    // Read receipts
+    // Mark messages read
     // ==========================================
 
-    socket.on(
-      CHAT_SOCKET_EVENT.MESSAGE_READ,
-      async ({ conversation_id: conversationId, last_read_message_id: lastReadMessageId }) => {
-        try {
-          await chatService.markConversationRead(conversationId, userId, lastReadMessageId || null);
-        } catch (error) {
-          socket.emit(CHAT_SOCKET_EVENT.ERROR, { message: error.message });
+    const handleMarkRead = async (payload = {}) => {
+      try {
+        const conversationId = payload.conversation_id;
+        if (!conversationId) {
+          socket.emit(CHAT_SOCKET_EVENT.ERROR, { message: 'conversation_id is required' });
+          return;
         }
-      },
-    );
+        await chatService.markConversationRead(
+          conversationId,
+          userId,
+          payload.last_read_message_id || null,
+        );
+      } catch (error) {
+        socket.emit(CHAT_SOCKET_EVENT.ERROR, { message: error.message });
+      }
+    };
+
+    socket.on(CHAT_SOCKET_EVENT.MARK_MESSAGES_READ, handleMarkRead);
+    socket.on(CHAT_SOCKET_EVENT.MESSAGE_READ_LEGACY, handleMarkRead);
 
     // ==========================================
-    // Presence heartbeat
+    // Presence
     // ==========================================
 
     socket.on(CHAT_SOCKET_EVENT.PRESENCE_PING, async () => {
@@ -189,10 +209,6 @@ const initSocket = (httpServer) => {
         status: CHAT_PRESENCE_STATUS.ONLINE,
       });
     });
-
-    // ==========================================
-    // Disconnect
-    // ==========================================
 
     socket.on('disconnect', async () => {
       const stillOnline = removeOnlineSocket(userId, socket.id);

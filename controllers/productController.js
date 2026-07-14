@@ -4,6 +4,7 @@ const productModel = require('../models/productModel');
 const productService = require('../services/productService');
 const productReviewService = require('../services/productReviewService');
 const wishlistService = require('../services/wishlistService');
+const inquiryModel = require('../models/inquiryModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS, ADMIN_PANEL_ROLE_CODES } = require('../constants');
 const { PRODUCT_APPROVAL_STATUS } = require('../constants/product');
@@ -177,6 +178,19 @@ const getProduct = async (req, res, next) => {
 
     const product = await productModel.findProductDetailById(req.params.id);
     const withWishlist = await wishlistService.attachWishlistToProductDetail(product, req.user?.id);
+
+    if (withWishlist?.user_actions && req.user?.id) {
+      const inquirySent = await inquiryModel.hasInquiryForBuyerProduct(req.user.id, product.id);
+      withWishlist.user_actions.is_inquiry_sent = inquirySent;
+      withWishlist.user_actions.can_contact_seller =
+        withWishlist.marketplace?.accept_inquiry !== false &&
+        String(product.seller?.id || product.seller_id) !== String(req.user.id);
+    } else if (withWishlist?.user_actions) {
+      withWishlist.user_actions.is_inquiry_sent = false;
+      withWishlist.user_actions.can_contact_seller =
+        withWishlist.marketplace?.accept_inquiry !== false;
+    }
+
     return success(res, 'Product details retrieved successfully', withWishlist);
   } catch (err) {
     next(err);

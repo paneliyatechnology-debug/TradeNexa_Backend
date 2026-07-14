@@ -1,5 +1,8 @@
 /**
- * Chat module routes — RFQ-linked buyer/seller conversations under /chats.
+ * Chat module routes — buyer↔seller conversations under /chats.
+ *
+ * One conversation per buyer/seller pair. RFQ and inquiry flows continue
+ * the same thread and update last_context instead of creating new rooms.
  */
 const express = require('express');
 const chatController = require('../controllers/chatController');
@@ -19,6 +22,9 @@ const { param } = require('express-validator');
 const router = express.Router();
 
 const rfqIdParam = [param('rfqId').isInt({ min: 1 }).withMessage('RFQ ID must be a positive integer')];
+const inquiryIdParam = [
+  param('inquiryId').isInt({ min: 1 }).withMessage('Inquiry ID must be a positive integer'),
+];
 
 /** Buyer, seller, dual-role, and admin may access chat endpoints. */
 const chatRoles = authorize('buyer', 'seller', 'buyer_seller', 'admin');
@@ -51,6 +57,7 @@ router.post(
   chatController.startConversation,
 );
 
+/** @deprecated Prefer pair inbox; kept for RFQ multi-seller filters. */
 router.get(
   '/rfqs/:rfqId/conversations',
   authenticate,
@@ -59,6 +66,17 @@ router.get(
   chatConversationListQuery,
   validate,
   chatController.getRfqConversations,
+);
+
+/** Resolves to the shared buyer↔seller thread linked to this inquiry. */
+router.get(
+  '/inquiries/:inquiryId/conversations',
+  authenticate,
+  chatRoles,
+  inquiryIdParam,
+  chatConversationListQuery,
+  validate,
+  chatController.getInquiryConversations,
 );
 
 router.get('/conversations/:id', authenticate, chatRoles, idParam, validate, chatController.getConversation);

@@ -1,5 +1,5 @@
 /**
- * Chat module constants — message types, RFQ system events, presence, and Socket.IO events.
+ * Chat module constants — message types, system events, presence, context, Socket.IO events.
  */
 
 // ==========================================
@@ -18,7 +18,19 @@ const CHAT_MESSAGE_TYPE = {
 const CHAT_MESSAGE_TYPE_VALUES = Object.values(CHAT_MESSAGE_TYPE);
 
 // ==========================================
-// System events (RFQ workflow integration)
+// Conversation context (latest product / RFQ / enquiry)
+// ==========================================
+
+const CHAT_CONTEXT_TYPE = {
+  PRODUCT: 'product',
+  RFQ: 'rfq',
+  ENQUIRY: 'enquiry',
+};
+
+const CHAT_CONTEXT_TYPE_VALUES = Object.values(CHAT_CONTEXT_TYPE);
+
+// ==========================================
+// System events (RFQ / inquiry workflow)
 // ==========================================
 
 const CHAT_SYSTEM_EVENT = {
@@ -31,6 +43,10 @@ const CHAT_SYSTEM_EVENT = {
   QUOTATION_WITHDRAWN: 'QUOTATION_WITHDRAWN',
   RFQ_AWARDED: 'RFQ_AWARDED',
   RFQ_CANCELLED: 'RFQ_CANCELLED',
+  INQUIRY_CREATED: 'INQUIRY_CREATED',
+  INQUIRY_REJECTED: 'INQUIRY_REJECTED',
+  INQUIRY_CANCELLED: 'INQUIRY_CANCELLED',
+  INQUIRY_ACCEPTED: 'INQUIRY_ACCEPTED',
 };
 
 const CHAT_SYSTEM_EVENT_LABELS = {
@@ -43,6 +59,10 @@ const CHAT_SYSTEM_EVENT_LABELS = {
   [CHAT_SYSTEM_EVENT.QUOTATION_WITHDRAWN]: 'Quotation withdrawn',
   [CHAT_SYSTEM_EVENT.RFQ_AWARDED]: 'RFQ awarded',
   [CHAT_SYSTEM_EVENT.RFQ_CANCELLED]: 'RFQ cancelled',
+  [CHAT_SYSTEM_EVENT.INQUIRY_CREATED]: 'Inquiry created',
+  [CHAT_SYSTEM_EVENT.INQUIRY_REJECTED]: 'Inquiry rejected by seller',
+  [CHAT_SYSTEM_EVENT.INQUIRY_CANCELLED]: 'Inquiry cancelled by buyer',
+  [CHAT_SYSTEM_EVENT.INQUIRY_ACCEPTED]: 'Inquiry quote accepted',
 };
 
 // ==========================================
@@ -57,19 +77,27 @@ const CHAT_PRESENCE_STATUS = {
 const CHAT_CONVERSATION_SORT_BY_VALUES = ['last_message_at', 'created_at', 'updated_at'];
 
 // ==========================================
-// Socket.IO events
+// Socket.IO events (IndiaMART-style + legacy aliases)
 // ==========================================
 
 const CHAT_SOCKET_EVENT = {
-  // Client → server
+  // Client → server (canonical)
+  SEND_MESSAGE: 'send_message',
+  TYPING_START: 'typing_start',
+  TYPING_STOP: 'typing_stop',
+  MARK_MESSAGES_READ: 'mark_messages_read',
   CONVERSATION_JOIN: 'conversation:join',
   CONVERSATION_LEAVE: 'conversation:leave',
-  TYPING_START: 'typing:start',
-  TYPING_STOP: 'typing:stop',
-  MESSAGE_READ: 'message:read',
   PRESENCE_PING: 'presence:ping',
 
+  // Legacy aliases (backward compatible)
+  TYPING_START_LEGACY: 'typing:start',
+  TYPING_STOP_LEGACY: 'typing:stop',
+  MESSAGE_READ_LEGACY: 'message:read',
+
   // Server → client
+  RECEIVE_MESSAGE: 'receive_message',
+  MESSAGES_READ: 'messages_read',
   MESSAGE_NEW: 'message:new',
   MESSAGE_READ_ACK: 'message:read',
   TYPING_INDICATOR: 'typing:indicator',
@@ -85,6 +113,8 @@ const CHAT_SOCKET_EVENT = {
 module.exports = {
   CHAT_MESSAGE_TYPE,
   CHAT_MESSAGE_TYPE_VALUES,
+  CHAT_CONTEXT_TYPE,
+  CHAT_CONTEXT_TYPE_VALUES,
   CHAT_SYSTEM_EVENT,
   CHAT_SYSTEM_EVENT_LABELS,
   CHAT_PRESENCE_STATUS,

@@ -12,6 +12,7 @@ const sellerRouter = require('./sellerRouter');
 const brandRouter = require('./brandRouter');
 const offerRouter = require('./offerRouter');
 const rfqRouter = require('./rfqRouter');
+const inquiryRouter = require('./inquiryRouter');
 const chatRouter = require('./chatRouter');
 const wishlistRouter = require('./wishlistRouter');
 const locationRouter = require('./locationRouter');
@@ -39,6 +40,7 @@ router.use('/suppliers', sellerRouter); // backward-compatible alias
 router.use('/brands', brandRouter);
 router.use('/offers', offerRouter);
 router.use('/rfqs', rfqRouter);
+router.use('/inquiries', inquiryRouter); // product inquiry → seller (chat/quote/reject)
 router.use('/chats', chatRouter);
 router.use('/wishlist', wishlistRouter);
 router.use('/locations', locationRouter);

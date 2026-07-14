@@ -1,5 +1,5 @@
 /**
- * Chat module controller — RFQ-linked buyer/seller conversations and messages.
+ * Chat module controller — buyer↔seller conversations (one thread per pair).
  */
 const chatService = require('../services/chatService');
 const userModel = require('../models/userModel');
@@ -14,7 +14,7 @@ const { HTTP_STATUS } = require('../constants');
 
 /**
  * GET /chats/conversations
- * Paginated inbox for the authenticated buyer or seller.
+ * One conversation per buyer/seller pair with last_context.
  */
 const getMyConversations = async (req, res, next) => {
   try {
@@ -25,10 +25,6 @@ const getMyConversations = async (req, res, next) => {
   }
 };
 
-/**
- * GET /chats/unread-summary
- * Total unread counts split by buyer and seller roles.
- */
 const getUnreadSummary = async (req, res, next) => {
   try {
     const data = await chatService.getUnreadSummary(req.user.id);
@@ -44,13 +40,21 @@ const getUnreadSummary = async (req, res, next) => {
 
 /**
  * POST /chats/conversations
- * Start or return an existing RFQ conversation.
- * Buyer must send seller_id; seller infers seller_id from JWT.
+ * Continue the shared buyer↔seller thread for an RFQ or inquiry (never duplicates).
  */
 const startConversation = async (req, res, next) => {
   try {
-    const { rfq_id: rfqId, seller_id: sellerId } = req.body;
+    const { rfq_id: rfqId, inquiry_id: inquiryId, seller_id: sellerId } = req.body;
     const userId = req.user.id;
+
+    if (inquiryId) {
+      const conversation = await chatService.startInquiryConversation({
+        inquiryId: parseInt(inquiryId, 10),
+        userId,
+      });
+      return success(res, 'Conversation ready', conversation, 200);
+    }
+
     const roles = await userModel.getUserRoles(userId);
     const roleCodes = roles.map((r) => r.code);
 
@@ -78,10 +82,6 @@ const startConversation = async (req, res, next) => {
   }
 };
 
-/**
- * GET /chats/rfqs/:rfqId/conversations
- * Buyer-only list of all seller threads on a single RFQ.
- */
 const getRfqConversations = async (req, res, next) => {
   try {
     const data = await chatService.listRfqConversations(req.params.rfqId, req.user.id, req.query);
@@ -91,14 +91,38 @@ const getRfqConversations = async (req, res, next) => {
   }
 };
 
+const getInquiryConversations = async (req, res, next) => {
+  try {
+    const data = await chatService.listInquiryConversations(
+      req.params.inquiryId,
+      req.user.id,
+      req.query,
+    );
+    return success(res, 'Inquiry conversations retrieved successfully', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 /**
  * GET /chats/conversations/:id
- * Conversation detail with participant info and presence.
+ * Chat screen: conversation + latest context + messages (marks read by default).
+ * Pass ?messages=false for metadata-only detail.
  */
 const getConversation = async (req, res, next) => {
   try {
+    const includeMessages = req.query.messages !== 'false';
+    if (includeMessages) {
+      const data = await chatService.getConversationScreen(req.params.id, req.user.id, req.query);
+      return success(res, 'Conversation retrieved successfully', data);
+    }
+
     const conversation = await chatService.getConversationDetail(req.params.id, req.user.id);
-    return success(res, 'Conversation retrieved successfully', conversation);
+    return success(res, 'Conversation retrieved successfully', {
+      conversation,
+      context: conversation.context,
+      messages: null,
+    });
   } catch (err) {
     next(err);
   }
@@ -108,10 +132,6 @@ const getConversation = async (req, res, next) => {
 // Messages
 // ==========================================
 
-/**
- * GET /chats/conversations/:id/messages
- * Paginated message history for a conversation.
- */
 const getMessages = async (req, res, next) => {
   try {
     const data = await chatService.listMessages(req.params.id, req.user.id, req.query);
@@ -121,10 +141,6 @@ const getMessages = async (req, res, next) => {
   }
 };
 
-/**
- * POST /chats/conversations/:id/messages
- * Send TEXT, PRODUCT, or QUOTATION message (JSON body).
- */
 const sendMessage = async (req, res, next) => {
   try {
     const message = await chatService.sendMessage(req.params.id, req.user.id, req.body);
@@ -134,10 +150,6 @@ const sendMessage = async (req, res, next) => {
   }
 };
 
-/**
- * POST /chats/conversations/:id/messages/media
- * Send IMAGE or DOCUMENT message (multipart file upload).
- */
 const sendMediaMessage = async (req, res, next) => {
   try {
     if (!req.files?.file?.[0]) {
@@ -164,14 +176,6 @@ const sendMediaMessage = async (req, res, next) => {
   }
 };
 
-// ==========================================
-// Read receipts
-// ==========================================
-
-/**
- * POST /chats/conversations/:id/read
- * Mark messages as read and reset unread count for the current user.
- */
 const markRead = async (req, res, next) => {
   try {
     const lastReadMessageId = req.body.last_read_message_id
@@ -182,7 +186,7 @@ const markRead = async (req, res, next) => {
       req.user.id,
       lastReadMessageId,
     );
-    return success(res, 'Conversation marked as read', conversation);
+    return success(res, 'Messages marked as read', conversation);
   } catch (err) {
     next(err);
   }
@@ -191,6 +195,7 @@ const markRead = async (req, res, next) => {
 module.exports = {
   getMyConversations,
   getRfqConversations,
+  getInquiryConversations,
   getUnreadSummary,
   startConversation,
   getConversation,

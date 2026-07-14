@@ -1,8 +1,8 @@
 /**
- * Chat business logic — conversations, messages, RFQ system events, and authorization.
+ * Chat business logic — one conversation per buyer↔seller pair.
  *
- * Integrates with RFQ workflow via recordSystemEvent() for automatic SYSTEM messages.
- * Real-time delivery is delegated to chatSocketEmitter after DB persistence.
+ * RFQ / product inquiry / quotation events append into the existing pair thread
+ * and update last_context_* (never create a second conversation for the same pair).
  */
 const db = require('../database/knex');
 const chatConversationModel = require('../models/chatConversationModel');
@@ -11,13 +11,15 @@ const userPresenceModel = require('../models/userPresenceModel');
 const rfqModel = require('../models/rfqModel');
 const rfqSellerModel = require('../models/rfqSellerModel');
 const quotationModel = require('../models/quotationModel');
+const inquiryModel = require('../models/inquiryModel');
+const inquiryQuotationModel = require('../models/inquiryQuotationModel');
 const productModel = require('../models/productModel');
-const userModel = require('../models/userModel');
 const { AppError } = require('../utils/response');
 const {
   CHAT_MESSAGE_TYPE,
   CHAT_SYSTEM_EVENT,
   CHAT_SYSTEM_EVENT_LABELS,
+  CHAT_CONTEXT_TYPE,
 } = require('../constants/chat');
 const { RFQ_STATUS } = require('../constants/rfq');
 const chatSocketEmitter = require('./chatSocketEmitter');
@@ -28,20 +30,18 @@ const logger = require('../utils/logger');
 // ==========================================
 
 const getUserRoleInConversation = (conversation, userId) => {
-  if (conversation.buyer_id === userId) return 'buyer';
-  if (conversation.seller_id === userId) return 'seller';
+  if (Number(conversation.buyer_id) === Number(userId)) return 'buyer';
+  if (Number(conversation.seller_id) === Number(userId)) return 'seller';
   return null;
 };
 
-/** Ensure the user is a participant (buyer or seller) in the conversation. */
 const assertConversationParticipant = (conversation, userId) => {
   const role = getUserRoleInConversation(conversation, userId);
   if (!role) throw new AppError('Forbidden: Access denied', 403);
   return role;
 };
 
-/** Validate RFQ and user roles before creating a new conversation thread. */
-const assertCanStartConversation = async (rfq, userId, sellerId) => {
+const assertCanStartRfqChat = async (rfq, userId, sellerId) => {
   if (rfq.status === RFQ_STATUS.DRAFT) {
     throw new AppError('Cannot start chat on draft RFQ', 400);
   }
@@ -50,18 +50,55 @@ const assertCanStartConversation = async (rfq, userId, sellerId) => {
   if (userId !== buyerId && userId !== sellerId) {
     throw new AppError('Forbidden: Access denied', 403);
   }
-
   if (buyerId === sellerId) {
     throw new AppError('Buyer and seller cannot be the same user', 400);
   }
-
   if (userId === sellerId) {
     const allowed = await rfqSellerModel.isSellerAllowed(rfq, sellerId);
     if (!allowed) throw new AppError('Forbidden: RFQ not available', 403);
   }
 };
 
-/** Load conversation with participant presence for detail/inbox views. */
+const resolveContextPayload = async (conversationRow) => {
+  if (!conversationRow) return null;
+  const formatted = chatConversationModel.formatLastContext(conversationRow);
+  if (formatted) return formatted;
+
+  // Fallback for joined row missing titles — load titles on demand
+  if (!conversationRow.last_context_type || !conversationRow.last_context_id) return null;
+
+  if (conversationRow.last_context_type === CHAT_CONTEXT_TYPE.PRODUCT) {
+    const product = await productModel.findProductById(conversationRow.last_context_id);
+    return {
+      type: CHAT_CONTEXT_TYPE.PRODUCT,
+      id: conversationRow.last_context_id,
+      title: product?.name || null,
+    };
+  }
+  if (conversationRow.last_context_type === CHAT_CONTEXT_TYPE.RFQ) {
+    const rfq = await rfqModel.findRfqById(conversationRow.last_context_id, { raw: true });
+    return {
+      type: CHAT_CONTEXT_TYPE.RFQ,
+      id: conversationRow.last_context_id,
+      title: rfq?.title || rfq?.rfq_number || null,
+    };
+  }
+  if (conversationRow.last_context_type === CHAT_CONTEXT_TYPE.ENQUIRY) {
+    const inquiry = await inquiryModel.findById(conversationRow.last_context_id);
+    return {
+      type: CHAT_CONTEXT_TYPE.ENQUIRY,
+      id: conversationRow.last_context_id,
+      title: inquiry?.product?.name || inquiry?.inquiry_number || null,
+    };
+  }
+  return {
+    type: conversationRow.last_context_type,
+    id: conversationRow.last_context_id,
+    title: null,
+  };
+};
+
+/** Load conversation with presence for detail views. */
 const getConversationDetail = async (conversationId, viewerId) => {
   const row = await chatConversationModel.findById(conversationId);
   if (!row) throw new AppError('Conversation not found', 404);
@@ -82,6 +119,33 @@ const getConversationDetail = async (conversationId, viewerId) => {
       ...formatted.seller,
       presence: presenceMap[row.seller_id] || { status: 'offline', last_seen_at: null },
     },
+    context: await resolveContextPayload(row),
+  };
+};
+
+/**
+ * Chat screen payload: conversation + latest context + messages.
+ * Optionally marks messages as read when mark_read !== false.
+ */
+const getConversationScreen = async (conversationId, userId, filters = {}) => {
+  const conversation = await getConversationDetail(conversationId, userId);
+  const markRead = filters.mark_read !== false && filters.mark_read !== 'false';
+
+  let readResult = null;
+  if (markRead) {
+    readResult = await markConversationRead(conversationId, userId, null, { silent: false });
+  }
+
+  const messages = await chatMessageModel.listMessages(conversationId, filters);
+  const fresh = markRead ? await getConversationDetail(conversationId, userId) : conversation;
+
+  return {
+    conversation: fresh,
+    context: fresh.context || conversation.context,
+    messages,
+    ...(readResult?.message_ids
+      ? { marked_read_message_ids: readResult.message_ids }
+      : {}),
   };
 };
 
@@ -90,8 +154,7 @@ const getConversationDetail = async (conversationId, viewerId) => {
 // ==========================================
 
 /**
- * Start or return an existing RFQ conversation (buyer ↔ seller).
- * Idempotent: returns existing row when (rfq_id, seller_id) already exists.
+ * Start or continue RFQ chat on the shared buyer↔seller conversation.
  */
 const startConversation = async ({ rfqId, sellerId, userId }) => {
   const rfq = await rfqModel.findRfqById(rfqId, { raw: true });
@@ -100,28 +163,46 @@ const startConversation = async ({ rfqId, sellerId, userId }) => {
   const resolvedSellerId = sellerId || userId;
   if (!resolvedSellerId) throw new AppError('seller_id is required', 400);
 
-  await assertCanStartConversation(rfq, userId, resolvedSellerId);
+  await assertCanStartRfqChat(rfq, userId, resolvedSellerId);
 
-  const existing = await chatConversationModel.findByRfqAndSeller(rfqId, resolvedSellerId);
-  if (existing) {
-    return getConversationDetail(existing.id, userId);
-  }
-
-  const conversation = await chatConversationModel.createConversation({
-    rfq_id: rfqId,
-    buyer_id: rfq.buyer_id,
-    seller_id: resolvedSellerId,
-    initiated_by: userId,
+  const conversation = await chatConversationModel.findOrCreateBuyerSellerConversation({
+    buyerId: rfq.buyer_id,
+    sellerId: resolvedSellerId,
+    initiatedBy: userId,
+    lastContextType: CHAT_CONTEXT_TYPE.RFQ,
+    lastContextId: rfq.id,
+    rfqId: rfq.id,
   });
 
   return getConversationDetail(conversation.id, userId);
 };
 
-/** Paginated inbox for buyer or seller. */
+/**
+ * Start or continue inquiry chat on the shared buyer↔seller conversation.
+ */
+const startInquiryConversation = async ({ inquiryId, userId }) => {
+  const inquiry = await inquiryModel.findById(inquiryId, { raw: true });
+  if (!inquiry) throw new AppError('Inquiry not found', 404);
+
+  if (userId !== inquiry.buyer_id && userId !== inquiry.seller_id) {
+    throw new AppError('Forbidden: Access denied', 403);
+  }
+
+  const conversation = await chatConversationModel.findOrCreateBuyerSellerConversation({
+    buyerId: inquiry.buyer_id,
+    sellerId: inquiry.seller_id,
+    initiatedBy: userId,
+    lastContextType: inquiry.product_id ? CHAT_CONTEXT_TYPE.PRODUCT : CHAT_CONTEXT_TYPE.ENQUIRY,
+    lastContextId: inquiry.product_id || inquiry.id,
+    inquiryId: inquiry.id,
+  });
+
+  return getConversationDetail(conversation.id, userId);
+};
+
 const listMyConversations = async (userId, filters = {}) =>
   chatConversationModel.listConversationsForUser(userId, filters);
 
-/** Buyer-only: all seller threads on one RFQ. */
 const listRfqConversations = async (rfqId, userId, filters = {}) => {
   const rfq = await rfqModel.findRfqById(rfqId, { raw: true });
   if (!rfq) throw new AppError('RFQ not found', 404);
@@ -129,15 +210,37 @@ const listRfqConversations = async (rfqId, userId, filters = {}) => {
   return chatConversationModel.listConversationsByRfq(rfqId, userId, filters);
 };
 
-/** Aggregate unread counts for inbox badge display. */
+const listInquiryConversations = async (inquiryId, userId, filters = {}) => {
+  const inquiry = await inquiryModel.findById(inquiryId, { raw: true });
+  if (!inquiry) throw new AppError('Inquiry not found', 404);
+  if (inquiry.buyer_id !== userId && inquiry.seller_id !== userId) {
+    throw new AppError('Forbidden: Access denied', 403);
+  }
+  // Shared pair thread for this inquiry's buyer/seller
+  const conversation = await chatConversationModel.findByBuyerAndSeller(
+    inquiry.buyer_id,
+    inquiry.seller_id,
+  );
+  if (!conversation) {
+    return { results: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 0 } };
+  }
+  const detail = chatConversationModel.formatInboxRow(
+    await chatConversationModel.findById(conversation.id),
+    userId,
+  );
+  return {
+    results: [detail],
+    pagination: { page: 1, limit: 1, total: 1, totalPages: 1 },
+  };
+};
+
 const getUnreadSummary = async (userId) => chatConversationModel.getTotalUnreadCount(userId);
 
 // ==========================================
 // Message validation & persistence
 // ==========================================
 
-/** Validate and normalize payload by message_type before DB insert. */
-const validateMessagePayload = async (conversation, data, senderId) => {
+const validateMessagePayload = async (conversation, data) => {
   const { message_type: messageType } = data;
 
   if (messageType === CHAT_MESSAGE_TYPE.TEXT) {
@@ -162,19 +265,61 @@ const validateMessagePayload = async (conversation, data, senderId) => {
         price: product.price,
         currency: product.currency,
       },
+      contextUpdate: {
+        last_context_type: CHAT_CONTEXT_TYPE.PRODUCT,
+        last_context_id: product.id,
+      },
     };
   }
 
   if (messageType === CHAT_MESSAGE_TYPE.QUOTATION) {
     const quotationId = data.quotation_id || data.metadata?.quotation_id;
     if (!quotationId) throw new AppError('quotation_id is required for QUOTATION messages', 400);
+
+    // Prefer inquiry quotation when both pair participants match
+    const inquiryQuote = await inquiryQuotationModel.findById(quotationId, { raw: true });
+    if (inquiryQuote && Number(inquiryQuote.seller_id) === Number(conversation.seller_id)) {
+      const inquiry = await inquiryModel.findById(inquiryQuote.inquiry_id, { raw: true });
+      if (
+        inquiry &&
+        Number(inquiry.buyer_id) === Number(conversation.buyer_id) &&
+        Number(inquiry.seller_id) === Number(conversation.seller_id)
+      ) {
+        return {
+          content: data.content || `Quotation ${inquiryQuote.quotation_number}`,
+          metadata: {
+            quotation_id: inquiryQuote.id,
+            quotation_number: inquiryQuote.quotation_number,
+            price: inquiryQuote.price,
+            total_amount: inquiryQuote.total_amount,
+            currency: 'INR',
+            status: inquiryQuote.status,
+            context_type: 'enquiry',
+            inquiry_id: inquiry.id,
+          },
+          contextUpdate: inquiry.product_id
+            ? {
+                last_context_type: CHAT_CONTEXT_TYPE.PRODUCT,
+                last_context_id: inquiry.product_id,
+                inquiry_id: inquiry.id,
+              }
+            : {
+                last_context_type: CHAT_CONTEXT_TYPE.ENQUIRY,
+                last_context_id: inquiry.id,
+                inquiry_id: inquiry.id,
+              },
+        };
+      }
+    }
+
     const quotation = await quotationModel.findById(quotationId, { raw: true });
     if (!quotation) throw new AppError('Quotation not found', 404);
-    if (quotation.rfq_id !== conversation.rfq_id) {
-      throw new AppError('Quotation does not belong to this RFQ conversation', 400);
-    }
-    if (quotation.seller_id !== conversation.seller_id) {
+    if (Number(quotation.seller_id) !== Number(conversation.seller_id)) {
       throw new AppError('Quotation does not belong to this conversation', 403);
+    }
+    const rfq = await rfqModel.findRfqById(quotation.rfq_id, { raw: true });
+    if (!rfq || Number(rfq.buyer_id) !== Number(conversation.buyer_id)) {
+      throw new AppError('Quotation does not belong to this conversation', 400);
     }
     return {
       content: data.content || `Quotation ${quotation.quotation_number}`,
@@ -185,6 +330,13 @@ const validateMessagePayload = async (conversation, data, senderId) => {
         total_amount: quotation.total_amount,
         currency: quotation.currency || 'INR',
         status: quotation.status,
+        context_type: 'rfq',
+        rfq_id: quotation.rfq_id,
+      },
+      contextUpdate: {
+        last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+        last_context_id: quotation.rfq_id,
+        rfq_id: quotation.rfq_id,
       },
     };
   }
@@ -203,10 +355,9 @@ const validateMessagePayload = async (conversation, data, senderId) => {
 };
 
 /**
- * Insert message, update conversation preview, and increment recipient unread count.
- * Called inside a transaction from sendMessage / recordSystemEvent.
+ * Insert message, update conversation preview / context / unread.
  */
-const persistMessage = async (conversation, senderId, messageData, trx = null) => {
+const persistMessage = async (conversation, senderId, messageData, trx = null, options = {}) => {
   const message = await chatMessageModel.createMessage(
     {
       conversation_id: conversation.id,
@@ -215,6 +366,8 @@ const persistMessage = async (conversation, senderId, messageData, trx = null) =
       content: messageData.content,
       metadata: messageData.metadata,
       reply_to_message_id: messageData.reply_to_message_id || null,
+      is_read: false,
+      read_at: null,
     },
     trx,
   );
@@ -225,21 +378,24 @@ const persistMessage = async (conversation, senderId, messageData, trx = null) =
     chatMessageModel.parseMetadata(message.metadata),
   );
 
-  await chatConversationModel.updateConversation(
-    conversation.id,
-    {
-      last_message_id: message.id,
-      last_message_at: message.created_at,
-      last_message_preview: preview,
-    },
-    trx,
-  );
+  const conversationUpdate = {
+    last_message_id: message.id,
+    last_message_at: message.created_at,
+    last_message_preview: preview,
+    last_message_sender_id: senderId || null,
+  };
+
+  if (options.contextUpdate) {
+    Object.assign(conversationUpdate, options.contextUpdate);
+  }
+
+  await chatConversationModel.updateConversation(conversation.id, conversationUpdate, trx);
 
   if (senderId) {
     const role = getUserRoleInConversation(conversation, senderId);
     const recipientRole = role === 'buyer' ? 'seller' : 'buyer';
     await chatConversationModel.incrementUnreadForRecipient(conversation.id, recipientRole, trx);
-  } else {
+  } else if (!options.skipSystemUnread) {
     await chatConversationModel.incrementUnreadForRecipient(conversation.id, 'buyer', trx);
     await chatConversationModel.incrementUnreadForRecipient(conversation.id, 'seller', trx);
   }
@@ -251,13 +407,12 @@ const persistMessage = async (conversation, senderId, messageData, trx = null) =
 // Message operations (REST)
 // ==========================================
 
-/** Send TEXT, PRODUCT, or QUOTATION message; emits Socket.IO events after commit. */
 const sendMessage = async (conversationId, userId, data) => {
   const conversation = await chatConversationModel.findById(conversationId);
   if (!conversation) throw new AppError('Conversation not found', 404);
   assertConversationParticipant(conversation, userId);
 
-  const payload = await validateMessagePayload(conversation, data, userId);
+  const payload = await validateMessagePayload(conversation, data);
 
   const rawMessage = await db.transaction(async (trx) =>
     persistMessage(
@@ -270,18 +425,19 @@ const sendMessage = async (conversationId, userId, data) => {
         reply_to_message_id: data.reply_to_message_id,
       },
       trx,
+      { contextUpdate: payload.contextUpdate },
     ),
   );
 
   const message = await chatMessageModel.findById(rawMessage.id);
+  const freshConversation = await chatConversationModel.findById(conversationId);
 
-  chatSocketEmitter.emitNewMessage(conversation, message);
+  chatSocketEmitter.emitNewMessage(freshConversation || conversation, message);
   chatSocketEmitter.emitConversationUpdated(conversation.id, userId);
 
   return message;
 };
 
-/** Send IMAGE or DOCUMENT message after multipart upload. */
 const sendMediaMessage = async (conversationId, userId, { messageType, fileMeta, content }) => {
   const conversation = await chatConversationModel.findById(conversationId);
   if (!conversation) throw new AppError('Conversation not found', 404);
@@ -301,14 +457,11 @@ const sendMediaMessage = async (conversationId, userId, { messageType, fileMeta,
   );
 
   const message = await chatMessageModel.findById(rawMessage.id);
-
   chatSocketEmitter.emitNewMessage(conversation, message);
   chatSocketEmitter.emitConversationUpdated(conversation.id, userId);
-
   return message;
 };
 
-/** Paginated message history with participant authorization. */
 const listMessages = async (conversationId, userId, filters = {}) => {
   const conversation = await chatConversationModel.findById(conversationId);
   if (!conversation) throw new AppError('Conversation not found', 404);
@@ -316,38 +469,53 @@ const listMessages = async (conversationId, userId, filters = {}) => {
   return chatMessageModel.listMessages(conversationId, filters);
 };
 
-/** Mark conversation read for current user; emits read receipt via Socket.IO. */
-const markConversationRead = async (conversationId, userId, lastReadMessageId = null) => {
+/**
+ * Mark messages as read for the viewer; emit read status to the sender.
+ */
+const markConversationRead = async (
+  conversationId,
+  userId,
+  lastReadMessageId = null,
+  { silent = false } = {},
+) => {
   const conversation = await chatConversationModel.findById(conversationId);
   if (!conversation) throw new AppError('Conversation not found', 404);
   const role = assertConversationParticipant(conversation, userId);
 
-  const resolvedMessageId =
-    lastReadMessageId || (await chatMessageModel.getLatestMessageId(conversationId));
+  const messageIds = await chatMessageModel.markMessagesReadForViewer(
+    conversationId,
+    userId,
+    lastReadMessageId,
+  );
 
-  if (!resolvedMessageId) {
-    return getConversationDetail(conversationId, userId);
+  const resolvedMessageId =
+    lastReadMessageId ||
+    (messageIds.length ? messageIds[messageIds.length - 1] : null) ||
+    (await chatMessageModel.getLatestMessageId(conversationId));
+
+  if (resolvedMessageId) {
+    await chatConversationModel.resetUnreadForUser(conversationId, role, resolvedMessageId);
   }
 
-  await chatConversationModel.resetUnreadForUser(conversationId, role, resolvedMessageId);
-
-  chatSocketEmitter.emitMessageRead(conversation, {
+  const payload = {
     reader_id: userId,
     role,
     last_read_message_id: resolvedMessageId,
-  });
+    message_ids: messageIds,
+  };
 
-  return getConversationDetail(conversationId, userId);
+  if (!silent) {
+    chatSocketEmitter.emitMessagesRead(conversation, payload);
+  }
+
+  const detail = await getConversationDetail(conversationId, userId);
+  return { ...detail, message_ids: messageIds };
 };
 
 // ==========================================
-// RFQ workflow system messages
+// RFQ / inquiry workflow system messages
 // ==========================================
 
-/**
- * Record an RFQ workflow event as a SYSTEM message in the buyer↔seller thread.
- * Auto-creates conversation if none exists. Failures are logged, never thrown.
- */
 const recordSystemEvent = async ({
   rfqId,
   sellerId,
@@ -362,15 +530,14 @@ const recordSystemEvent = async ({
     const rfq = await rfqModel.findRfqById(rfqId, { raw: true });
     if (!rfq) return null;
 
-    let conversation = await chatConversationModel.findByRfqAndSeller(rfqId, sellerId);
-    if (!conversation) {
-      conversation = await chatConversationModel.createConversation({
-        rfq_id: rfqId,
-        buyer_id: rfq.buyer_id,
-        seller_id: sellerId,
-        initiated_by: actorId || rfq.buyer_id,
-      });
-    }
+    const conversation = await chatConversationModel.findOrCreateBuyerSellerConversation({
+      buyerId: rfq.buyer_id,
+      sellerId,
+      initiatedBy: actorId || rfq.buyer_id,
+      lastContextType: CHAT_CONTEXT_TYPE.RFQ,
+      lastContextId: rfqId,
+      rfqId,
+    });
 
     const label = CHAT_SYSTEM_EVENT_LABELS[eventType] || eventType;
     let quotationMeta = {};
@@ -404,14 +571,19 @@ const recordSystemEvent = async ({
           },
         },
         trx,
+        {
+          contextUpdate: {
+            last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+            last_context_id: rfqId,
+            rfq_id: rfqId,
+          },
+        },
       ),
     );
 
     const message = await chatMessageModel.findById(rawMessage.id);
-
     chatSocketEmitter.emitNewMessage(conversation, message);
     chatSocketEmitter.emitConversationUpdated(conversation.id, actorId);
-
     return message;
   } catch (error) {
     logger.error('[Chat] Failed to record system event', {
@@ -424,7 +596,153 @@ const recordSystemEvent = async ({
   }
 };
 
-/** Used by Socket.IO to verify room join authorization. */
+/**
+ * Seed PRODUCT + TEXT (+ SYSTEM) when an inquiry is created (runs inside caller's trx).
+ * Uses / updates the shared buyer↔seller conversation.
+ */
+const persistInquirySeedMessages = async ({
+  conversation,
+  buyerId,
+  product,
+  message,
+  inquiryId,
+  trx,
+}) => {
+  await persistMessage(
+    conversation,
+    buyerId,
+    {
+      message_type: CHAT_MESSAGE_TYPE.PRODUCT,
+      content: `Product: ${product.name}`,
+      metadata: {
+        product_id: product.id,
+        product_name: product.name,
+        product_slug: product.slug,
+        thumbnail: product.thumbnail,
+        price: product.price,
+        currency: product.currency,
+        inquiry_id: inquiryId || conversation.inquiry_id || null,
+      },
+    },
+    trx,
+    {
+      contextUpdate: {
+        last_context_type: CHAT_CONTEXT_TYPE.PRODUCT,
+        last_context_id: product.id,
+        inquiry_id: inquiryId || conversation.inquiry_id || null,
+      },
+    },
+  );
+
+  await persistMessage(
+    conversation,
+    buyerId,
+    {
+      message_type: CHAT_MESSAGE_TYPE.TEXT,
+      content: message,
+      metadata: inquiryId ? { inquiry_id: inquiryId } : null,
+    },
+    trx,
+  );
+
+  await persistMessage(
+    conversation,
+    null,
+    {
+      message_type: CHAT_MESSAGE_TYPE.SYSTEM,
+      content: CHAT_SYSTEM_EVENT_LABELS[CHAT_SYSTEM_EVENT.INQUIRY_CREATED],
+      metadata: {
+        event_type: CHAT_SYSTEM_EVENT.INQUIRY_CREATED,
+        inquiry_id: inquiryId || conversation.inquiry_id,
+        product_id: product.id,
+      },
+    },
+    trx,
+    { skipSystemUnread: true },
+  );
+};
+
+const recordInquirySystemEvent = async ({
+  inquiryId,
+  eventType,
+  quotationId = null,
+  actorId = null,
+  metadata = {},
+}) => {
+  try {
+    if (!inquiryId || !eventType) return null;
+
+    const inquiry = await inquiryModel.findById(inquiryId, { raw: true });
+    if (!inquiry) return null;
+
+    const conversation = await chatConversationModel.findOrCreateBuyerSellerConversation({
+      buyerId: inquiry.buyer_id,
+      sellerId: inquiry.seller_id,
+      initiatedBy: actorId || inquiry.buyer_id,
+      lastContextType: inquiry.product_id ? CHAT_CONTEXT_TYPE.PRODUCT : CHAT_CONTEXT_TYPE.ENQUIRY,
+      lastContextId: inquiry.product_id || inquiry.id,
+      inquiryId: inquiry.id,
+    });
+
+    const label = CHAT_SYSTEM_EVENT_LABELS[eventType] || eventType;
+    let quotationMeta = {};
+
+    if (quotationId) {
+      const quotation = await inquiryQuotationModel.findById(quotationId, { raw: true });
+      if (quotation) {
+        quotationMeta = {
+          quotation_id: quotation.id,
+          quotation_number: quotation.quotation_number,
+          price: quotation.price,
+          total_amount: quotation.total_amount,
+          status: quotation.status,
+          context_type: 'enquiry',
+        };
+      }
+    }
+
+    const rawMessage = await db.transaction(async (trx) =>
+      persistMessage(
+        conversation,
+        null,
+        {
+          message_type: CHAT_MESSAGE_TYPE.SYSTEM,
+          content: label,
+          metadata: {
+            event_type: eventType,
+            inquiry_id: inquiryId,
+            actor_id: actorId,
+            ...quotationMeta,
+            ...metadata,
+          },
+        },
+        trx,
+        {
+          contextUpdate: {
+            last_context_type: inquiry.product_id
+              ? CHAT_CONTEXT_TYPE.PRODUCT
+              : CHAT_CONTEXT_TYPE.ENQUIRY,
+            last_context_id: inquiry.product_id || inquiry.id,
+            inquiry_id: inquiry.id,
+          },
+        },
+      ),
+    );
+
+    const message = await chatMessageModel.findById(rawMessage.id);
+    chatSocketEmitter.emitNewMessage(conversation, message);
+    chatSocketEmitter.emitConversationUpdated(conversation.id, actorId);
+    return message;
+  } catch (error) {
+    logger.error('[Chat] Failed to record inquiry system event', {
+      inquiryId,
+      eventType,
+      error: error.message,
+    });
+    return null;
+  }
+};
+
 const assertUserCanJoinConversation = async (conversationId, userId) => {
   const conversation = await chatConversationModel.findById(conversationId);
   if (!conversation) throw new AppError('Conversation not found', 404);
@@ -432,17 +750,12 @@ const assertUserCanJoinConversation = async (conversationId, userId) => {
   return conversation;
 };
 
-/** Return buyer_id and seller_id for a conversation (Socket.IO room helpers). */
 const getParticipantUserIds = async (conversationId) => {
   const conversation = await chatConversationModel.findById(conversationId);
   if (!conversation) return [];
   return [conversation.buyer_id, conversation.seller_id];
 };
 
-/**
- * Broadcast a system event to all sellers involved in an RFQ (quotations + invites).
- * Used for RFQ_CANCELLED and similar multi-seller notifications.
- */
 const recordRfqEventForSellers = async (rfqId, eventType, actorId, metadata = {}) => {
   const quotationSellers = await db('quotations').where({ rfq_id: rfqId }).distinct('seller_id');
   const invitedSellers = await db('rfq_sellers').where({ rfq_id: rfqId }).distinct('seller_id');
@@ -458,24 +771,27 @@ const recordRfqEventForSellers = async (rfqId, eventType, actorId, metadata = {}
   }
 };
 
-// ==========================================
-// Exports
-// ==========================================
-
 module.exports = {
   getUserRoleInConversation,
   getConversationDetail,
+  getConversationScreen,
   startConversation,
+  startInquiryConversation,
   listMyConversations,
   listRfqConversations,
+  listInquiryConversations,
   getUnreadSummary,
   sendMessage,
   sendMediaMessage,
   listMessages,
   markConversationRead,
   recordSystemEvent,
+  recordInquirySystemEvent,
+  persistInquirySeedMessages,
   recordRfqEventForSellers,
   getParticipantUserIds,
   assertUserCanJoinConversation,
+  persistMessage,
   CHAT_SYSTEM_EVENT,
+  CHAT_CONTEXT_TYPE,
 };

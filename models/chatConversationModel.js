@@ -1,13 +1,14 @@
 /**
  * Chat conversation data access.
  *
- * One RFQ can have multiple conversations (one per seller).
- * Unique constraint: (rfq_id, seller_id).
+ * One conversation per buyer↔seller pair (unique buyer_id + seller_id).
+ * last_context_* tracks the latest product / RFQ / enquiry being discussed.
  */
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { applyListSort } = require('../utils/listQuery');
-const { CHAT_CONVERSATION_SORT_BY_VALUES } = require('../constants/chat');
+const { resolveMediaUrl } = require('../utils/media');
+const { CHAT_CONVERSATION_SORT_BY_VALUES, CHAT_CONTEXT_TYPE } = require('../constants/chat');
 
 // ==========================================
 // Sort configuration
@@ -23,78 +24,177 @@ const CONVERSATION_SORT_MAP = {
 // Query builders
 // ==========================================
 
-/** Base query with RFQ, buyer, and seller profile joins. */
+/** Base query with buyer/seller profiles and denormalized context titles. */
 const baseConversationQuery = () =>
   db('chat_conversations')
-    .leftJoin('rfqs', 'rfqs.id', 'chat_conversations.rfq_id')
     .leftJoin('users as buyer', 'buyer.id', 'chat_conversations.buyer_id')
     .leftJoin('users as seller', 'seller.id', 'chat_conversations.seller_id')
     .leftJoin('company_details as buyer_profile', 'buyer_profile.user_id', 'buyer.id')
     .leftJoin('company_details as seller_profile', 'seller_profile.user_id', 'seller.id')
+    .leftJoin('products as ctx_product', function () {
+      this.on('chat_conversations.last_context_type', '=', db.raw('?', [CHAT_CONTEXT_TYPE.PRODUCT])).andOn(
+        'ctx_product.id',
+        '=',
+        'chat_conversations.last_context_id',
+      );
+    })
+    .leftJoin('rfqs as ctx_rfq', function () {
+      this.on('chat_conversations.last_context_type', '=', db.raw('?', [CHAT_CONTEXT_TYPE.RFQ])).andOn(
+        'ctx_rfq.id',
+        '=',
+        'chat_conversations.last_context_id',
+      );
+    })
+    .leftJoin('inquiries as ctx_enquiry', function () {
+      this.on('chat_conversations.last_context_type', '=', db.raw('?', [CHAT_CONTEXT_TYPE.ENQUIRY])).andOn(
+        'ctx_enquiry.id',
+        '=',
+        'chat_conversations.last_context_id',
+      );
+    })
+    .leftJoin('products as enquiry_product', 'enquiry_product.id', 'ctx_enquiry.product_id')
     .where('chat_conversations.is_active', true)
     .select(
       'chat_conversations.*',
-      'rfqs.rfq_number',
-      'rfqs.title as rfq_title',
-      'rfqs.status as rfq_status',
       'buyer.full_name as buyer_name',
       'buyer.email as buyer_email',
+      'buyer.profile_image as buyer_profile_image',
       'buyer_profile.company_name as buyer_company_name',
+      db.raw('COALESCE(buyer_profile.company_logo, buyer.profile_image) as buyer_company_logo'),
       'seller.full_name as seller_name',
       'seller.email as seller_email',
+      'seller.profile_image as seller_profile_image',
       'seller_profile.company_name as seller_company_name',
+      db.raw('COALESCE(seller_profile.company_logo, seller.profile_image) as seller_company_logo'),
+      'ctx_product.name as context_product_title',
+      'ctx_rfq.title as context_rfq_title',
+      'ctx_rfq.rfq_number as context_rfq_number',
+      'ctx_enquiry.inquiry_number as context_enquiry_number',
+      'enquiry_product.name as context_enquiry_product_title',
     );
 
 // ==========================================
 // Formatting helpers
 // ==========================================
 
-/** Normalize buyer/seller participant block for API responses. */
-const formatParticipant = (id, name, email, companyName) => ({
+const formatUserBlock = (id, fullName, companyName, profileImage) => ({
   id,
-  user_id: id,
-  name: name || null,
-  email: email || null,
+  full_name: fullName || null,
   company_name: companyName || null,
+  profile_image: profileImage ? resolveMediaUrl(profileImage) : null,
 });
 
+/** Resolve last_context object for list/header display. */
+const formatLastContext = (row) => {
+  if (!row?.last_context_type || !row?.last_context_id) return null;
+
+  if (row.last_context_type === CHAT_CONTEXT_TYPE.PRODUCT) {
+    return {
+      type: CHAT_CONTEXT_TYPE.PRODUCT,
+      id: row.last_context_id,
+      title: row.context_product_title || null,
+    };
+  }
+
+  if (row.last_context_type === CHAT_CONTEXT_TYPE.RFQ) {
+    return {
+      type: CHAT_CONTEXT_TYPE.RFQ,
+      id: row.last_context_id,
+      title: row.context_rfq_title || row.context_rfq_number || null,
+    };
+  }
+
+  if (row.last_context_type === CHAT_CONTEXT_TYPE.ENQUIRY) {
+    return {
+      type: CHAT_CONTEXT_TYPE.ENQUIRY,
+      id: row.last_context_id,
+      title:
+        row.context_enquiry_product_title ||
+        row.context_enquiry_number ||
+        null,
+    };
+  }
+
+  return {
+    type: row.last_context_type,
+    id: row.last_context_id,
+    title: null,
+  };
+};
+
 /**
- * Format a conversation row for API output.
- * @param {Object} row - Joined DB row
- * @param {number} viewerId - Current user ID (determines unread_count side)
+ * Inbox row — one conversation per buyer/seller pair.
+ * @param {Object} row
+ * @param {number} viewerId
+ */
+const formatInboxRow = (row, viewerId) => {
+  const isBuyer = Number(viewerId) === Number(row.buyer_id);
+  const other = isBuyer
+    ? formatUserBlock(
+        row.seller_id,
+        row.seller_name,
+        row.seller_company_name,
+        row.seller_profile_image || row.seller_company_logo,
+      )
+    : formatUserBlock(
+        row.buyer_id,
+        row.buyer_name,
+        row.buyer_company_name,
+        row.buyer_profile_image || row.buyer_company_logo,
+      );
+
+  return {
+    conversation_id: row.id,
+    id: row.id,
+    user: other,
+    last_message: row.last_message_preview || null,
+    last_message_at: row.last_message_at || null,
+    last_message_sender_id: row.last_message_sender_id || null,
+    unread_count: isBuyer ? row.buyer_unread_count : row.seller_unread_count,
+    last_context: formatLastContext(row),
+    buyer_id: row.buyer_id,
+    seller_id: row.seller_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+};
+
+/**
+ * Full conversation detail (includes both participants).
+ * @param {Object} row
+ * @param {number} viewerId
  */
 const formatConversationRow = (row, viewerId) => {
-  const isBuyer = viewerId === row.buyer_id;
+  const inbox = formatInboxRow(row, viewerId);
+
   return {
-    id: row.id,
-    rfq_id: row.rfq_id,
-    rfq_number: row.rfq_number || null,
-    rfq_title: row.rfq_title || null,
-    rfq_status: row.rfq_status || null,
-    buyer: formatParticipant(
+    ...inbox,
+    buyer: formatUserBlock(
       row.buyer_id,
       row.buyer_name,
-      row.buyer_email,
       row.buyer_company_name,
+      row.buyer_profile_image || row.buyer_company_logo,
     ),
-    seller: formatParticipant(
+    seller: formatUserBlock(
       row.seller_id,
       row.seller_name,
-      row.seller_email,
       row.seller_company_name,
+      row.seller_profile_image || row.seller_company_logo,
     ),
     initiated_by: row.initiated_by,
     last_message_id: row.last_message_id,
-    last_message_at: row.last_message_at,
     last_message_preview: row.last_message_preview,
-    unread_count: isBuyer ? row.buyer_unread_count : row.seller_unread_count,
     buyer_unread_count: row.buyer_unread_count,
     seller_unread_count: row.seller_unread_count,
     buyer_last_read_message_id: row.buyer_last_read_message_id,
     seller_last_read_message_id: row.seller_last_read_message_id,
+    last_context_type: row.last_context_type || null,
+    last_context_id: row.last_context_id || null,
+    // Legacy fields kept for older clients
+    rfq_id: row.rfq_id || null,
+    inquiry_id: row.inquiry_id || null,
+    context_type: row.last_context_type || (row.inquiry_id ? 'enquiry' : row.rfq_id ? 'rfq' : null),
     is_active: !!row.is_active,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
   };
 };
 
@@ -102,34 +202,49 @@ const formatConversationRow = (row, viewerId) => {
 // Read operations
 // ==========================================
 
-/**
- * Find conversation by ID with joined RFQ and participant details.
- * @param {number} id
- * @param {{ raw?: boolean }} [options]
- */
 const findById = async (id, { raw = false } = {}) => {
   const row = await baseConversationQuery().where('chat_conversations.id', id).first();
   if (!row || raw) return row || null;
   return row;
 };
 
-/** Find the unique conversation for an RFQ + seller pair. */
+/** Find the single active conversation for a buyer↔seller pair. */
+const findByBuyerAndSeller = (buyerId, sellerId, trx = null) => {
+  const client = trx || db;
+  return client('chat_conversations')
+    .where({ buyer_id: buyerId, seller_id: sellerId, is_active: true })
+    .first();
+};
+
+/** @deprecated Prefer findByBuyerAndSeller — kept for transitional callers. */
 const findByRfqAndSeller = (rfqId, sellerId) =>
-  db('chat_conversations').where({ rfq_id: rfqId, seller_id: sellerId, is_active: true }).first();
+  db('chat_conversations')
+    .where({ seller_id: sellerId, is_active: true })
+    .where((builder) => {
+      builder.where({ rfq_id: rfqId }).orWhere({ last_context_type: 'rfq', last_context_id: rfqId });
+    })
+    .first();
+
+/** @deprecated Prefer findByBuyerAndSeller. */
+const findByInquiryId = (inquiryId) =>
+  db('chat_conversations')
+    .where({ is_active: true })
+    .where((builder) => {
+      builder
+        .where({ inquiry_id: inquiryId })
+        .orWhere({ last_context_type: 'enquiry', last_context_id: inquiryId });
+    })
+    .first();
 
 /**
- * Paginated inbox for a user (buyer and/or seller side).
- * @param {number} userId
- * @param {Object} [filters]
+ * Paginated inbox — one row per buyer/seller pair.
  */
 const listConversationsForUser = async (userId, filters = {}) => {
   const q = baseConversationQuery().where((builder) => {
-    builder.where('chat_conversations.buyer_id', userId).orWhere('chat_conversations.seller_id', userId);
+    builder
+      .where('chat_conversations.buyer_id', userId)
+      .orWhere('chat_conversations.seller_id', userId);
   });
-
-  if (filters.rfq_id) {
-    q.where('chat_conversations.rfq_id', filters.rfq_id);
-  }
 
   if (filters.role === 'buyer') {
     q.where('chat_conversations.buyer_id', userId);
@@ -141,12 +256,14 @@ const listConversationsForUser = async (userId, filters = {}) => {
     const term = `%${filters.search.trim()}%`;
     q.where((builder) => {
       builder
-        .where('rfqs.title', 'like', term)
-        .orWhere('rfqs.rfq_number', 'like', term)
-        .orWhere('buyer.full_name', 'like', term)
+        .where('buyer.full_name', 'like', term)
         .orWhere('seller.full_name', 'like', term)
         .orWhere('buyer_profile.company_name', 'like', term)
-        .orWhere('seller_profile.company_name', 'like', term);
+        .orWhere('seller_profile.company_name', 'like', term)
+        .orWhere('ctx_product.name', 'like', term)
+        .orWhere('ctx_rfq.title', 'like', term)
+        .orWhere('ctx_rfq.rfq_number', 'like', term)
+        .orWhere('chat_conversations.last_message_preview', 'like', term);
     });
   }
 
@@ -164,15 +281,23 @@ const listConversationsForUser = async (userId, filters = {}) => {
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;
   const paginated = await paginate(q, page, limit);
-  paginated.results = paginated.results.map((row) => formatConversationRow(row, userId));
+  paginated.results = paginated.results.map((row) => formatInboxRow(row, userId));
   return paginated;
 };
 
-/** Buyer-only list of all seller threads on one RFQ. */
+/** @deprecated RFQ-scoped list — resolves to buyer↔seller threads linked to this RFQ context. */
 const listConversationsByRfq = async (rfqId, buyerId, filters = {}) => {
   const q = baseConversationQuery()
-    .where('chat_conversations.rfq_id', rfqId)
-    .where('chat_conversations.buyer_id', buyerId);
+    .where('chat_conversations.buyer_id', buyerId)
+    .where((builder) => {
+      builder
+        .where('chat_conversations.rfq_id', rfqId)
+        .orWhere((inner) => {
+          inner
+            .where('chat_conversations.last_context_type', CHAT_CONTEXT_TYPE.RFQ)
+            .andWhere('chat_conversations.last_context_id', rfqId);
+        });
+    });
 
   applyListSort(q, filters, CONVERSATION_SORT_MAP, {
     defaultSortBy: 'last_message_at',
@@ -188,11 +313,10 @@ const listConversationsByRfq = async (rfqId, buyerId, filters = {}) => {
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;
   const paginated = await paginate(q, page, limit);
-  paginated.results = paginated.results.map((row) => formatConversationRow(row, buyerId));
+  paginated.results = paginated.results.map((row) => formatInboxRow(row, buyerId));
   return paginated;
 };
 
-/** Aggregate unread counts across all active conversations for a user. */
 const getTotalUnreadCount = async (userId) => {
   const buyerRow = await db('chat_conversations')
     .where({ buyer_id: userId, is_active: true })
@@ -217,14 +341,15 @@ const getTotalUnreadCount = async (userId) => {
 // ==========================================
 
 /**
- * Insert a new RFQ conversation.
- * @param {Object} data - { rfq_id, buyer_id, seller_id, initiated_by }
- * @param {Object|null} [trx]
+ * Insert a buyer↔seller conversation (caller must check uniqueness first).
  */
 const createConversation = async (data, trx = null) => {
   const client = trx || db;
   const [id] = await client('chat_conversations').insert({
-    rfq_id: data.rfq_id,
+    rfq_id: data.rfq_id ?? null,
+    inquiry_id: data.inquiry_id ?? null,
+    last_context_type: data.last_context_type ?? null,
+    last_context_id: data.last_context_id ?? null,
     buyer_id: data.buyer_id,
     seller_id: data.seller_id,
     initiated_by: data.initiated_by,
@@ -233,7 +358,6 @@ const createConversation = async (data, trx = null) => {
   return client('chat_conversations').where({ id }).first();
 };
 
-/** Update conversation fields (last message preview, unread counts, etc.). */
 const updateConversation = async (id, data, trx = null) => {
   const client = trx || db;
   await client('chat_conversations')
@@ -242,14 +366,50 @@ const updateConversation = async (id, data, trx = null) => {
   return client('chat_conversations').where({ id }).first();
 };
 
-/** Increment unread counter for buyer or seller after a new message. */
+/** Find existing pair conversation or create; always update last_context when provided. */
+const findOrCreateBuyerSellerConversation = async (
+  { buyerId, sellerId, initiatedBy, lastContextType = null, lastContextId = null, rfqId = null, inquiryId = null },
+  trx = null,
+) => {
+  const client = trx || db;
+  let conversation = await client('chat_conversations')
+    .where({ buyer_id: buyerId, seller_id: sellerId, is_active: true })
+    .first();
+
+  if (conversation) {
+    const updates = {};
+    if (lastContextType && lastContextId) {
+      updates.last_context_type = lastContextType;
+      updates.last_context_id = lastContextId;
+    }
+    if (rfqId) updates.rfq_id = rfqId;
+    if (inquiryId) updates.inquiry_id = inquiryId;
+    if (Object.keys(updates).length) {
+      conversation = await updateConversation(conversation.id, updates, trx);
+    }
+    return conversation;
+  }
+
+  return createConversation(
+    {
+      buyer_id: buyerId,
+      seller_id: sellerId,
+      initiated_by: initiatedBy || buyerId,
+      last_context_type: lastContextType,
+      last_context_id: lastContextId,
+      rfq_id: rfqId,
+      inquiry_id: inquiryId,
+    },
+    trx,
+  );
+};
+
 const incrementUnreadForRecipient = async (conversationId, recipientRole, trx = null) => {
   const client = trx || db;
   const column = recipientRole === 'buyer' ? 'buyer_unread_count' : 'seller_unread_count';
   await client('chat_conversations').where({ id: conversationId }).increment(column, 1);
 };
 
-/** Reset unread count and store last-read message pointer for a participant. */
 const resetUnreadForUser = async (conversationId, userRole, lastReadMessageId, trx = null) => {
   const client = trx || db;
   const updates =
@@ -268,14 +428,15 @@ const resetUnreadForUser = async (conversationId, userRole, lastReadMessageId, t
     .update({ ...updates, updated_at: client.fn.now() });
 };
 
-// ==========================================
-// Exports
-// ==========================================
-
 module.exports = {
+  formatLastContext,
+  formatInboxRow,
   formatConversationRow,
   findById,
+  findByBuyerAndSeller,
   findByRfqAndSeller,
+  findByInquiryId,
+  findOrCreateBuyerSellerConversation,
   createConversation,
   updateConversation,
   incrementUnreadForRecipient,
