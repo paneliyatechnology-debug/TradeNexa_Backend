@@ -3,7 +3,7 @@
  */
 const express = require('express');
 const rfqController = require('../controllers/rfqController');
-const { authenticate, authorize, validate } = require('../middleware/auth');
+const { authenticate, authorize, optionalAuthenticate, validate } = require('../middleware/auth');
 const {
   idParam,
   rfqCreateRules,
@@ -32,8 +32,8 @@ const buyerOrSellerRoles = authorize('buyer', 'seller', 'buyer_seller', 'admin',
 // Public routes
 // ==========================================
 
-router.get('/', rfqListQuery, validate, rfqController.getRfqs);
-router.get('/latest', rfqLatestQuery, validate, rfqController.getLatestRfqs);
+router.get('/', optionalAuthenticate, rfqListQuery, validate, rfqController.getRfqs);
+router.get('/latest', optionalAuthenticate, rfqLatestQuery, validate, rfqController.getLatestRfqs);
 
 // ==========================================
 // Admin routes (static paths before :id)

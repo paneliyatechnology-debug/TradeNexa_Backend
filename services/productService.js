@@ -172,8 +172,17 @@ const applyVideoUploads = async (productId, files = {}, mode = 'direct') => {
  * @returns {Promise<Object>}
  */
 const createProduct = async (data, files = {}, userId = null, actorRole = 'seller') => {
+  if (!userId) {
+    const { AppError } = require('../utils/response');
+    const { HTTP_STATUS } = require('../constants');
+    throw new AppError('Authenticated seller is required', HTTP_STATUS.UNAUTHORIZED);
+  }
+
   const payload = parseProductBody(data);
   delete payload.approval_status;
+  // Ownership always from JWT — ignore body.seller_id
+  payload.seller_id = userId;
+
   const product = await productModel.createProduct(payload, userId);
   await applyCreateThumbnail(product.id, files);
   await applyImageUploads(product.id, files, 'inbox');
@@ -201,6 +210,8 @@ const updateProduct = async (id, data, files = {}, userId = null, actorRole = 's
   const productReviewService = require('./productReviewService');
   const payload = parseProductBody(data);
   delete payload.approval_status;
+  // seller_id is not updatable via body — ownership stays with original seller
+  delete payload.seller_id;
 
   const existing = await productModel.findProductById(id, { raw: true });
   if (!existing) {

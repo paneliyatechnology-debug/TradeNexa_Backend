@@ -12,9 +12,8 @@ const isAdmin = (user) => ADMIN_PANEL_ROLE_CODES.includes(user?.role);
 /**
  * @param {object} req
  * @param {{ excludeOwnBuyer?: boolean }} [options]
- *   When true (public RFQ list), query `buyer_id` excludes that buyer’s RFQs
- *   — same pattern as products list `seller_id` → exclude_seller_id.
- *   When false (admin / my), `buyer_id` filters TO that buyer.
+ *   When true (public/seller feed lists), exclude RFQs owned by the authenticated user
+ *   (buyer_id from JWT). When false (admin / my), optional query `buyer_id` filters TO that buyer.
  */
 const buildListFilters = (req, { excludeOwnBuyer = false } = {}) => ({
   search: req.query.search,
@@ -25,7 +24,7 @@ const buildListFilters = (req, { excludeOwnBuyer = false } = {}) => ({
   state: req.query.state,
   country: req.query.country,
   ...(excludeOwnBuyer
-    ? { exclude_buyer_id: req.query.buyer_id }
+    ? { exclude_buyer_id: req.user?.id || undefined }
     : { buyer_id: req.query.buyer_id }),
   min_budget: req.query.min_budget,
   max_budget: req.query.max_budget,
@@ -87,7 +86,7 @@ const getRfq = async (req, res, next) => {
 
 const getRfqs = async (req, res, next) => {
   try {
-    // buyer_id query param = hide that buyer’s RFQs (e.g. logged-in buyer’s own posts)
+    // Authenticated user: hide own RFQs (buyer_id from JWT)
     const data = await rfqModel.findRfqs(buildListFilters(req, { excludeOwnBuyer: true }));
     return success(res, 'RFQs list retrieved successfully', data);
   } catch (err) {
@@ -114,8 +113,8 @@ const getLatestRfqs = async (req, res, next) => {
       statuses: ['PUBLISHED', 'QUOTATION_RECEIVED', 'OPEN'],
       sort_by: req.query.sort_by || 'created_at',
       sort_order: req.query.sort_order || 'desc',
-      // Same as list: optional buyer_id hides that buyer’s RFQs
-      exclude_buyer_id: req.query.buyer_id,
+      // Authenticated user: hide own RFQs (buyer_id from JWT)
+      exclude_buyer_id: req.user?.id || undefined,
     });
     const formatted = data.results.map((r) => ({
       id: r.id,
@@ -205,7 +204,7 @@ const compareRfqQuotations = async (req, res, next) => {
 const getSellerRfqs = async (req, res, next) => {
   try {
     await rfqModel.expireOverdueRfqs();
-    // buyer_id query = hide that buyer’s RFQs (e.g. buyer_seller’s own posts)
+    // Hide RFQs created by the authenticated user (buyer_id from JWT)
     const data = await rfqModel.findSellerFeed(
       req.user.id,
       buildListFilters(req, { excludeOwnBuyer: true }),

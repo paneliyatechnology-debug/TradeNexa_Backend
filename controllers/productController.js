@@ -339,18 +339,11 @@ const getRelatedProducts = async (req, res, next) => {
 /**
  * PUT /products/:id
  * Seller/admin update. If status is revision_required, update auto-resubmits to in_review.
+ * seller_id is always from JWT / existing owner — not accepted from body.
  */
 const updateProduct = async (req, res, next) => {
   try {
     const existing = await assertCanModifyProduct(req.params.id, req.user);
-
-    if (
-      !isAdminUser(req.user) &&
-      req.body.seller_id !== undefined &&
-      String(req.body.seller_id) !== String(existing.seller_id)
-    ) {
-      return next(new AppError('Forbidden: Cannot change product seller', HTTP_STATUS.FORBIDDEN));
-    }
 
     const wasRevisionRequired =
       existing.approval_status === PRODUCT_APPROVAL_STATUS.REVISION_REQUIRED;
