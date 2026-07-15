@@ -45,6 +45,13 @@ const baseConversationQuery = () =>
         'chat_conversations.last_context_id',
       );
     })
+    .leftJoin('products as ctx_rfq_product', 'ctx_rfq_product.id', 'ctx_rfq.product_id')
+    .leftJoin('categories as ctx_rfq_category', 'ctx_rfq_category.id', 'ctx_rfq.category_id')
+    .leftJoin(
+      'categories as ctx_rfq_subcategory',
+      'ctx_rfq_subcategory.id',
+      'ctx_rfq.subcategory_id',
+    )
     .leftJoin('inquiries as ctx_enquiry', function () {
       this.on('chat_conversations.last_context_type', '=', db.raw('?', [CHAT_CONTEXT_TYPE.ENQUIRY])).andOn(
         'ctx_enquiry.id',
@@ -66,11 +73,45 @@ const baseConversationQuery = () =>
       'seller.profile_image as seller_profile_image',
       'seller_profile.company_name as seller_company_name',
       db.raw('COALESCE(seller_profile.company_logo, seller.profile_image) as seller_company_logo'),
+      // Product context (rich card)
       'ctx_product.name as context_product_title',
+      'ctx_product.slug as context_product_slug',
+      'ctx_product.thumbnail as context_product_thumbnail',
+      'ctx_product.price as context_product_price',
+      'ctx_product.currency as context_product_currency',
+      'ctx_product.unit as context_product_unit',
+      'ctx_product.moq as context_product_moq',
+      // RFQ context (rich card — same idea as product details)
       'ctx_rfq.title as context_rfq_title',
       'ctx_rfq.rfq_number as context_rfq_number',
+      'ctx_rfq.description as context_rfq_description',
+      'ctx_rfq.quantity as context_rfq_quantity',
+      'ctx_rfq.unit as context_rfq_unit',
+      'ctx_rfq.expected_price as context_rfq_expected_price',
+      'ctx_rfq.budget as context_rfq_budget',
+      'ctx_rfq.currency as context_rfq_currency',
+      'ctx_rfq.status as context_rfq_status',
+      'ctx_rfq.quotation_deadline as context_rfq_quotation_deadline',
+      'ctx_rfq.required_before as context_rfq_required_before',
+      'ctx_rfq.city as context_rfq_city',
+      'ctx_rfq.product_id as context_rfq_product_id',
+      'ctx_rfq.category_id as context_rfq_category_id',
+      'ctx_rfq.subcategory_id as context_rfq_subcategory_id',
+      'ctx_rfq_category.name as context_rfq_category_name',
+      'ctx_rfq_subcategory.name as context_rfq_subcategory_name',
+      'ctx_rfq_product.name as context_rfq_product_name',
+      'ctx_rfq_product.slug as context_rfq_product_slug',
+      'ctx_rfq_product.thumbnail as context_rfq_product_thumbnail',
+      'ctx_rfq_product.price as context_rfq_product_price',
+      'ctx_rfq_product.currency as context_rfq_product_currency',
+      'ctx_rfq_product.unit as context_rfq_product_unit',
+      // Enquiry context
       'ctx_enquiry.inquiry_number as context_enquiry_number',
       'enquiry_product.name as context_enquiry_product_title',
+      'enquiry_product.thumbnail as context_enquiry_product_thumbnail',
+      'enquiry_product.price as context_enquiry_product_price',
+      'enquiry_product.currency as context_enquiry_product_currency',
+      'enquiry_product.unit as context_enquiry_product_unit',
     );
 
 // ==========================================
@@ -84,7 +125,7 @@ const formatUserBlock = (id, fullName, companyName, profileImage) => ({
   profile_image: profileImage ? resolveMediaUrl(profileImage) : null,
 });
 
-/** Resolve last_context object for list/header display. */
+/** Resolve last_context object for list/header display (product / RFQ / enquiry cards). */
 const formatLastContext = (row) => {
   if (!row?.last_context_type || !row?.last_context_id) return null;
 
@@ -93,14 +134,68 @@ const formatLastContext = (row) => {
       type: CHAT_CONTEXT_TYPE.PRODUCT,
       id: row.last_context_id,
       title: row.context_product_title || null,
+      slug: row.context_product_slug || null,
+      thumbnail: row.context_product_thumbnail
+        ? resolveMediaUrl(row.context_product_thumbnail)
+        : null,
+      price:
+        row.context_product_price !== undefined && row.context_product_price !== null
+          ? parseFloat(row.context_product_price)
+          : null,
+      currency: row.context_product_currency || null,
+      unit: row.context_product_unit || null,
+      moq:
+        row.context_product_moq !== undefined && row.context_product_moq !== null
+          ? parseInt(row.context_product_moq, 10)
+          : null,
     };
   }
 
   if (row.last_context_type === CHAT_CONTEXT_TYPE.RFQ) {
+    const expectedPrice =
+      row.context_rfq_expected_price !== undefined && row.context_rfq_expected_price !== null
+        ? parseFloat(row.context_rfq_expected_price)
+        : row.context_rfq_budget !== undefined && row.context_rfq_budget !== null
+          ? parseFloat(row.context_rfq_budget)
+          : null;
+
     return {
       type: CHAT_CONTEXT_TYPE.RFQ,
       id: row.last_context_id,
       title: row.context_rfq_title || row.context_rfq_number || null,
+      rfq_number: row.context_rfq_number || null,
+      description: row.context_rfq_description || null,
+      quantity:
+        row.context_rfq_quantity !== undefined && row.context_rfq_quantity !== null
+          ? parseInt(row.context_rfq_quantity, 10)
+          : null,
+      unit: row.context_rfq_unit || null,
+      expected_price: expectedPrice,
+      currency: row.context_rfq_currency || 'INR',
+      status: row.context_rfq_status || null,
+      quotation_deadline: row.context_rfq_quotation_deadline || null,
+      required_before: row.context_rfq_required_before || null,
+      city: row.context_rfq_city || null,
+      category_id: row.context_rfq_category_id || null,
+      category_name: row.context_rfq_category_name || null,
+      subcategory_id: row.context_rfq_subcategory_id || null,
+      subcategory_name: row.context_rfq_subcategory_name || null,
+      product: row.context_rfq_product_id
+        ? {
+            id: Number(row.context_rfq_product_id),
+            name: row.context_rfq_product_name || null,
+            slug: row.context_rfq_product_slug || null,
+            thumbnail: row.context_rfq_product_thumbnail
+              ? resolveMediaUrl(row.context_rfq_product_thumbnail)
+              : null,
+            price:
+              row.context_rfq_product_price !== undefined && row.context_rfq_product_price !== null
+                ? parseFloat(row.context_rfq_product_price)
+                : null,
+            currency: row.context_rfq_product_currency || null,
+            unit: row.context_rfq_product_unit || null,
+          }
+        : null,
     };
   }
 
@@ -112,6 +207,17 @@ const formatLastContext = (row) => {
         row.context_enquiry_product_title ||
         row.context_enquiry_number ||
         null,
+      inquiry_number: row.context_enquiry_number || null,
+      thumbnail: row.context_enquiry_product_thumbnail
+        ? resolveMediaUrl(row.context_enquiry_product_thumbnail)
+        : null,
+      price:
+        row.context_enquiry_product_price !== undefined &&
+        row.context_enquiry_product_price !== null
+          ? parseFloat(row.context_enquiry_product_price)
+          : null,
+      currency: row.context_enquiry_product_currency || null,
+      unit: row.context_enquiry_product_unit || null,
     };
   }
 

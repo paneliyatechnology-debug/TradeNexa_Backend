@@ -60,39 +60,153 @@ const assertCanStartRfqChat = async (rfq, userId, sellerId) => {
   }
 };
 
-const resolveContextPayload = async (conversationRow) => {
-  if (!conversationRow) return null;
-  const formatted = chatConversationModel.formatLastContext(conversationRow);
-  if (formatted) return formatted;
+/** Product card for chat context / last_context (parity with PRODUCT message metadata). */
+const buildProductContext = (product, fallbackId) => {
+  if (!product) {
+    return {
+      type: CHAT_CONTEXT_TYPE.PRODUCT,
+      id: fallbackId,
+      title: null,
+      slug: null,
+      thumbnail: null,
+      price: null,
+      currency: null,
+      unit: null,
+      moq: null,
+    };
+  }
 
-  // Fallback for joined row missing titles — load titles on demand
-  if (!conversationRow.last_context_type || !conversationRow.last_context_id) return null;
+  return {
+    type: CHAT_CONTEXT_TYPE.PRODUCT,
+    id: product.id || fallbackId,
+    title: product.name || null,
+    slug: product.slug || null,
+    thumbnail: product.thumbnail || null,
+    price: product.price ?? null,
+    currency: product.currency || null,
+    unit: product.unit || null,
+    moq: product.moq ?? null,
+  };
+};
+
+/** RFQ card for chat context / last_context — same purpose as product details on inquiry chats. */
+const buildRfqContext = (rfq, fallbackId) => {
+  if (!rfq) {
+    return {
+      type: CHAT_CONTEXT_TYPE.RFQ,
+      id: fallbackId,
+      title: null,
+      rfq_number: null,
+      description: null,
+      quantity: null,
+      unit: null,
+      expected_price: null,
+      currency: null,
+      status: null,
+      quotation_deadline: null,
+      required_before: null,
+      city: null,
+      category_id: null,
+      category_name: null,
+      subcategory_id: null,
+      subcategory_name: null,
+      product: null,
+    };
+  }
+
+  const expectedPrice =
+    rfq.expected_price !== undefined && rfq.expected_price !== null
+      ? parseFloat(rfq.expected_price)
+      : rfq.budget !== undefined && rfq.budget !== null
+        ? parseFloat(rfq.budget)
+        : null;
+
+  return {
+    type: CHAT_CONTEXT_TYPE.RFQ,
+    id: rfq.id || fallbackId,
+    title: rfq.title || rfq.rfq_number || null,
+    rfq_number: rfq.rfq_number || null,
+    description: rfq.description || null,
+    quantity: rfq.quantity != null ? parseInt(rfq.quantity, 10) : null,
+    unit: rfq.unit || null,
+    expected_price: expectedPrice,
+    currency: rfq.currency || 'INR',
+    status: rfq.status || null,
+    quotation_deadline: rfq.quotation_deadline || null,
+    required_before: rfq.required_before || null,
+    city: rfq.city || null,
+    category_id: rfq.category_id ?? null,
+    category_name: rfq.category_name || rfq.category || null,
+    subcategory_id: rfq.subcategory_id ?? null,
+    subcategory_name: rfq.subcategory_name || null,
+    product: rfq.product
+      ? {
+          id: rfq.product.id,
+          name: rfq.product.name || null,
+          slug: rfq.product.slug || null,
+          thumbnail: rfq.product.thumbnail || null,
+          price: rfq.product.price ?? null,
+          currency: rfq.product.currency || null,
+          unit: rfq.product.unit || null,
+          moq: rfq.product.moq ?? null,
+        }
+      : null,
+  };
+};
+
+/**
+ * Resolve latest discussion context for chat screen / inbox.
+ * Product & RFQ include rich card fields so the UI can explain what the thread is about.
+ */
+const resolveContextPayload = async (conversationRow) => {
+  if (!conversationRow?.last_context_type || !conversationRow?.last_context_id) {
+    return chatConversationModel.formatLastContext(conversationRow);
+  }
 
   if (conversationRow.last_context_type === CHAT_CONTEXT_TYPE.PRODUCT) {
     const product = await productModel.findProductById(conversationRow.last_context_id);
-    return {
-      type: CHAT_CONTEXT_TYPE.PRODUCT,
-      id: conversationRow.last_context_id,
-      title: product?.name || null,
-    };
+    if (product) return buildProductContext(product, conversationRow.last_context_id);
+    return chatConversationModel.formatLastContext(conversationRow);
   }
+
   if (conversationRow.last_context_type === CHAT_CONTEXT_TYPE.RFQ) {
-    const rfq = await rfqModel.findRfqById(conversationRow.last_context_id, { raw: true });
-    return {
-      type: CHAT_CONTEXT_TYPE.RFQ,
-      id: conversationRow.last_context_id,
-      title: rfq?.title || rfq?.rfq_number || null,
-    };
+    const rfq = await rfqModel.findRfqById(conversationRow.last_context_id);
+    if (rfq) return buildRfqContext(rfq, conversationRow.last_context_id);
+    return chatConversationModel.formatLastContext(conversationRow);
   }
+
   if (conversationRow.last_context_type === CHAT_CONTEXT_TYPE.ENQUIRY) {
     const inquiry = await inquiryModel.findById(conversationRow.last_context_id);
+    if (!inquiry) return chatConversationModel.formatLastContext(conversationRow);
+
+    const product = inquiry.product || null;
     return {
       type: CHAT_CONTEXT_TYPE.ENQUIRY,
       id: conversationRow.last_context_id,
-      title: inquiry?.product?.name || inquiry?.inquiry_number || null,
+      title: product?.name || inquiry.inquiry_number || null,
+      inquiry_number: inquiry.inquiry_number || null,
+      status: inquiry.status || null,
+      quantity: inquiry.quantity ?? null,
+      unit: inquiry.unit || null,
+      thumbnail: product?.thumbnail || null,
+      price: product?.price ?? null,
+      currency: product?.currency || inquiry.currency || null,
+      product: product
+        ? {
+            id: product.id,
+            name: product.name || null,
+            slug: product.slug || null,
+            thumbnail: product.thumbnail || null,
+            price: product.price ?? null,
+            currency: product.currency || null,
+            unit: product.unit || null,
+            moq: product.moq ?? null,
+          }
+        : null,
     };
   }
-  return {
+
+  return chatConversationModel.formatLastContext(conversationRow) || {
     type: conversationRow.last_context_type,
     id: conversationRow.last_context_id,
     title: null,
