@@ -296,11 +296,15 @@ const getProducts = async (req, res, next) => {
 
 /**
  * GET /products/search-history
- * Latest product search keywords for the authenticated user (max 20).
+ * Paginated product search keywords for the authenticated user (newest first).
+ * Query: page, limit (stored history still capped at 20 per user).
  */
 const getProductSearchHistory = async (req, res, next) => {
   try {
-    const data = await productSearchHistoryService.getHistory(req.user.id);
+    const data = await productSearchHistoryService.getHistory(req.user.id, {
+      page: req.query.page,
+      limit: req.query.limit,
+    });
     return success(res, 'Product search history retrieved successfully', data);
   } catch (err) {
     next(err);

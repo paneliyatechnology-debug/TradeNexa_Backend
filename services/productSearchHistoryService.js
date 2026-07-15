@@ -48,8 +48,9 @@ const recordSearch = async (userId, rawSearch) => {
   });
 };
 
-/** GET /products/search-history */
-const getHistory = async (userId) => productSearchHistoryModel.listByUser(userId);
+/** GET /products/search-history — paginated list for the user. */
+const getHistory = async (userId, filters = {}) =>
+  productSearchHistoryModel.listByUser(userId, filters);
 
 /** DELETE /products/search-history/:id */
 const deleteOne = async (userId, id) => {

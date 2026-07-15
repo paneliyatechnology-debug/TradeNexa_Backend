@@ -2,6 +2,7 @@
  * Product search history data access — user-scoped keyword rows from GET /products.
  */
 const db = require('../database/knex');
+const { paginate } = require('../utils/pagination');
 
 const MAX_HISTORY = 20;
 
@@ -22,15 +23,24 @@ const formatRow = (row) => {
 // Read
 // ==========================================
 
-/** Latest searches for a user (newest first), capped at MAX_HISTORY. */
-const listByUser = async (userId, { limit = MAX_HISTORY } = {}) => {
-  const rows = await db('product_search_history')
+/**
+ * Paginated latest searches for a user (newest first).
+ * Storage is capped at MAX_HISTORY per user; page/limit paginate within that set.
+ * @returns {Promise<{ results: Array, pagination: Object }>}
+ */
+const listByUser = async (userId, filters = {}) => {
+  const page = parseInt(filters.page, 10) || 1;
+  const limit = parseInt(filters.limit, 10) || 10;
+
+  const q = db('product_search_history')
     .where({ user_id: userId })
     .orderBy('searched_at', 'desc')
     .orderBy('id', 'desc')
-    .limit(Math.min(limit, MAX_HISTORY));
+    .select('id', 'keyword', 'searched_at');
 
-  return rows.map(formatRow);
+  const paginated = await paginate(q, page, limit);
+  paginated.results = paginated.results.map(formatRow);
+  return paginated;
 };
 
 const findByIdForUser = (id, userId) =>

@@ -49,10 +49,12 @@ router.get('/my', authenticate, sellerRoles, productListQuery, validate, product
 // Product search history (static paths before :id)
 // ==========================================
 
-/** Latest keywords from GET /products?search=… for the logged-in user (max 20). */
+/** Latest keywords from GET /products?search=… for the logged-in user (paginated; max 20 stored). */
 router.get(
   '/search-history',
   authenticate,
+  paginationQuery,
+  validate,
   productController.getProductSearchHistory,
 );
 
