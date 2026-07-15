@@ -180,6 +180,9 @@ const formatLastContext = (row) => {
       category_name: row.context_rfq_category_name || null,
       subcategory_id: row.context_rfq_subcategory_id || null,
       subcategory_name: row.context_rfq_subcategory_name || null,
+      thumbnail: row.context_rfq_product_thumbnail
+        ? resolveMediaUrl(row.context_rfq_product_thumbnail)
+        : null,
       product: row.context_rfq_product_id
         ? {
             id: Number(row.context_rfq_product_id),

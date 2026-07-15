@@ -41,14 +41,17 @@ const emitNewMessage = (conversation, message) => {
       last_message: message,
       last_message_at: message.created_at,
       last_message_sender_id: message.sender_id,
+      last_context_type: conversation.last_context_type || null,
+      last_context_id: conversation.last_context_id || null,
     });
   });
 };
 
-const emitConversationUpdated = (conversationId, actorId = null) => {
+const emitConversationUpdated = (conversationId, actorId = null, extras = {}) => {
   emitToConversation(conversationId, CHAT_SOCKET_EVENT.CONVERSATION_UPDATED, {
     conversation_id: conversationId,
     actor_id: actorId,
+    ...extras,
   });
 };
 

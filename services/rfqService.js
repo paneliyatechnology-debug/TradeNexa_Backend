@@ -243,6 +243,11 @@ const publishRfq = async (id, buyerId) => {
   await rfqAuditModel.logAction({ rfqId: id, action: RFQ_AUDIT_ACTION.RFQ_PUBLISHED, actorId: buyerId });
   notify('RFQ_PUBLISHED', { rfqId: id, buyerId });
 
+  // PRIVATE RFQ: open chats with invited sellers (same as inquiry create → product chat seed)
+  if (rfq.visibility === RFQ_VISIBILITY.PRIVATE) {
+    await chatService.initializeRfqChatsForInvitedSellers(id, buyerId);
+  }
+
   return getRfqDetail(id);
 };
 
@@ -320,6 +325,21 @@ const updateRfq = async (id, data, actorId, isAdmin = false) => {
       }
       await rfqSellerModel.assignSellers(id, sellerIds);
       notify('SELLER_ASSIGNED', { rfqId: id, sellerIds });
+
+      // Published PRIVATE RFQ: open chats with newly assigned sellers
+      if (
+        nextVisibility === RFQ_VISIBILITY.PRIVATE &&
+        rfq.status !== RFQ_STATUS.DRAFT &&
+        sellerIds?.length
+      ) {
+        for (const sellerId of sellerIds) {
+          await chatService.ensureRfqChatWithSeller({
+            rfqId: id,
+            sellerId,
+            actorId,
+          });
+        }
+      }
     } else if (nextVisibility === RFQ_VISIBILITY.PRIVATE) {
       const invitedCount = await rfqSellerModel.countByRfqId(id);
       if (!invitedCount) {
@@ -498,7 +518,8 @@ const submitQuotation = async (rfqId, data, sellerId) => {
     throw new AppError('Seller has already submitted a quotation for this RFQ', 409);
   }
 
-  return db.transaction(async (trx) => {
+  // Commit quotation first; chat must run after commit so quotation is visible and last_context can switch to RFQ
+  const quotation = await db.transaction(async (trx) => {
     const quotationNumber = await generateQuotationNumber(trx);
     const payload = buildQuotationPayload(
       { ...data, unit: data.unit || rfq.unit },
@@ -506,7 +527,7 @@ const submitQuotation = async (rfqId, data, sellerId) => {
       sellerId,
       quotationNumber,
     );
-    const quotation = await quotationModel.createQuotation(payload, trx);
+    const created = await quotationModel.createQuotation(payload, trx);
 
     await rfqModel.incrementQuotationCount(rfqId, trx);
     await rfqSellerModel.markResponded(rfqId, sellerId, trx);
@@ -520,21 +541,23 @@ const submitQuotation = async (rfqId, data, sellerId) => {
     }
 
     await rfqAuditModel.logAction(
-      { rfqId, quotationId: quotation.id, action: RFQ_AUDIT_ACTION.QUOTATION_SUBMITTED, actorId: sellerId },
+      { rfqId, quotationId: created.id, action: RFQ_AUDIT_ACTION.QUOTATION_SUBMITTED, actorId: sellerId },
       trx,
     );
-    notify('NEW_QUOTATION', { rfqId, quotationId: quotation.id, sellerId });
+    notify('NEW_QUOTATION', { rfqId, quotationId: created.id, sellerId });
 
-    await chatService.recordSystemEvent({
-      rfqId,
-      sellerId,
-      quotationId: quotation.id,
-      eventType: CHAT_SYSTEM_EVENT.QUOTATION_SUBMITTED,
-      actorId: sellerId,
-    });
-
-    return quotationModel.findById(quotation.id);
+    return created;
   });
+
+  await chatService.recordSystemEvent({
+    rfqId,
+    sellerId,
+    quotationId: quotation.id,
+    eventType: CHAT_SYSTEM_EVENT.QUOTATION_SUBMITTED,
+    actorId: sellerId,
+  });
+
+  return quotationModel.findById(quotation.id);
 };
 
 const updateQuotation = async (quotationId, data, sellerId) => {
@@ -557,7 +580,7 @@ const updateQuotation = async (quotationId, data, sellerId) => {
   delete payload.seller_id;
   payload.status = QUOTATION_STATUS.UPDATED;
 
-  return db.transaction(async (trx) => {
+  await db.transaction(async (trx) => {
     await quotationModel.updateQuotation(quotationId, payload, trx);
     await quotationHistoryModel.createHistory(
       { quotationId, oldPrice, newPrice: payload.price, remarks: data.remarks, updatedBy: sellerId },
@@ -568,15 +591,17 @@ const updateQuotation = async (quotationId, data, sellerId) => {
       trx,
     );
     notify('QUOTATION_UPDATED', { quotationId, sellerId });
-    await chatService.recordSystemEvent({
-      rfqId: quotation.rfq_id,
-      sellerId,
-      quotationId,
-      eventType: CHAT_SYSTEM_EVENT.QUOTATION_UPDATED,
-      actorId: sellerId,
-    });
-    return quotationModel.findById(quotationId);
   });
+
+  await chatService.recordSystemEvent({
+    rfqId: quotation.rfq_id,
+    sellerId,
+    quotationId,
+    eventType: CHAT_SYSTEM_EVENT.QUOTATION_UPDATED,
+    actorId: sellerId,
+  });
+
+  return quotationModel.findById(quotationId);
 };
 
 const withdrawQuotation = async (quotationId, sellerId) => {
@@ -614,7 +639,7 @@ const acceptQuotation = async (quotationId, buyerId, isAdmin = false) => {
     throw new AppError('Forbidden: Access denied', 403);
   }
 
-  return db.transaction(async (trx) => {
+  await db.transaction(async (trx) => {
     await quotationModel.updateQuotation(quotationId, { status: QUOTATION_STATUS.ACCEPTED }, trx);
     await quotationModel.rejectOthersExcept(quotation.rfq_id, quotationId, trx);
     await rfqModel.updateRfq(
@@ -631,24 +656,24 @@ const acceptQuotation = async (quotationId, buyerId, isAdmin = false) => {
       trx,
     );
     notify('QUOTATION_ACCEPTED', { rfqId: quotation.rfq_id, quotationId, sellerId: quotation.seller_id });
-
-    await chatService.recordSystemEvent({
-      rfqId: quotation.rfq_id,
-      sellerId: quotation.seller_id,
-      quotationId,
-      eventType: CHAT_SYSTEM_EVENT.QUOTATION_ACCEPTED,
-      actorId: buyerId,
-    });
-    await chatService.recordSystemEvent({
-      rfqId: quotation.rfq_id,
-      sellerId: quotation.seller_id,
-      quotationId,
-      eventType: CHAT_SYSTEM_EVENT.RFQ_AWARDED,
-      actorId: buyerId,
-    });
-
-    return quotationModel.findById(quotationId);
   });
+
+  await chatService.recordSystemEvent({
+    rfqId: quotation.rfq_id,
+    sellerId: quotation.seller_id,
+    quotationId,
+    eventType: CHAT_SYSTEM_EVENT.QUOTATION_ACCEPTED,
+    actorId: buyerId,
+  });
+  await chatService.recordSystemEvent({
+    rfqId: quotation.rfq_id,
+    sellerId: quotation.seller_id,
+    quotationId,
+    eventType: CHAT_SYSTEM_EVENT.RFQ_AWARDED,
+    actorId: buyerId,
+  });
+
+  return quotationModel.findById(quotationId);
 };
 
 const rejectQuotation = async (quotationId, buyerId, isAdmin = false) => {

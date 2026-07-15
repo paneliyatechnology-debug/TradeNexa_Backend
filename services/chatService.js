@@ -139,6 +139,8 @@ const buildRfqContext = (rfq, fallbackId) => {
     category_name: rfq.category_name || rfq.category || null,
     subcategory_id: rfq.subcategory_id ?? null,
     subcategory_name: rfq.subcategory_name || null,
+    // Preview image for RFQ card (from linked product when present — type remains "rfq")
+    thumbnail: rfq.product?.thumbnail || null,
     product: rfq.product
       ? {
           id: rfq.product.id,
@@ -311,8 +313,11 @@ const getConversationDetail = async (conversationId, viewerId) => {
   const presenceMap = Object.fromEntries(presenceRows.map((p) => [p.user_id, p]));
 
   const formatted = chatConversationModel.formatConversationRow(row, viewerId);
+  // Same rich card for both `last_context` and `context` so FE never sees stale product while type is RFQ
+  const context = await resolveContextPayload(row);
   return {
     ...formatted,
+    last_context: context || formatted.last_context,
     buyer: {
       ...formatted.buyer,
       presence: presenceMap[row.buyer_id] || { status: 'offline', last_seen_at: null },
@@ -321,7 +326,7 @@ const getConversationDetail = async (conversationId, viewerId) => {
       ...formatted.seller,
       presence: presenceMap[row.seller_id] || { status: 'offline', last_seen_at: null },
     },
-    context: await resolveContextPayload(row),
+    context,
   };
 };
 
@@ -623,6 +628,8 @@ const persistMessage = async (conversation, senderId, messageData, trx = null, o
   }
 
   await chatConversationModel.updateConversation(conversation.id, conversationUpdate, trx);
+  // Keep in-memory conversation in sync so socket payloads / callers see latest RFQ/product context
+  Object.assign(conversation, conversationUpdate);
 
   if (senderId) {
     const role = getUserRoleInConversation(conversation, senderId);
@@ -773,14 +780,13 @@ const recordSystemEvent = async ({
     const rfqRaw = await rfqModel.findRfqById(rfqId, { raw: true });
     if (!rfqRaw) return null;
 
-    const conversation = await chatConversationModel.findOrCreateBuyerSellerConversation({
-      buyerId: rfqRaw.buyer_id,
-      sellerId,
-      initiatedBy: actorId || rfqRaw.buyer_id,
-      lastContextType: CHAT_CONTEXT_TYPE.RFQ,
-      lastContextId: rfqId,
+    // Same as inquiry create: ensure shared thread + RFQ card exist before quote events
+    const conversation = await ensureRfqChatWithSeller({
       rfqId,
+      sellerId,
+      actorId: actorId || rfqRaw.buyer_id,
     });
+    if (!conversation) return null;
 
     const rfq = await rfqModel.findRfqById(rfqId);
     const label = CHAT_SYSTEM_EVENT_LABELS[eventType] || eventType;
@@ -830,7 +836,7 @@ const recordSystemEvent = async ({
       );
       messagesToEmit.push(systemRaw.id);
 
-      // Quotation card bubble (same role as PRODUCT card on inquiry) when a quote is involved
+      // Quotation card bubble (same role as inquiry quote card) when a quote is involved
       if (quotation && quoteCardEvents.includes(eventType)) {
         const quoteRaw = await persistMessage(
           conversation,
@@ -858,7 +864,16 @@ const recordSystemEvent = async ({
       lastMessage = await chatMessageModel.findById(mid);
       chatSocketEmitter.emitNewMessage(conversation, lastMessage);
     }
-    chatSocketEmitter.emitConversationUpdated(conversation.id, actorId);
+    const lastContext = await resolveContextPayload({
+      last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+      last_context_id: rfqId,
+    });
+    chatSocketEmitter.emitConversationUpdated(conversation.id, actorId, {
+      last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+      last_context_id: rfqId,
+      last_context: lastContext,
+      rfq_id: rfqId,
+    });
     pushUnreadSummary([conversation.buyer_id, conversation.seller_id]);
     return lastMessage;
   } catch (error) {
@@ -873,10 +888,22 @@ const recordSystemEvent = async ({
 };
 
 /**
- * Seed RFQ card into the shared buyer↔seller thread when RFQ chat is opened.
+ * Seed RFQ card into the shared buyer↔seller thread (parity with PRODUCT on inquiry create).
  * Avoids duplicate RFQ_SHARED for the same rfq_id in this conversation.
+ *
+ * @param {Object} options
+ * @param {boolean} [options.includeQuotation=true] - Attach existing seller quote bubble (for open-chat).
+ *        Pass false when calling before recordSystemEvent so quotation is not duplicated.
+ * @param {boolean} [options.includeDescriptionText=true] - Buyer TEXT with RFQ description (like inquiry message).
  */
-const seedRfqContextMessage = async ({ conversation, rfq, actorId, sellerId }) => {
+const seedRfqContextMessage = async ({
+  conversation,
+  rfq,
+  actorId,
+  sellerId,
+  includeQuotation = true,
+  includeDescriptionText = true,
+}) => {
   if (!conversation?.id || !rfq?.id) return null;
 
   const existing = await db('chat_messages')
@@ -895,12 +922,27 @@ const seedRfqContextMessage = async ({ conversation, rfq, actorId, sellerId }) =
       last_context_id: rfq.id,
       rfq_id: rfq.id,
     });
+    Object.assign(conversation, {
+      last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+      last_context_id: rfq.id,
+      rfq_id: rfq.id,
+    });
+    const lastContext = await resolveContextPayload({
+      last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+      last_context_id: rfq.id,
+    });
+    chatSocketEmitter.emitConversationUpdated(conversation.id, actorId, {
+      last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+      last_context_id: rfq.id,
+      last_context: lastContext,
+      rfq_id: rfq.id,
+    });
     return null;
   }
 
-  // Attach seller's latest quotation for this RFQ when present (chat after quote)
+  // Attach seller's latest quotation when reopening chat after a quote (not on quote-submit path)
   let quotation = null;
-  if (sellerId) {
+  if (includeQuotation && sellerId) {
     const quoteRow = await db('quotations')
       .where({ rfq_id: rfq.id, seller_id: sellerId })
       .orderBy('updated_at', 'desc')
@@ -910,12 +952,18 @@ const seedRfqContextMessage = async ({ conversation, rfq, actorId, sellerId }) =
     }
   }
 
-  const meta = {
+  const rfqMeta = {
     event_type: CHAT_SYSTEM_EVENT.RFQ_SHARED,
     actor_id: actorId,
     ...buildRfqMessageMeta(rfq),
-    ...buildQuotationMessageMeta(quotation, { contextType: CHAT_CONTEXT_TYPE.RFQ }),
   };
+
+  const quoteMeta = includeQuotation
+    ? {
+        ...rfqMeta,
+        ...buildQuotationMessageMeta(quotation, { contextType: CHAT_CONTEXT_TYPE.RFQ }),
+      }
+    : rfqMeta;
 
   const raw = await db.transaction(async (trx) => {
     const systemRaw = await persistMessage(
@@ -924,7 +972,7 @@ const seedRfqContextMessage = async ({ conversation, rfq, actorId, sellerId }) =
       {
         message_type: CHAT_MESSAGE_TYPE.SYSTEM,
         content: `RFQ: ${rfq.title || rfq.rfq_number}`,
-        metadata: meta,
+        metadata: quoteMeta,
       },
       trx,
       {
@@ -937,14 +985,42 @@ const seedRfqContextMessage = async ({ conversation, rfq, actorId, sellerId }) =
       },
     );
 
-    if (quotation) {
+    // Buyer intent text — same role as inquiry TEXT seed
+    const description = (rfq.description || rfq.title || '').trim();
+    if (includeDescriptionText && description) {
+      await persistMessage(
+        conversation,
+        conversation.buyer_id || actorId,
+        {
+          message_type: CHAT_MESSAGE_TYPE.TEXT,
+          content: description.length > 2000 ? `${description.slice(0, 1997)}...` : description,
+          metadata: {
+            rfq_id: rfq.id,
+            rfq_number: rfq.rfq_number || null,
+            context_type: CHAT_CONTEXT_TYPE.RFQ,
+            ...buildRfqMessageMeta(rfq),
+          },
+        },
+        trx,
+        {
+          contextUpdate: {
+            last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+            last_context_id: rfq.id,
+            rfq_id: rfq.id,
+          },
+          skipSystemUnread: true,
+        },
+      );
+    }
+
+    if (includeQuotation && quotation) {
       await persistMessage(
         conversation,
         sellerId || actorId,
         {
           message_type: CHAT_MESSAGE_TYPE.QUOTATION,
           content: `Quotation ${quotation.quotation_number}`,
-          metadata: meta,
+          metadata: quoteMeta,
         },
         trx,
         {
@@ -963,8 +1039,77 @@ const seedRfqContextMessage = async ({ conversation, rfq, actorId, sellerId }) =
 
   const message = await chatMessageModel.findById(raw.id);
   chatSocketEmitter.emitNewMessage(conversation, message);
-  chatSocketEmitter.emitConversationUpdated(conversation.id, actorId);
+  const lastContext = await resolveContextPayload({
+    last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+    last_context_id: rfq.id,
+  });
+  chatSocketEmitter.emitConversationUpdated(conversation.id, actorId, {
+    last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+    last_context_id: rfq.id,
+    last_context: lastContext,
+    rfq_id: rfq.id,
+  });
   return message;
+};
+
+/**
+ * Initialize / continue buyer↔seller chat for an RFQ (same role as inquiry create seed).
+ * Ensures conversation + RFQ card + description text exist; does not attach quotation bubbles
+ * (those come from recordSystemEvent on quote submit/update).
+ */
+const ensureRfqChatWithSeller = async ({ rfqId, sellerId, actorId = null }) => {
+  if (!rfqId || !sellerId) return null;
+
+  const rfqRaw = await rfqModel.findRfqById(rfqId, { raw: true });
+  if (!rfqRaw) return null;
+
+  const conversation = await chatConversationModel.findOrCreateBuyerSellerConversation({
+    buyerId: rfqRaw.buyer_id,
+    sellerId,
+    initiatedBy: actorId || rfqRaw.buyer_id,
+    lastContextType: CHAT_CONTEXT_TYPE.RFQ,
+    lastContextId: rfqId,
+    rfqId,
+  });
+
+  const rfq = await rfqModel.findRfqById(rfqId);
+  await seedRfqContextMessage({
+    conversation,
+    rfq,
+    actorId: actorId || rfqRaw.buyer_id,
+    sellerId,
+    includeQuotation: false,
+    includeDescriptionText: true,
+  });
+
+  return conversation;
+};
+
+/**
+ * Seed RFQ chat for every currently invited seller (PRIVATE RFQ publish / invite).
+ */
+const initializeRfqChatsForInvitedSellers = async (rfqId, actorId = null) => {
+  const sellers = await rfqSellerModel.listAssignedSellersByRfqId(rfqId);
+  const results = [];
+  for (const seller of sellers) {
+    const sellerId = seller.seller_id || seller.id;
+    if (!sellerId) continue;
+    try {
+      const conversation = await ensureRfqChatWithSeller({
+        rfqId,
+        sellerId,
+        actorId,
+      });
+      if (conversation) results.push(conversation);
+    } catch (error) {
+      logger.error('[Chat] Failed to initialize RFQ chat for invited seller', {
+        rfqId,
+        sellerId,
+        error: error.message,
+      });
+    }
+  }
+  return results;
 };
 
 /**
@@ -1198,6 +1343,9 @@ module.exports = {
   recordSystemEvent,
   recordInquirySystemEvent,
   persistInquirySeedMessages,
+  ensureRfqChatWithSeller,
+  initializeRfqChatsForInvitedSellers,
+  seedRfqContextMessage,
   recordRfqEventForSellers,
   getParticipantUserIds,
   assertUserCanJoinConversation,
