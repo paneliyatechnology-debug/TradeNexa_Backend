@@ -46,6 +46,33 @@ router.get('/related', optionalAuthenticate, productRelatedQuery, validate, prod
 router.get('/my', authenticate, sellerRoles, productListQuery, validate, productController.getMyProducts);
 
 // ==========================================
+// Product search history (static paths before :id)
+// ==========================================
+
+/** Latest keywords from GET /products?search=… for the logged-in user (max 20). */
+router.get(
+  '/search-history',
+  authenticate,
+  productController.getProductSearchHistory,
+);
+
+/** Clear all of the logged-in user's product search history. */
+router.delete(
+  '/search-history',
+  authenticate,
+  productController.clearProductSearchHistory,
+);
+
+/** Delete a single search-history row owned by the logged-in user. */
+router.delete(
+  '/search-history/:id',
+  authenticate,
+  idParam,
+  validate,
+  productController.deleteProductSearchHistoryItem,
+);
+
+// ==========================================
 // Admin review (static paths before :id)
 // ==========================================
 

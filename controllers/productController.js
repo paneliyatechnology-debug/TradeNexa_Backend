@@ -4,10 +4,12 @@ const productModel = require('../models/productModel');
 const productService = require('../services/productService');
 const productReviewService = require('../services/productReviewService');
 const wishlistService = require('../services/wishlistService');
+const productSearchHistoryService = require('../services/productSearchHistoryService');
 const inquiryModel = require('../models/inquiryModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS, ADMIN_PANEL_ROLE_CODES } = require('../constants');
 const { PRODUCT_APPROVAL_STATUS } = require('../constants/product');
+const logger = require('../utils/logger');
 
 // ==========================================
 // Product Operations
@@ -267,6 +269,7 @@ const buildProductListFilters = (req, { defaultActiveOnly = true, publicOnly = f
 /**
  * GET /products
  * Public product list — approved + active only.
+ * Records search history only for authenticated users with a valid `search` query.
  */
 const getProducts = async (req, res, next) => {
   try {
@@ -274,7 +277,57 @@ const getProducts = async (req, res, next) => {
     const data = await productModel.findProducts(filters);
     const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
     const withInquiry = await attachInquiryStateToProductList(withWishlist, req.user?.id);
+
+    if (req.user?.id && req.query.search !== undefined) {
+      productSearchHistoryService.recordSearch(req.user.id, req.query.search).catch((err) => {
+        logger.error('[ProductSearchHistory] Failed to record search', {
+          userId: req.user.id,
+          search: req.query.search,
+          error: err.message,
+        });
+      });
+    }
+
     return success(res, 'Products list retrieved successfully', withInquiry);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /products/search-history
+ * Latest product search keywords for the authenticated user (max 20).
+ */
+const getProductSearchHistory = async (req, res, next) => {
+  try {
+    const data = await productSearchHistoryService.getHistory(req.user.id);
+    return success(res, 'Product search history retrieved successfully', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /products/search-history/:id
+ * Delete one of the authenticated user's search history rows.
+ */
+const deleteProductSearchHistoryItem = async (req, res, next) => {
+  try {
+    const data = await productSearchHistoryService.deleteOne(req.user.id, req.params.id);
+    return success(res, 'Search history item deleted successfully', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /products/search-history
+ * Clear all product search history for the authenticated user.
+ */
+const clearProductSearchHistory = async (req, res, next) => {
+  try {
+    const data = await productSearchHistoryService.clearAll(req.user.id);
+    return success(res, 'Product search history cleared successfully', data);
   } catch (err) {
     next(err);
   }
@@ -603,4 +656,7 @@ module.exports = {
   approveProducts,
   requestProductRevision,
   rejectProducts,
+  getProductSearchHistory,
+  deleteProductSearchHistoryItem,
+  clearProductSearchHistory,
 };
