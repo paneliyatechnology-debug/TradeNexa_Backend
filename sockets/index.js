@@ -1,7 +1,10 @@
 /**
  * Socket.IO server — JWT auth, chat rooms, typing, presence, send_message, read receipts.
  *
- * Canonical client events: send_message, typing_start, typing_stop, mark_messages_read
+ * Canonical client events: send_message, typing_start, typing_stop, mark_messages_read,
+ * get_unread_summary
+ * Server pushes unread_summary (total + per-conversation unread, last_message_at DESC)
+ * on connect and after message / read changes.
  * Legacy aliases still supported for older clients.
  */
 const { Server } = require('socket.io');
@@ -92,6 +95,9 @@ const initSocket = (httpServer) => {
       });
     }
 
+    // Push unread inbox snapshot on connect (total + per-conversation, last_message_at DESC)
+    chatService.pushUnreadSummary(userId);
+
     // ==========================================
     // Conversation rooms
     // ==========================================
@@ -109,6 +115,19 @@ const initSocket = (httpServer) => {
     socket.on(CHAT_SOCKET_EVENT.CONVERSATION_LEAVE, ({ conversation_id: conversationId }) => {
       if (!conversationId) return;
       socket.leave(chatSocketEmitter.conversationRoom(conversationId));
+    });
+
+    // ==========================================
+    // Unread inbox snapshot (on demand)
+    // ==========================================
+
+    socket.on(CHAT_SOCKET_EVENT.GET_UNREAD_SUMMARY, async () => {
+      try {
+        const data = await chatService.getUnreadInbox(userId);
+        socket.emit(CHAT_SOCKET_EVENT.UNREAD_SUMMARY, data);
+      } catch (error) {
+        socket.emit(CHAT_SOCKET_EVENT.ERROR, { message: error.message });
+      }
     });
 
     // ==========================================

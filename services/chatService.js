@@ -20,6 +20,7 @@ const {
   CHAT_SYSTEM_EVENT,
   CHAT_SYSTEM_EVENT_LABELS,
   CHAT_CONTEXT_TYPE,
+  CHAT_SOCKET_EVENT,
 } = require('../constants/chat');
 const { RFQ_STATUS } = require('../constants/rfq');
 const chatSocketEmitter = require('./chatSocketEmitter');
@@ -236,6 +237,32 @@ const listInquiryConversations = async (inquiryId, userId, filters = {}) => {
 
 const getUnreadSummary = async (userId) => chatConversationModel.getTotalUnreadCount(userId);
 
+/**
+ * Total unread + conversations (unread_count, last_message_at) sorted by last_message_at DESC.
+ * Used by REST unread-summary companion and Socket.IO `unread_summary`.
+ */
+const getUnreadInbox = async (userId) => chatConversationModel.getUnreadInboxForUser(userId);
+
+/**
+ * Push unread inbox snapshot to a user's personal socket room (fire-and-forget safe).
+ * @param {number|number[]} userIds
+ */
+const pushUnreadSummary = (userIds) => {
+  const ids = Array.isArray(userIds) ? userIds : [userIds];
+  ids.filter(Boolean).forEach((uid) => {
+    getUnreadInbox(uid)
+      .then((data) => {
+        chatSocketEmitter.emitToUser(uid, CHAT_SOCKET_EVENT.UNREAD_SUMMARY, data);
+      })
+      .catch((err) => {
+        logger.error('[Chat] Failed to push unread_summary', {
+          userId: uid,
+          error: err.message,
+        });
+      });
+  });
+};
+
 // ==========================================
 // Message validation & persistence
 // ==========================================
@@ -434,6 +461,10 @@ const sendMessage = async (conversationId, userId, data) => {
 
   chatSocketEmitter.emitNewMessage(freshConversation || conversation, message);
   chatSocketEmitter.emitConversationUpdated(conversation.id, userId);
+  pushUnreadSummary([
+    (freshConversation || conversation).buyer_id,
+    (freshConversation || conversation).seller_id,
+  ]);
 
   return message;
 };
@@ -457,8 +488,13 @@ const sendMediaMessage = async (conversationId, userId, { messageType, fileMeta,
   );
 
   const message = await chatMessageModel.findById(rawMessage.id);
-  chatSocketEmitter.emitNewMessage(conversation, message);
+  const freshConversation = await chatConversationModel.findById(conversationId);
+  chatSocketEmitter.emitNewMessage(freshConversation || conversation, message);
   chatSocketEmitter.emitConversationUpdated(conversation.id, userId);
+  pushUnreadSummary([
+    (freshConversation || conversation).buyer_id,
+    (freshConversation || conversation).seller_id,
+  ]);
   return message;
 };
 
@@ -506,6 +542,7 @@ const markConversationRead = async (
 
   if (!silent) {
     chatSocketEmitter.emitMessagesRead(conversation, payload);
+    pushUnreadSummary(userId);
   }
 
   const detail = await getConversationDetail(conversationId, userId);
@@ -584,6 +621,7 @@ const recordSystemEvent = async ({
     const message = await chatMessageModel.findById(rawMessage.id);
     chatSocketEmitter.emitNewMessage(conversation, message);
     chatSocketEmitter.emitConversationUpdated(conversation.id, actorId);
+    pushUnreadSummary([conversation.buyer_id, conversation.seller_id]);
     return message;
   } catch (error) {
     logger.error('[Chat] Failed to record system event', {
@@ -732,6 +770,7 @@ const recordInquirySystemEvent = async ({
     const message = await chatMessageModel.findById(rawMessage.id);
     chatSocketEmitter.emitNewMessage(conversation, message);
     chatSocketEmitter.emitConversationUpdated(conversation.id, actorId);
+    pushUnreadSummary([conversation.buyer_id, conversation.seller_id]);
     return message;
   } catch (error) {
     logger.error('[Chat] Failed to record inquiry system event', {
@@ -781,6 +820,8 @@ module.exports = {
   listRfqConversations,
   listInquiryConversations,
   getUnreadSummary,
+  getUnreadInbox,
+  pushUnreadSummary,
   sendMessage,
   sendMediaMessage,
   listMessages,

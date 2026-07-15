@@ -336,6 +336,52 @@ const getTotalUnreadCount = async (userId) => {
   };
 };
 
+/**
+ * Total unread + per-conversation unread/last_message_at for socket inbox.
+ * Conversations ordered by last_message_at DESC.
+ * @param {number} userId
+ * @returns {Promise<{ total: number, as_buyer: number, as_seller: number, conversations: Array }>}
+ */
+const getUnreadInboxForUser = async (userId) => {
+  const summary = await getTotalUnreadCount(userId);
+
+  const rows = await db('chat_conversations')
+    .where({ is_active: true })
+    .where((builder) => {
+      builder.where('buyer_id', userId).orWhere('seller_id', userId);
+    })
+    .orderBy('last_message_at', 'desc')
+    .orderBy('id', 'desc')
+    .select(
+      'id',
+      'buyer_id',
+      'seller_id',
+      'last_message_at',
+      'last_message_preview',
+      'last_message_sender_id',
+      'buyer_unread_count',
+      'seller_unread_count',
+    );
+
+  const conversations = rows.map((row) => {
+    const isBuyer = Number(userId) === Number(row.buyer_id);
+    return {
+      conversation_id: row.id,
+      unread_count: isBuyer
+        ? parseInt(row.buyer_unread_count || 0, 10)
+        : parseInt(row.seller_unread_count || 0, 10),
+      last_message_at: row.last_message_at || null,
+      last_message: row.last_message_preview || null,
+      last_message_sender_id: row.last_message_sender_id || null,
+    };
+  });
+
+  return {
+    ...summary,
+    conversations,
+  };
+};
+
 // ==========================================
 // Write operations
 // ==========================================
@@ -444,4 +490,5 @@ module.exports = {
   listConversationsForUser,
   listConversationsByRfq,
   getTotalUnreadCount,
+  getUnreadInboxForUser,
 };

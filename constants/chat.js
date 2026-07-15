@@ -89,6 +89,8 @@ const CHAT_SOCKET_EVENT = {
   CONVERSATION_JOIN: 'conversation:join',
   CONVERSATION_LEAVE: 'conversation:leave',
   PRESENCE_PING: 'presence:ping',
+  /** Client requests a fresh unread inbox snapshot */
+  GET_UNREAD_SUMMARY: 'get_unread_summary',
 
   // Legacy aliases (backward compatible)
   TYPING_START_LEGACY: 'typing:start',
@@ -103,6 +105,8 @@ const CHAT_SOCKET_EVENT = {
   TYPING_INDICATOR: 'typing:indicator',
   PRESENCE_UPDATE: 'presence:update',
   CONVERSATION_UPDATED: 'conversation:updated',
+  /** Full inbox unread snapshot: total + per-conversation unread, sorted by last_message_at DESC */
+  UNREAD_SUMMARY: 'unread_summary',
   ERROR: 'chat:error',
 };
 
