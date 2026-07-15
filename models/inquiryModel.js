@@ -9,6 +9,7 @@ const { paginate } = require('../utils/pagination');
 const { applyListSort } = require('../utils/listQuery');
 const { resolveMediaUrl } = require('../utils/media');
 const { INQUIRY_SORT_BY_VALUES } = require('../constants/inquiry');
+const inquiryQuotationModel = require('./inquiryQuotationModel');
 
 // ==========================================
 // Sort configuration
@@ -265,7 +266,17 @@ const listInquiries = async (filters = {}) => {
   const page = parseInt(filters.page, 10) || 1;
   const limit = parseInt(filters.limit, 10) || 10;
   const paginated = await paginate(q, page, limit);
-  paginated.results = paginated.results.map(formatInquiryRow);
+  const formatted = paginated.results.map(formatInquiryRow);
+
+  const quotationMap = await inquiryQuotationModel.mapByInquiryIds(
+    formatted.map((item) => item.id),
+  );
+
+  paginated.results = formatted.map((item) => ({
+    ...item,
+    quotation: quotationMap.get(Number(item.id)) || null,
+  }));
+
   return paginated;
 };
 

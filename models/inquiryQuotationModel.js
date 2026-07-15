@@ -80,6 +80,23 @@ const findByInquiryId = async (inquiryId, { raw = false } = {}) => {
   return formatRow(row);
 };
 
+/**
+ * Batch load quotations keyed by inquiry_id (for list enrichment).
+ * @param {number[]} inquiryIds
+ * @returns {Promise<Map<number, Object>>}
+ */
+const mapByInquiryIds = async (inquiryIds = []) => {
+  const map = new Map();
+  const uniqueIds = [...new Set(inquiryIds.map((id) => Number(id)).filter((id) => id > 0))];
+  if (!uniqueIds.length) return map;
+
+  const rows = await baseQuery().whereIn('inquiry_quotations.inquiry_id', uniqueIds);
+  for (const row of rows) {
+    map.set(Number(row.inquiry_id), formatRow(row));
+  }
+  return map;
+};
+
 /** Paginated list of quotes submitted by a seller. */
 const listBySeller = async (sellerId, filters = {}) => {
   // Build query directly — avoid double .select() from baseQuery (causes Duplicate column 'id' in COUNT subquery)
@@ -145,6 +162,7 @@ module.exports = {
   formatRow,
   findById,
   findByInquiryId,
+  mapByInquiryIds,
   listBySeller,
   createQuotation,
   updateQuotation,
