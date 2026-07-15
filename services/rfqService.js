@@ -400,6 +400,24 @@ const getBuyerRfqs = async (buyerId, filters = {}) => {
   return rfqModel.findRfqs({ ...filters, buyer_id: buyerId, exclude_buyer_id: undefined });
 };
 
+const getLatestBuyerRemarkForQuotation = async (quotationId, buyerId) => {
+  if (!quotationId || !buyerId) return null;
+
+  const row = await db('quotation_history')
+    .where({ quotation_id: quotationId, updated_by: buyerId })
+    .whereNotNull('remarks')
+    .andWhere('remarks', '!=', '')
+    .orderBy('id', 'desc')
+    .first();
+
+  if (!row?.remarks) return null;
+
+  const text = String(row.remarks).trim();
+  // Ignore legacy auto-placeholder when buyer sent no real remark
+  if (!text || text === 'Revision requested by buyer') return null;
+  return text;
+};
+
 const getSellerRfqDetail = async (rfqId, sellerId) => {
   await rfqModel.expireOverdueRfqs();
   const rfq = await rfqModel.findRfqById(rfqId, { raw: true });
@@ -412,7 +430,29 @@ const getSellerRfqDetail = async (rfqId, sellerId) => {
   await rfqModel.incrementViews(rfqId);
   notify('SELLER_VIEWED_RFQ', { rfqId, sellerId });
 
-  return getRfqDetail(rfqId, { viewer: { id: sellerId, role: 'seller' } });
+  const detail = await getRfqDetail(rfqId, { viewer: { id: sellerId, role: 'seller' } });
+
+  const myQuoteRow = await quotationModel.findByRfqAndSeller(rfqId, sellerId);
+  let myQuotation = null;
+  let buyerRemark = null;
+
+  if (myQuoteRow) {
+    const quotation = await quotationModel.findById(myQuoteRow.id);
+    buyerRemark = await getLatestBuyerRemarkForQuotation(myQuoteRow.id, getBuyerId(rfq));
+    myQuotation = quotation
+      ? {
+          ...quotation,
+          buyer_remark: buyerRemark,
+        }
+      : null;
+  }
+
+  return {
+    ...detail,
+    my_quotation: myQuotation,
+    /** Buyer remark on this seller's quotation (revision request); null if none */
+    buyer_remark: buyerRemark,
+  };
 };
 
 /**
@@ -711,11 +751,13 @@ const requestRevision = async (quotationId, buyerId, remarks) => {
   if (getBuyerId(rfq) !== buyerId) throw new AppError('Forbidden: Access denied', 403);
 
   await rfqModel.updateRfq(quotation.rfq_id, { status: RFQ_STATUS.NEGOTIATION, updated_by: buyerId });
+  const buyerRemark =
+    remarks != null && String(remarks).trim() ? String(remarks).trim() : null;
   await quotationHistoryModel.createHistory({
     quotationId,
     oldPrice: quotation.price,
     newPrice: quotation.price,
-    remarks: remarks || 'Revision requested by buyer',
+    remarks: buyerRemark,
     updatedBy: buyerId,
   });
   await rfqAuditModel.logAction({
@@ -723,16 +765,16 @@ const requestRevision = async (quotationId, buyerId, remarks) => {
     quotationId,
     action: RFQ_AUDIT_ACTION.NEGOTIATION_STARTED,
     actorId: buyerId,
-    metadata: { remarks },
+    metadata: { remarks: buyerRemark },
   });
-  notify('NEGOTIATION_REQUEST', { quotationId, buyerId, remarks });
+  notify('NEGOTIATION_REQUEST', { quotationId, buyerId, remarks: buyerRemark });
   await chatService.recordSystemEvent({
     rfqId: quotation.rfq_id,
     sellerId: quotation.seller_id,
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.REVISION_REQUESTED,
     actorId: buyerId,
-    metadata: { remarks },
+    metadata: { remarks: buyerRemark },
   });
   return quotationModel.findById(quotationId);
 };
