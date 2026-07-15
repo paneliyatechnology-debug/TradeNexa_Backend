@@ -194,6 +194,59 @@ const hasInquiryForBuyerProduct = async (buyerId, productId) => {
   return !!row;
 };
 
+/**
+ * Batch inquiry state for product list cards.
+ * @param {number} buyerId
+ * @param {number[]} productIds
+ * @returns {Promise<Map<number, { is_inquiry_sent: boolean, conversation_id: number|null }>>}
+ */
+const mapInquiryStateByProducts = async (buyerId, productIds = []) => {
+  const map = new Map();
+  if (!buyerId || !productIds.length) return map;
+
+  const uniqueIds = [...new Set(productIds.map((id) => Number(id)).filter((id) => id > 0))];
+  if (!uniqueIds.length) return map;
+
+  const rows = await db('inquiries')
+    .leftJoin('chat_conversations', function () {
+      this.on('chat_conversations.buyer_id', '=', 'inquiries.buyer_id')
+        .andOn('chat_conversations.seller_id', '=', 'inquiries.seller_id')
+        .andOn('chat_conversations.is_active', '=', db.raw('1'));
+    })
+    .where('inquiries.buyer_id', buyerId)
+    .whereIn('inquiries.product_id', uniqueIds)
+    .whereNull('inquiries.deleted_at')
+    .whereNotIn('inquiries.status', ['cancelled'])
+    .select(
+      'inquiries.product_id',
+      'chat_conversations.id as conversation_id',
+      'inquiries.updated_at',
+      'inquiries.id as inquiry_id',
+    )
+    .orderBy('inquiries.updated_at', 'desc')
+    .orderBy('inquiries.id', 'desc');
+
+  for (const row of rows) {
+    const productId = Number(row.product_id);
+    if (map.has(productId)) continue;
+    map.set(productId, {
+      is_inquiry_sent: true,
+      conversation_id: row.conversation_id ? Number(row.conversation_id) : null,
+    });
+  }
+
+  return map;
+};
+
+/**
+ * Single-product inquiry state for the authenticated buyer.
+ * @returns {Promise<{ is_inquiry_sent: boolean, conversation_id: number|null }>}
+ */
+const getInquiryStateForBuyerProduct = async (buyerId, productId) => {
+  const map = await mapInquiryStateByProducts(buyerId, [productId]);
+  return map.get(Number(productId)) || { is_inquiry_sent: false, conversation_id: null };
+};
+
 /** Paginated inquiry list for buyer inbox, seller feed, or admin filters. */
 const listInquiries = async (filters = {}) => {
   const q = baseInquiryQuery();
@@ -248,6 +301,8 @@ module.exports = {
   findById,
   findPendingByBuyerAndProduct,
   hasInquiryForBuyerProduct,
+  mapInquiryStateByProducts,
+  getInquiryStateForBuyerProduct,
   listInquiries,
   createInquiry,
   updateInquiry,

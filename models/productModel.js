@@ -269,6 +269,7 @@ const formatProductDetail = (row, images = [], videos = []) => {
       is_favourite: false,
       is_wishlist: false,
       is_inquiry_sent: null,
+      conversation_id: null,
       can_contact_seller: null,
       can_buy: null,
     },

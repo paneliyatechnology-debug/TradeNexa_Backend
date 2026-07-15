@@ -112,6 +112,45 @@ const withWishlistFilter = (req, filters) => {
   };
 };
 
+/**
+ * Attach token-user inquiry flags on product list cards:
+ * `is_inquiry_sent` + `conversation_id` (null when no inquiry).
+ */
+const attachInquiryStateToProducts = async (products = [], userId) => {
+  if (!products.length) return products;
+
+  if (!userId) {
+    return products.map((product) => ({
+      ...product,
+      is_inquiry_sent: false,
+      conversation_id: null,
+    }));
+  }
+
+  const stateMap = await inquiryModel.mapInquiryStateByProducts(
+    userId,
+    products.map((p) => p.id).filter(Boolean),
+  );
+
+  return products.map((product) => {
+    const state = stateMap.get(Number(product.id));
+    return {
+      ...product,
+      is_inquiry_sent: !!state?.is_inquiry_sent,
+      conversation_id: state?.conversation_id ?? null,
+    };
+  });
+};
+
+/** Attach inquiry flags onto `{ results, pagination }` list payloads. */
+const attachInquiryStateToProductList = async (data, userId) => {
+  if (!data?.results) return data;
+  return {
+    ...data,
+    results: await attachInquiryStateToProducts(data.results, userId),
+  };
+};
+
 /** Ensure the user may modify a product (assigned seller or admin). */
 const assertCanModifyProduct = async (productId, user) => {
   const existing = await productModel.findProductById(productId, { raw: true });
@@ -180,13 +219,18 @@ const getProduct = async (req, res, next) => {
     const withWishlist = await wishlistService.attachWishlistToProductDetail(product, req.user?.id);
 
     if (withWishlist?.user_actions && req.user?.id) {
-      const inquirySent = await inquiryModel.hasInquiryForBuyerProduct(req.user.id, product.id);
-      withWishlist.user_actions.is_inquiry_sent = inquirySent;
+      const inquiryState = await inquiryModel.getInquiryStateForBuyerProduct(
+        req.user.id,
+        product.id,
+      );
+      withWishlist.user_actions.is_inquiry_sent = inquiryState.is_inquiry_sent;
+      withWishlist.user_actions.conversation_id = inquiryState.conversation_id;
       withWishlist.user_actions.can_contact_seller =
         withWishlist.marketplace?.accept_inquiry !== false &&
         String(product.seller?.id || product.seller_id) !== String(req.user.id);
     } else if (withWishlist?.user_actions) {
       withWishlist.user_actions.is_inquiry_sent = false;
+      withWishlist.user_actions.conversation_id = null;
       withWishlist.user_actions.can_contact_seller =
         withWishlist.marketplace?.accept_inquiry !== false;
     }
@@ -229,7 +273,8 @@ const getProducts = async (req, res, next) => {
     const filters = withWishlistFilter(req, buildProductListFilters(req, { publicOnly: true }));
     const data = await productModel.findProducts(filters);
     const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
-    return success(res, 'Products list retrieved successfully', withWishlist);
+    const withInquiry = await attachInquiryStateToProductList(withWishlist, req.user?.id);
+    return success(res, 'Products list retrieved successfully', withInquiry);
   } catch (err) {
     next(err);
   }
@@ -249,7 +294,8 @@ const getMyProducts = async (req, res, next) => {
     });
     const data = await productModel.findProducts(filters);
     const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
-    return success(res, 'Products list retrieved successfully', withWishlist);
+    const withInquiry = await attachInquiryStateToProductList(withWishlist, req.user?.id);
+    return success(res, 'Products list retrieved successfully', withInquiry);
   } catch (err) {
     next(err);
   }
@@ -291,7 +337,8 @@ const getTrendingProducts = async (req, res, next) => {
       ...withExtendedProductFields(p),
     }));
 
-    const results = await wishlistService.attachWishlistFlags(formatted, req.user?.id);
+    const withWishlist = await wishlistService.attachWishlistFlags(formatted, req.user?.id);
+    const results = await attachInquiryStateToProducts(withWishlist, req.user?.id);
 
     return success(res, 'Trending products retrieved successfully', {
       ...data,
@@ -339,7 +386,8 @@ const getRelatedProducts = async (req, res, next) => {
       ...withExtendedProductFields(p),
     }));
 
-    const results = await wishlistService.attachWishlistFlags(formatted, req.user?.id);
+    const withWishlist = await wishlistService.attachWishlistFlags(formatted, req.user?.id);
+    const results = await attachInquiryStateToProducts(withWishlist, req.user?.id);
 
     return success(res, 'Related products retrieved successfully', {
       ...data,
