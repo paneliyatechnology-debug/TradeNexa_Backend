@@ -154,6 +154,93 @@ const buildRfqContext = (rfq, fallbackId) => {
   };
 };
 
+/** Flattened + nested RFQ card for message.metadata (same shape as last_context for RFQ). */
+const buildRfqMessageMeta = (rfq) => {
+  const card = buildRfqContext(rfq, rfq?.id);
+  if (!card?.id) return { context_type: CHAT_CONTEXT_TYPE.RFQ };
+  return {
+    context_type: CHAT_CONTEXT_TYPE.RFQ,
+    rfq_id: card.id,
+    rfq_number: card.rfq_number,
+    rfq_title: card.title,
+    title: card.title,
+    description: card.description,
+    quantity: card.quantity,
+    unit: card.unit,
+    expected_price: card.expected_price,
+    currency: card.currency,
+    status: card.status,
+    quotation_deadline: card.quotation_deadline,
+    required_before: card.required_before,
+    city: card.city,
+    category_id: card.category_id,
+    category_name: card.category_name,
+    subcategory_id: card.subcategory_id,
+    subcategory_name: card.subcategory_name,
+    rfq: card,
+  };
+};
+
+/** Flattened + nested quotation card for message.metadata (RFQ or inquiry quote). */
+const buildQuotationMessageMeta = (quotation, { contextType = CHAT_CONTEXT_TYPE.RFQ } = {}) => {
+  if (!quotation) return {};
+  const card = {
+    id: quotation.id,
+    quotation_number: quotation.quotation_number || null,
+    price: quotation.price != null ? parseFloat(quotation.price) : null,
+    quantity: quotation.quantity != null ? parseInt(quotation.quantity, 10) : null,
+    unit: quotation.unit || null,
+    gst_percentage:
+      quotation.gst_percentage != null ? parseFloat(quotation.gst_percentage) : null,
+    gst_amount: quotation.gst_amount != null ? parseFloat(quotation.gst_amount) : null,
+    transportation_charge:
+      quotation.transportation_charge != null
+        ? parseFloat(quotation.transportation_charge)
+        : null,
+    total_amount: quotation.total_amount != null ? parseFloat(quotation.total_amount) : null,
+    delivery_days: quotation.delivery_days ?? null,
+    payment_terms: quotation.payment_terms || null,
+    validity_days: quotation.validity_days ?? null,
+    remarks: quotation.remarks || null,
+    status: quotation.status || null,
+    currency: quotation.currency || 'INR',
+    rfq_id: quotation.rfq_id || null,
+    inquiry_id: quotation.inquiry_id || null,
+    seller_id: quotation.seller_id || null,
+  };
+
+  return {
+    context_type: contextType,
+    quotation_id: card.id,
+    quotation_number: card.quotation_number,
+    price: card.price,
+    quantity: card.quantity,
+    unit: card.unit,
+    gst_percentage: card.gst_percentage,
+    total_amount: card.total_amount,
+    delivery_days: card.delivery_days,
+    currency: card.currency,
+    status: card.status,
+    quotation: card,
+  };
+};
+
+/** Product fields for inquiry message.metadata (parity with PRODUCT card). */
+const buildProductMessageMeta = (product) => {
+  if (!product) return {};
+  return {
+    product_id: product.id,
+    product_name: product.name || null,
+    product_slug: product.slug || null,
+    thumbnail: product.thumbnail || null,
+    price: product.price ?? null,
+    currency: product.currency || null,
+    unit: product.unit || null,
+    moq: product.moq ?? null,
+    product: buildProductContext(product, product.id),
+  };
+};
+
 /**
  * Resolve latest discussion context for chat screen / inbox.
  * Product & RFQ include rich card fields so the UI can explain what the thread is about.
@@ -270,23 +357,33 @@ const getConversationScreen = async (conversationId, userId, filters = {}) => {
 
 /**
  * Start or continue RFQ chat on the shared buyer↔seller conversation.
+ * Seeds an RFQ card message (metadata.rfq) so the timeline shows what the chat is about —
+ * same pattern as PRODUCT seed on inquiry create.
  */
 const startConversation = async ({ rfqId, sellerId, userId }) => {
-  const rfq = await rfqModel.findRfqById(rfqId, { raw: true });
-  if (!rfq) throw new AppError('RFQ not found', 404);
+  const rfqRaw = await rfqModel.findRfqById(rfqId, { raw: true });
+  if (!rfqRaw) throw new AppError('RFQ not found', 404);
 
   const resolvedSellerId = sellerId || userId;
   if (!resolvedSellerId) throw new AppError('seller_id is required', 400);
 
-  await assertCanStartRfqChat(rfq, userId, resolvedSellerId);
+  await assertCanStartRfqChat(rfqRaw, userId, resolvedSellerId);
 
   const conversation = await chatConversationModel.findOrCreateBuyerSellerConversation({
-    buyerId: rfq.buyer_id,
+    buyerId: rfqRaw.buyer_id,
     sellerId: resolvedSellerId,
     initiatedBy: userId,
     lastContextType: CHAT_CONTEXT_TYPE.RFQ,
-    lastContextId: rfq.id,
-    rfqId: rfq.id,
+    lastContextId: rfqRaw.id,
+    rfqId: rfqRaw.id,
+  });
+
+  const rfq = await rfqModel.findRfqById(rfqId);
+  await seedRfqContextMessage({
+    conversation,
+    rfq,
+    actorId: userId,
+    sellerId: resolvedSellerId,
   });
 
   return getConversationDetail(conversation.id, userId);
@@ -418,7 +515,7 @@ const validateMessagePayload = async (conversation, data) => {
     if (!quotationId) throw new AppError('quotation_id is required for QUOTATION messages', 400);
 
     // Prefer inquiry quotation when both pair participants match
-    const inquiryQuote = await inquiryQuotationModel.findById(quotationId, { raw: true });
+    const inquiryQuote = await inquiryQuotationModel.findById(quotationId);
     if (inquiryQuote && Number(inquiryQuote.seller_id) === Number(conversation.seller_id)) {
       const inquiry = await inquiryModel.findById(inquiryQuote.inquiry_id, { raw: true });
       if (
@@ -426,17 +523,18 @@ const validateMessagePayload = async (conversation, data) => {
         Number(inquiry.buyer_id) === Number(conversation.buyer_id) &&
         Number(inquiry.seller_id) === Number(conversation.seller_id)
       ) {
+        const product = inquiry.product_id
+          ? await productModel.findProductById(inquiry.product_id)
+          : null;
         return {
           content: data.content || `Quotation ${inquiryQuote.quotation_number}`,
           metadata: {
-            quotation_id: inquiryQuote.id,
-            quotation_number: inquiryQuote.quotation_number,
-            price: inquiryQuote.price,
-            total_amount: inquiryQuote.total_amount,
-            currency: 'INR',
-            status: inquiryQuote.status,
-            context_type: 'enquiry',
+            ...buildProductMessageMeta(product),
+            ...buildQuotationMessageMeta(inquiryQuote, {
+              contextType: CHAT_CONTEXT_TYPE.ENQUIRY,
+            }),
             inquiry_id: inquiry.id,
+            inquiry_number: inquiry.inquiry_number || null,
           },
           contextUpdate: inquiry.product_id
             ? {
@@ -453,26 +551,20 @@ const validateMessagePayload = async (conversation, data) => {
       }
     }
 
-    const quotation = await quotationModel.findById(quotationId, { raw: true });
+    const quotation = await quotationModel.findById(quotationId);
     if (!quotation) throw new AppError('Quotation not found', 404);
     if (Number(quotation.seller_id) !== Number(conversation.seller_id)) {
       throw new AppError('Quotation does not belong to this conversation', 403);
     }
-    const rfq = await rfqModel.findRfqById(quotation.rfq_id, { raw: true });
+    const rfq = await rfqModel.findRfqById(quotation.rfq_id);
     if (!rfq || Number(rfq.buyer_id) !== Number(conversation.buyer_id)) {
       throw new AppError('Quotation does not belong to this conversation', 400);
     }
     return {
       content: data.content || `Quotation ${quotation.quotation_number}`,
       metadata: {
-        quotation_id: quotation.id,
-        quotation_number: quotation.quotation_number,
-        price: quotation.price,
-        total_amount: quotation.total_amount,
-        currency: quotation.currency || 'INR',
-        status: quotation.status,
-        context_type: 'rfq',
-        rfq_id: quotation.rfq_id,
+        ...buildRfqMessageMeta(rfq),
+        ...buildQuotationMessageMeta(quotation, { contextType: CHAT_CONTEXT_TYPE.RFQ }),
       },
       contextUpdate: {
         last_context_type: CHAT_CONTEXT_TYPE.RFQ,
@@ -678,48 +770,54 @@ const recordSystemEvent = async ({
   try {
     if (!rfqId || !sellerId || !eventType) return null;
 
-    const rfq = await rfqModel.findRfqById(rfqId, { raw: true });
-    if (!rfq) return null;
+    const rfqRaw = await rfqModel.findRfqById(rfqId, { raw: true });
+    if (!rfqRaw) return null;
 
     const conversation = await chatConversationModel.findOrCreateBuyerSellerConversation({
-      buyerId: rfq.buyer_id,
+      buyerId: rfqRaw.buyer_id,
       sellerId,
-      initiatedBy: actorId || rfq.buyer_id,
+      initiatedBy: actorId || rfqRaw.buyer_id,
       lastContextType: CHAT_CONTEXT_TYPE.RFQ,
       lastContextId: rfqId,
       rfqId,
     });
 
+    const rfq = await rfqModel.findRfqById(rfqId);
     const label = CHAT_SYSTEM_EVENT_LABELS[eventType] || eventType;
-    let quotationMeta = {};
 
+    let quotation = null;
     if (quotationId) {
-      const quotation = await quotationModel.findById(quotationId, { raw: true });
-      if (quotation) {
-        quotationMeta = {
-          quotation_id: quotation.id,
-          quotation_number: quotation.quotation_number,
-          price: quotation.price,
-          total_amount: quotation.total_amount,
-          status: quotation.status,
-        };
-      }
+      quotation = await quotationModel.findById(quotationId);
     }
 
-    const rawMessage = await db.transaction(async (trx) =>
-      persistMessage(
+    const baseMeta = {
+      event_type: eventType,
+      actor_id: actorId,
+      ...buildRfqMessageMeta(rfq),
+      ...buildQuotationMessageMeta(quotation, { contextType: CHAT_CONTEXT_TYPE.RFQ }),
+      ...metadata,
+    };
+
+    const quoteCardEvents = [
+      CHAT_SYSTEM_EVENT.QUOTATION_SUBMITTED,
+      CHAT_SYSTEM_EVENT.QUOTATION_UPDATED,
+      CHAT_SYSTEM_EVENT.QUOTATION_REVISED,
+      CHAT_SYSTEM_EVENT.QUOTATION_ACCEPTED,
+      CHAT_SYSTEM_EVENT.QUOTATION_REJECTED,
+      CHAT_SYSTEM_EVENT.QUOTATION_WITHDRAWN,
+    ];
+
+    const messagesToEmit = [];
+
+    await db.transaction(async (trx) => {
+      // SYSTEM timeline event with full RFQ + quotation metadata
+      const systemRaw = await persistMessage(
         conversation,
         null,
         {
           message_type: CHAT_MESSAGE_TYPE.SYSTEM,
           content: label,
-          metadata: {
-            event_type: eventType,
-            rfq_id: rfqId,
-            actor_id: actorId,
-            ...quotationMeta,
-            ...metadata,
-          },
+          metadata: baseMeta,
         },
         trx,
         {
@@ -729,14 +827,40 @@ const recordSystemEvent = async ({
             rfq_id: rfqId,
           },
         },
-      ),
-    );
+      );
+      messagesToEmit.push(systemRaw.id);
 
-    const message = await chatMessageModel.findById(rawMessage.id);
-    chatSocketEmitter.emitNewMessage(conversation, message);
+      // Quotation card bubble (same role as PRODUCT card on inquiry) when a quote is involved
+      if (quotation && quoteCardEvents.includes(eventType)) {
+        const quoteRaw = await persistMessage(
+          conversation,
+          actorId || sellerId,
+          {
+            message_type: CHAT_MESSAGE_TYPE.QUOTATION,
+            content: `Quotation ${quotation.quotation_number}`,
+            metadata: baseMeta,
+          },
+          trx,
+          {
+            contextUpdate: {
+              last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+              last_context_id: rfqId,
+              rfq_id: rfqId,
+            },
+          },
+        );
+        messagesToEmit.push(quoteRaw.id);
+      }
+    });
+
+    let lastMessage = null;
+    for (const mid of messagesToEmit) {
+      lastMessage = await chatMessageModel.findById(mid);
+      chatSocketEmitter.emitNewMessage(conversation, lastMessage);
+    }
     chatSocketEmitter.emitConversationUpdated(conversation.id, actorId);
     pushUnreadSummary([conversation.buyer_id, conversation.seller_id]);
-    return message;
+    return lastMessage;
   } catch (error) {
     logger.error('[Chat] Failed to record system event', {
       rfqId,
@@ -746,6 +870,101 @@ const recordSystemEvent = async ({
     });
     return null;
   }
+};
+
+/**
+ * Seed RFQ card into the shared buyer↔seller thread when RFQ chat is opened.
+ * Avoids duplicate RFQ_SHARED for the same rfq_id in this conversation.
+ */
+const seedRfqContextMessage = async ({ conversation, rfq, actorId, sellerId }) => {
+  if (!conversation?.id || !rfq?.id) return null;
+
+  const existing = await db('chat_messages')
+    .where({ conversation_id: conversation.id, message_type: CHAT_MESSAGE_TYPE.SYSTEM })
+    .whereNull('deleted_at')
+    .whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.event_type')) = ?", [
+      CHAT_SYSTEM_EVENT.RFQ_SHARED,
+    ])
+    .whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.rfq_id')) = ?", [String(rfq.id)])
+    .first();
+
+  if (existing) {
+    // Still refresh last_context to this RFQ
+    await chatConversationModel.updateConversation(conversation.id, {
+      last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+      last_context_id: rfq.id,
+      rfq_id: rfq.id,
+    });
+    return null;
+  }
+
+  // Attach seller's latest quotation for this RFQ when present (chat after quote)
+  let quotation = null;
+  if (sellerId) {
+    const quoteRow = await db('quotations')
+      .where({ rfq_id: rfq.id, seller_id: sellerId })
+      .orderBy('updated_at', 'desc')
+      .first();
+    if (quoteRow) {
+      quotation = await quotationModel.findById(quoteRow.id);
+    }
+  }
+
+  const meta = {
+    event_type: CHAT_SYSTEM_EVENT.RFQ_SHARED,
+    actor_id: actorId,
+    ...buildRfqMessageMeta(rfq),
+    ...buildQuotationMessageMeta(quotation, { contextType: CHAT_CONTEXT_TYPE.RFQ }),
+  };
+
+  const raw = await db.transaction(async (trx) => {
+    const systemRaw = await persistMessage(
+      conversation,
+      null,
+      {
+        message_type: CHAT_MESSAGE_TYPE.SYSTEM,
+        content: `RFQ: ${rfq.title || rfq.rfq_number}`,
+        metadata: meta,
+      },
+      trx,
+      {
+        contextUpdate: {
+          last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+          last_context_id: rfq.id,
+          rfq_id: rfq.id,
+        },
+        skipSystemUnread: true,
+      },
+    );
+
+    if (quotation) {
+      await persistMessage(
+        conversation,
+        sellerId || actorId,
+        {
+          message_type: CHAT_MESSAGE_TYPE.QUOTATION,
+          content: `Quotation ${quotation.quotation_number}`,
+          metadata: meta,
+        },
+        trx,
+        {
+          contextUpdate: {
+            last_context_type: CHAT_CONTEXT_TYPE.RFQ,
+            last_context_id: rfq.id,
+            rfq_id: rfq.id,
+          },
+          skipSystemUnread: true,
+        },
+      );
+    }
+
+    return systemRaw;
+  });
+
+  const message = await chatMessageModel.findById(raw.id);
+  chatSocketEmitter.emitNewMessage(conversation, message);
+  chatSocketEmitter.emitConversationUpdated(conversation.id, actorId);
+  return message;
 };
 
 /**
@@ -837,36 +1056,45 @@ const recordInquirySystemEvent = async ({
     });
 
     const label = CHAT_SYSTEM_EVENT_LABELS[eventType] || eventType;
-    let quotationMeta = {};
-
+    let quotation = null;
     if (quotationId) {
-      const quotation = await inquiryQuotationModel.findById(quotationId, { raw: true });
-      if (quotation) {
-        quotationMeta = {
-          quotation_id: quotation.id,
-          quotation_number: quotation.quotation_number,
-          price: quotation.price,
-          total_amount: quotation.total_amount,
-          status: quotation.status,
-          context_type: 'enquiry',
-        };
-      }
+      quotation = await inquiryQuotationModel.findById(quotationId);
     }
 
-    const rawMessage = await db.transaction(async (trx) =>
-      persistMessage(
+    let product = null;
+    if (inquiry.product_id) {
+      product = await productModel.findProductById(inquiry.product_id);
+    }
+
+    const baseMeta = {
+      event_type: eventType,
+      inquiry_id: inquiryId,
+      inquiry_number: inquiry.inquiry_number || null,
+      actor_id: actorId,
+      ...buildProductMessageMeta(product),
+      ...buildQuotationMessageMeta(quotation, { contextType: CHAT_CONTEXT_TYPE.ENQUIRY }),
+      ...metadata,
+    };
+
+    const quoteCardEvents = [
+      CHAT_SYSTEM_EVENT.QUOTATION_SUBMITTED,
+      CHAT_SYSTEM_EVENT.QUOTATION_UPDATED,
+      CHAT_SYSTEM_EVENT.QUOTATION_ACCEPTED,
+      CHAT_SYSTEM_EVENT.QUOTATION_REJECTED,
+      CHAT_SYSTEM_EVENT.QUOTATION_WITHDRAWN,
+      CHAT_SYSTEM_EVENT.INQUIRY_ACCEPTED,
+    ];
+
+    const messagesToEmit = [];
+
+    await db.transaction(async (trx) => {
+      const systemRaw = await persistMessage(
         conversation,
         null,
         {
           message_type: CHAT_MESSAGE_TYPE.SYSTEM,
           content: label,
-          metadata: {
-            event_type: eventType,
-            inquiry_id: inquiryId,
-            actor_id: actorId,
-            ...quotationMeta,
-            ...metadata,
-          },
+          metadata: baseMeta,
         },
         trx,
         {
@@ -878,14 +1106,41 @@ const recordInquirySystemEvent = async ({
             inquiry_id: inquiry.id,
           },
         },
-      ),
-    );
+      );
+      messagesToEmit.push(systemRaw.id);
 
-    const message = await chatMessageModel.findById(rawMessage.id);
-    chatSocketEmitter.emitNewMessage(conversation, message);
+      if (quotation && quoteCardEvents.includes(eventType)) {
+        const quoteRaw = await persistMessage(
+          conversation,
+          actorId || inquiry.seller_id,
+          {
+            message_type: CHAT_MESSAGE_TYPE.QUOTATION,
+            content: `Quotation ${quotation.quotation_number}`,
+            metadata: baseMeta,
+          },
+          trx,
+          {
+            contextUpdate: {
+              last_context_type: inquiry.product_id
+                ? CHAT_CONTEXT_TYPE.PRODUCT
+                : CHAT_CONTEXT_TYPE.ENQUIRY,
+              last_context_id: inquiry.product_id || inquiry.id,
+              inquiry_id: inquiry.id,
+            },
+          },
+        );
+        messagesToEmit.push(quoteRaw.id);
+      }
+    });
+
+    let lastMessage = null;
+    for (const mid of messagesToEmit) {
+      lastMessage = await chatMessageModel.findById(mid);
+      chatSocketEmitter.emitNewMessage(conversation, lastMessage);
+    }
     chatSocketEmitter.emitConversationUpdated(conversation.id, actorId);
     pushUnreadSummary([conversation.buyer_id, conversation.seller_id]);
-    return message;
+    return lastMessage;
   } catch (error) {
     logger.error('[Chat] Failed to record inquiry system event', {
       inquiryId,
