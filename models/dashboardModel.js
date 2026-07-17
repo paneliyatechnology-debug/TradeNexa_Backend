@@ -1,5 +1,5 @@
 /**
- * Dashboard aggregations — buyer/seller summary counts.
+ * Dashboard aggregations — buyer/seller summary counts and chart series.
  *
  * Domain is RFQ + product inquiry + quotation + chat (no orders module).
  */
@@ -12,6 +12,9 @@ const {
   RFQ_SELLER_VISIBLE_STATUSES,
 } = require('../constants/rfq');
 const { INQUIRY_STATUS } = require('../constants/inquiry');
+
+const DEFAULT_DAILY_DAYS = 30;
+const DEFAULT_MONTHLY_MONTHS = 6;
 
 // ==========================================
 // Helpers
@@ -26,6 +29,105 @@ const toStatusMap = (rows) =>
 const sumMap = (map) => Object.values(map).reduce((a, b) => a + b, 0);
 
 const sumKeys = (map, keys) => keys.reduce((total, key) => total + (map[key] || 0), 0);
+
+/** Convert status map → pie/donut series: [{ label, value }] */
+const toPieSeries = (map) =>
+  Object.entries(map || {})
+    .map(([label, value]) => ({ label, value: parseInt(value, 10) || 0 }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+const formatDate = (d) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+const formatMonth = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+
+/** Parse MySQL DATE / DATE_FORMAT string to YYYY-MM-DD or YYYY-MM. */
+const normalizePeriodKey = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return formatDate(value);
+  const str = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+  if (/^\d{4}-\d{2}$/.test(str)) return str;
+  return str;
+};
+
+const zeroFillDaily = (rows, days) => {
+  const map = new Map(
+    (rows || []).map((row) => [normalizePeriodKey(row.period), parseInt(row.count, 10) || 0]),
+  );
+  const series = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = formatDate(d);
+    series.push({ date: key, count: map.get(key) || 0 });
+  }
+  return series;
+};
+
+const zeroFillMonthly = (rows, months) => {
+  const map = new Map(
+    (rows || []).map((row) => [normalizePeriodKey(row.period), parseInt(row.count, 10) || 0]),
+  );
+  const series = [];
+  const now = new Date();
+  now.setDate(1);
+  now.setHours(0, 0, 0, 0);
+
+  for (let i = months - 1; i >= 0; i -= 1) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = formatMonth(d);
+    series.push({ month: key, count: map.get(key) || 0 });
+  }
+  return series;
+};
+
+/**
+ * Group count by day for the last N days.
+ * @param {import('knex').Knex.QueryBuilder} baseQuery - already filtered
+ * @param {string} dateColumn - e.g. 'rfqs.created_at'
+ * @param {number} days
+ */
+const groupCountByDay = async (baseQuery, dateColumn, days = DEFAULT_DAILY_DAYS) => {
+  const rows = await baseQuery
+    .clone()
+    .whereRaw(`${dateColumn} >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`, [days - 1])
+    .clearSelect()
+    .select(db.raw(`DATE(${dateColumn}) as period`))
+    .count('* as count')
+    .groupByRaw(`DATE(${dateColumn})`)
+    .orderBy('period', 'asc');
+
+  return zeroFillDaily(rows, days);
+};
+
+/**
+ * Group count by month for the last N months.
+ * @param {import('knex').Knex.QueryBuilder} baseQuery
+ * @param {string} dateColumn
+ * @param {number} months
+ */
+const groupCountByMonth = async (baseQuery, dateColumn, months = DEFAULT_MONTHLY_MONTHS) => {
+  const rows = await baseQuery
+    .clone()
+    .whereRaw(
+      `${dateColumn} >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL ? MONTH), '%Y-%m-01')`,
+      [months - 1],
+    )
+    .clearSelect()
+    .select(db.raw(`DATE_FORMAT(${dateColumn}, '%Y-%m') as period`))
+    .count('* as count')
+    .groupByRaw(`DATE_FORMAT(${dateColumn}, '%Y-%m')`)
+    .orderBy('period', 'asc');
+
+  return zeroFillMonthly(rows, months);
+};
 
 // ==========================================
 // Profile snapshot
@@ -223,6 +325,118 @@ const countWishlistByUser = async (userId) => {
   return parseInt(row?.count || 0, 10);
 };
 
+// ==========================================
+// Chart series — buyer
+// ==========================================
+
+const getBuyerChartSeries = async (buyerId, { days = DEFAULT_DAILY_DAYS, months = DEFAULT_MONTHLY_MONTHS } = {}) => {
+  const buyerRfqs = () => db('rfqs').where({ buyer_id: buyerId }).whereNull('deleted_at');
+  const buyerInquiries = () => db('inquiries').where({ buyer_id: buyerId }).whereNull('deleted_at');
+  const buyerQuotations = () =>
+    db('quotations')
+      .innerJoin('rfqs', 'rfqs.id', 'quotations.rfq_id')
+      .where('rfqs.buyer_id', buyerId)
+      .whereNull('rfqs.deleted_at');
+  const awardedRfqs = () =>
+    buyerRfqs().whereIn('status', [RFQ_STATUS.AWARDED, RFQ_STATUS.COMPLETED]);
+  const acceptedInquiries = () => buyerInquiries().where({ status: INQUIRY_STATUS.ACCEPTED });
+  const wishlist = () => db('wishlist').where({ user_id: buyerId });
+
+  const [
+    rfqs_created_daily,
+    inquiries_created_daily,
+    quotations_received_daily,
+    wishlist_added_daily,
+    rfqs_created_monthly,
+    inquiries_created_monthly,
+    deals_won_monthly_rfqs,
+    deals_won_monthly_inquiries,
+  ] = await Promise.all([
+    groupCountByDay(buyerRfqs(), 'rfqs.created_at', days),
+    groupCountByDay(buyerInquiries(), 'inquiries.created_at', days),
+    groupCountByDay(buyerQuotations(), 'quotations.created_at', days),
+    groupCountByDay(wishlist(), 'wishlist.created_at', days),
+    groupCountByMonth(buyerRfqs(), 'rfqs.created_at', months),
+    groupCountByMonth(buyerInquiries(), 'inquiries.created_at', months),
+    groupCountByMonth(awardedRfqs(), 'rfqs.updated_at', months),
+    groupCountByMonth(acceptedInquiries(), 'inquiries.updated_at', months),
+  ]);
+
+  const deals_won_monthly = deals_won_monthly_rfqs.map((row, idx) => ({
+    month: row.month,
+    count: row.count + (deals_won_monthly_inquiries[idx]?.count || 0),
+    rfqs_awarded: row.count,
+    inquiries_accepted: deals_won_monthly_inquiries[idx]?.count || 0,
+  }));
+
+  return {
+    period: {
+      daily_days: days,
+      monthly_months: months,
+    },
+    rfqs_created_daily,
+    inquiries_created_daily,
+    quotations_received_daily,
+    wishlist_added_daily,
+    rfqs_created_monthly,
+    inquiries_created_monthly,
+    deals_won_monthly,
+  };
+};
+
+// ==========================================
+// Chart series — seller
+// ==========================================
+
+const getSellerChartSeries = async (sellerId, { days = DEFAULT_DAILY_DAYS, months = DEFAULT_MONTHLY_MONTHS } = {}) => {
+  const sellerInquiries = () => db('inquiries').where({ seller_id: sellerId }).whereNull('deleted_at');
+  const sellerQuotations = () => db('quotations').where({ seller_id: sellerId });
+  const acceptedQuotations = () =>
+    sellerQuotations().where({ status: QUOTATION_STATUS.ACCEPTED });
+  const sellerProducts = () => db('products').where({ seller_id: sellerId }).whereNull('deleted_at');
+  const approvedProducts = () => sellerProducts().where({ approval_status: 'approved' });
+
+  const [
+    inquiries_received_daily,
+    quotations_submitted_daily,
+    inquiries_received_monthly,
+    quotations_submitted_monthly,
+    quotations_accepted_monthly,
+    products_submitted_monthly,
+    products_approved_monthly,
+  ] = await Promise.all([
+    groupCountByDay(sellerInquiries(), 'inquiries.created_at', days),
+    groupCountByDay(sellerQuotations(), 'quotations.created_at', days),
+    groupCountByMonth(sellerInquiries(), 'inquiries.created_at', months),
+    groupCountByMonth(sellerQuotations(), 'quotations.created_at', months),
+    groupCountByMonth(acceptedQuotations(), 'quotations.updated_at', months),
+    groupCountByMonth(
+      sellerProducts(),
+      'COALESCE(products.submitted_at, products.created_at)',
+      months,
+    ),
+    groupCountByMonth(
+      approvedProducts(),
+      'COALESCE(products.reviewed_at, products.updated_at)',
+      months,
+    ),
+  ]);
+
+  return {
+    period: {
+      daily_days: days,
+      monthly_months: months,
+    },
+    inquiries_received_daily,
+    quotations_submitted_daily,
+    inquiries_received_monthly,
+    quotations_submitted_monthly,
+    quotations_accepted_monthly,
+    products_submitted_monthly,
+    products_approved_monthly,
+  };
+};
+
 module.exports = {
   getUserDashboardProfile,
   countRfqsByBuyer,
@@ -232,4 +446,9 @@ module.exports = {
   countInquiriesByRole,
   countProductsBySeller,
   countWishlistByUser,
+  getBuyerChartSeries,
+  getSellerChartSeries,
+  toPieSeries,
+  DEFAULT_DAILY_DAYS,
+  DEFAULT_MONTHLY_MONTHS,
 };

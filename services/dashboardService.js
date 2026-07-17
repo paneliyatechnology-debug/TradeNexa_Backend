@@ -1,21 +1,23 @@
 /**
  * Buyer / seller dashboard summary service.
  *
- * Aggregates RFQs, inquiries, quotations, products, wishlist, and chat unread.
+ * Aggregates RFQs, inquiries, quotations, products, wishlist, and chart series.
  * There is no orders module — "deals" map to awarded RFQs / accepted inquiries.
  */
 const dashboardModel = require('../models/dashboardModel');
 const chatConversationModel = require('../models/chatConversationModel');
 
 const getBuyerDashboard = async (userId) => {
-  const [profile, rfqs, pending_quotations, inquiries, wishlist_total, chat] = await Promise.all([
-    dashboardModel.getUserDashboardProfile(userId),
-    dashboardModel.countRfqsByBuyer(userId),
-    dashboardModel.countPendingRfqQuotationsForBuyer(userId),
-    dashboardModel.countInquiriesByRole(userId, 'buyer_id'),
-    dashboardModel.countWishlistByUser(userId),
-    chatConversationModel.getTotalUnreadCount(userId),
-  ]);
+  const [profile, rfqs, pending_quotations, inquiries, wishlist_total, chat, chartSeries] =
+    await Promise.all([
+      dashboardModel.getUserDashboardProfile(userId),
+      dashboardModel.countRfqsByBuyer(userId),
+      dashboardModel.countPendingRfqQuotationsForBuyer(userId),
+      dashboardModel.countInquiriesByRole(userId, 'buyer_id'),
+      dashboardModel.countWishlistByUser(userId),
+      chatConversationModel.getTotalUnreadCount(userId),
+      dashboardModel.getBuyerChartSeries(userId),
+    ]);
 
   return {
     role: 'buyer',
@@ -41,18 +43,35 @@ const getBuyerDashboard = async (userId) => {
     wishlist: {
       total: wishlist_total,
     },
+    charts: {
+      ...chartSeries,
+      // Pie / donut — use label + value with chart libraries
+      rfqs_by_status: dashboardModel.toPieSeries(rfqs.by_status),
+      inquiries_by_status: dashboardModel.toPieSeries(inquiries.by_status),
+      rfqs_lifecycle: [
+        { label: 'draft', value: rfqs.draft },
+        { label: 'open', value: rfqs.open },
+        { label: 'awarded', value: rfqs.awarded },
+        { label: 'completed', value: rfqs.completed },
+        { label: 'cancelled', value: rfqs.cancelled },
+        { label: 'expired', value: rfqs.expired },
+        { label: 'closed', value: rfqs.closed },
+      ].filter((item) => item.value > 0),
+    },
   };
 };
 
 const getSellerDashboard = async (userId) => {
-  const [profile, products, inquiries, rfq_quotations, rfq_opportunities, chat] = await Promise.all([
-    dashboardModel.getUserDashboardProfile(userId),
-    dashboardModel.countProductsBySeller(userId),
-    dashboardModel.countInquiriesByRole(userId, 'seller_id'),
-    dashboardModel.countSellerRfqQuotations(userId),
-    dashboardModel.countSellerRfqOpportunities(userId),
-    chatConversationModel.getTotalUnreadCount(userId),
-  ]);
+  const [profile, products, inquiries, rfq_quotations, rfq_opportunities, chat, chartSeries] =
+    await Promise.all([
+      dashboardModel.getUserDashboardProfile(userId),
+      dashboardModel.countProductsBySeller(userId),
+      dashboardModel.countInquiriesByRole(userId, 'seller_id'),
+      dashboardModel.countSellerRfqQuotations(userId),
+      dashboardModel.countSellerRfqOpportunities(userId),
+      chatConversationModel.getTotalUnreadCount(userId),
+      dashboardModel.getSellerChartSeries(userId),
+    ]);
 
   return {
     role: 'seller',
@@ -77,6 +96,19 @@ const getSellerDashboard = async (userId) => {
     rfq_quotations: {
       ...rfq_quotations,
       opportunities: rfq_opportunities,
+    },
+    charts: {
+      ...chartSeries,
+      products_by_approval: dashboardModel.toPieSeries(products.by_approval_status),
+      inquiries_by_status: dashboardModel.toPieSeries(inquiries.by_status),
+      quotations_by_status: dashboardModel.toPieSeries(rfq_quotations.by_status),
+      pipeline: [
+        { label: 'rfq_opportunities', value: rfq_opportunities },
+        { label: 'inquiries_pending', value: inquiries.pending },
+        { label: 'quotations_pending', value: rfq_quotations.pending_review },
+        { label: 'quotations_accepted', value: rfq_quotations.accepted },
+        { label: 'inquiries_accepted', value: inquiries.accepted },
+      ].filter((item) => item.value > 0),
     },
   };
 };
