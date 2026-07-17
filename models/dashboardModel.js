@@ -42,7 +42,24 @@ const pad2 = (n) => String(n).padStart(2, '0');
 const formatDate = (d) =>
   `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
 const formatMonth = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+
+const formatMonthLabel = (d) => MONTH_NAMES[d.getMonth()];
 
 /** Parse MySQL DATE / DATE_FORMAT string to YYYY-MM-DD or YYYY-MM. */
 const normalizePeriodKey = (value) => {
@@ -83,7 +100,11 @@ const zeroFillMonthly = (rows, months) => {
   for (let i = months - 1; i >= 0; i -= 1) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const key = formatMonth(d);
-    series.push({ month: key, count: map.get(key) || 0 });
+    series.push({
+      month: formatMonthLabel(d),
+      year: d.getFullYear(),
+      count: map.get(key) || 0,
+    });
   }
   return series;
 };
@@ -364,6 +385,7 @@ const getBuyerChartSeries = async (buyerId, { days = DEFAULT_DAILY_DAYS, months 
 
   const deals_won_monthly = deals_won_monthly_rfqs.map((row, idx) => ({
     month: row.month,
+    year: row.year,
     count: row.count + (deals_won_monthly_inquiries[idx]?.count || 0),
     rfqs_awarded: row.count,
     inquiries_accepted: deals_won_monthly_inquiries[idx]?.count || 0,
