@@ -7,20 +7,15 @@
 const dashboardModel = require('../models/dashboardModel');
 const chatConversationModel = require('../models/chatConversationModel');
 
-const RECENT_LIMIT = 5;
-
 const getBuyerDashboard = async (userId) => {
-  const [profile, rfqs, recent_rfqs, pending_quotations, inquiries, recent_inquiries, wishlist_total, chat] =
-    await Promise.all([
-      dashboardModel.getUserDashboardProfile(userId),
-      dashboardModel.countRfqsByBuyer(userId),
-      dashboardModel.getRecentRfqsByBuyer(userId, RECENT_LIMIT),
-      dashboardModel.countPendingRfqQuotationsForBuyer(userId),
-      dashboardModel.countInquiriesByRole(userId, 'buyer_id'),
-      dashboardModel.getRecentInquiriesByRole(userId, 'buyer_id', RECENT_LIMIT),
-      dashboardModel.countWishlistByUser(userId),
-      chatConversationModel.getTotalUnreadCount(userId),
-    ]);
+  const [profile, rfqs, pending_quotations, inquiries, wishlist_total, chat] = await Promise.all([
+    dashboardModel.getUserDashboardProfile(userId),
+    dashboardModel.countRfqsByBuyer(userId),
+    dashboardModel.countPendingRfqQuotationsForBuyer(userId),
+    dashboardModel.countInquiriesByRole(userId, 'buyer_id'),
+    dashboardModel.countWishlistByUser(userId),
+    chatConversationModel.getTotalUnreadCount(userId),
+  ]);
 
   return {
     role: 'buyer',
@@ -40,13 +35,9 @@ const getBuyerDashboard = async (userId) => {
     },
     rfqs: {
       ...rfqs,
-      recent: recent_rfqs,
       pending_quotations_to_review: pending_quotations,
     },
-    inquiries: {
-      ...inquiries,
-      recent: recent_inquiries,
-    },
+    inquiries,
     wishlist: {
       total: wishlist_total,
     },
@@ -60,22 +51,11 @@ const getBuyerDashboard = async (userId) => {
 };
 
 const getSellerDashboard = async (userId) => {
-  const [
-    profile,
-    products,
-    inquiries,
-    recent_inquiries,
-    rfq_quotations,
-    recent_rfq_quotations,
-    rfq_opportunities,
-    chat,
-  ] = await Promise.all([
+  const [profile, products, inquiries, rfq_quotations, rfq_opportunities, chat] = await Promise.all([
     dashboardModel.getUserDashboardProfile(userId),
     dashboardModel.countProductsBySeller(userId),
     dashboardModel.countInquiriesByRole(userId, 'seller_id'),
-    dashboardModel.getRecentInquiriesByRole(userId, 'seller_id', RECENT_LIMIT),
     dashboardModel.countSellerRfqQuotations(userId),
-    dashboardModel.getRecentSellerRfqQuotations(userId, RECENT_LIMIT),
     dashboardModel.countSellerRfqOpportunities(userId),
     chatConversationModel.getTotalUnreadCount(userId),
   ]);
@@ -99,14 +79,10 @@ const getSellerDashboard = async (userId) => {
       response_rate: profile?.response_rate ?? null,
     },
     products,
-    inquiries: {
-      ...inquiries,
-      recent: recent_inquiries,
-    },
+    inquiries,
     rfq_quotations: {
       ...rfq_quotations,
       opportunities: rfq_opportunities,
-      recent: recent_rfq_quotations,
     },
     chat: {
       unread: chat.as_seller,

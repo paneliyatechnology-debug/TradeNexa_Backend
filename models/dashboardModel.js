@@ -1,5 +1,5 @@
 /**
- * Dashboard aggregations — buyer/seller summary counts and recent activity.
+ * Dashboard aggregations — buyer/seller summary counts.
  *
  * Domain is RFQ + product inquiry + quotation + chat (no orders module).
  */
@@ -69,7 +69,7 @@ const getUserDashboardProfile = async (userId) => {
 };
 
 // ==========================================
-// RFQ counts & recent
+// RFQ counts
 // ==========================================
 
 const countRfqsByBuyer = async (buyerId) => {
@@ -84,13 +84,12 @@ const countRfqsByBuyer = async (buyerId) => {
   return {
     total: sumMap(by_status),
     draft: by_status[RFQ_STATUS.DRAFT] || 0,
-    open:
-      sumKeys(by_status, [
-        RFQ_STATUS.PUBLISHED,
-        RFQ_STATUS.OPEN,
-        RFQ_STATUS.QUOTATION_RECEIVED,
-        RFQ_STATUS.NEGOTIATION,
-      ]),
+    open: sumKeys(by_status, [
+      RFQ_STATUS.PUBLISHED,
+      RFQ_STATUS.OPEN,
+      RFQ_STATUS.QUOTATION_RECEIVED,
+      RFQ_STATUS.NEGOTIATION,
+    ]),
     awarded: by_status[RFQ_STATUS.AWARDED] || 0,
     completed: by_status[RFQ_STATUS.COMPLETED] || 0,
     cancelled: by_status[RFQ_STATUS.CANCELLED] || 0,
@@ -98,36 +97,6 @@ const countRfqsByBuyer = async (buyerId) => {
     closed: by_status[RFQ_STATUS.CLOSED] || 0,
     by_status,
   };
-};
-
-const getRecentRfqsByBuyer = async (buyerId, limit = 5) => {
-  const rows = await db('rfqs')
-    .where({ buyer_id: buyerId })
-    .whereNull('deleted_at')
-    .orderBy('updated_at', 'desc')
-    .orderBy('id', 'desc')
-    .limit(limit)
-    .select(
-      'id',
-      'rfq_number',
-      'title',
-      'status',
-      'total_quotations',
-      'quotation_deadline',
-      'created_at',
-      'updated_at',
-    );
-
-  return rows.map((row) => ({
-    id: row.id,
-    rfq_number: row.rfq_number,
-    title: row.title,
-    status: row.status,
-    total_quotations: parseInt(row.total_quotations || 0, 10),
-    quotation_deadline: row.quotation_deadline,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }));
 };
 
 /** Quotations on the buyer's RFQs awaiting accept/reject. */
@@ -161,41 +130,6 @@ const countSellerRfqQuotations = async (sellerId) => {
   };
 };
 
-const getRecentSellerRfqQuotations = async (sellerId, limit = 5) => {
-  const rows = await db('quotations')
-    .innerJoin('rfqs', 'rfqs.id', 'quotations.rfq_id')
-    .where('quotations.seller_id', sellerId)
-    .whereNull('rfqs.deleted_at')
-    .orderBy('quotations.updated_at', 'desc')
-    .orderBy('quotations.id', 'desc')
-    .limit(limit)
-    .select(
-      'quotations.id',
-      'quotations.quotation_number',
-      'quotations.rfq_id',
-      'quotations.status',
-      'quotations.total_amount',
-      'quotations.created_at',
-      'quotations.updated_at',
-      'rfqs.rfq_number',
-      'rfqs.title as rfq_title',
-      'rfqs.currency as rfq_currency',
-    );
-
-  return rows.map((row) => ({
-    id: row.id,
-    quotation_number: row.quotation_number,
-    rfq_id: row.rfq_id,
-    rfq_number: row.rfq_number,
-    rfq_title: row.rfq_title,
-    status: row.status,
-    total_amount: row.total_amount != null ? parseFloat(row.total_amount) : null,
-    currency: row.rfq_currency || null,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }));
-};
-
 /** Open RFQ opportunities seller can still quote on (public + invites, not yet quoted). */
 const countSellerRfqOpportunities = async (sellerId) => {
   const quotedRfqIds = db('quotations').where({ seller_id: sellerId }).select('rfq_id');
@@ -226,7 +160,7 @@ const countSellerRfqOpportunities = async (sellerId) => {
 };
 
 // ==========================================
-// Inquiry counts & recent
+// Inquiry counts
 // ==========================================
 
 const countInquiriesByRole = async (userId, roleColumn) => {
@@ -248,41 +182,6 @@ const countInquiriesByRole = async (userId, roleColumn) => {
     closed: by_status[INQUIRY_STATUS.CLOSED] || 0,
     by_status,
   };
-};
-
-const getRecentInquiriesByRole = async (userId, roleColumn, limit = 5) => {
-  const rows = await db('inquiries')
-    .leftJoin('products', 'products.id', 'inquiries.product_id')
-    .where(`inquiries.${roleColumn}`, userId)
-    .whereNull('inquiries.deleted_at')
-    .orderBy('inquiries.updated_at', 'desc')
-    .orderBy('inquiries.id', 'desc')
-    .limit(limit)
-    .select(
-      'inquiries.id',
-      'inquiries.inquiry_number',
-      'inquiries.product_id',
-      'inquiries.status',
-      'inquiries.quantity',
-      'inquiries.unit',
-      'inquiries.created_at',
-      'inquiries.updated_at',
-      'products.name as product_name',
-      'products.thumbnail as product_thumbnail',
-    );
-
-  return rows.map((row) => ({
-    id: row.id,
-    inquiry_number: row.inquiry_number,
-    product_id: row.product_id,
-    product_name: row.product_name || null,
-    product_thumbnail: row.product_thumbnail ? resolveMediaUrl(row.product_thumbnail) : null,
-    status: row.status,
-    quantity: row.quantity,
-    unit: row.unit,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }));
 };
 
 // ==========================================
@@ -327,13 +226,10 @@ const countWishlistByUser = async (userId) => {
 module.exports = {
   getUserDashboardProfile,
   countRfqsByBuyer,
-  getRecentRfqsByBuyer,
   countPendingRfqQuotationsForBuyer,
   countSellerRfqQuotations,
-  getRecentSellerRfqQuotations,
   countSellerRfqOpportunities,
   countInquiriesByRole,
-  getRecentInquiriesByRole,
   countProductsBySeller,
   countWishlistByUser,
 };
