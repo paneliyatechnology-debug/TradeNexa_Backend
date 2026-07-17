@@ -6,9 +6,6 @@
  */
 const dashboardModel = require('../models/dashboardModel');
 const chatConversationModel = require('../models/chatConversationModel');
-const { ROLE_CODES } = require('../constants');
-const { AppError } = require('../utils/response');
-const { HTTP_STATUS } = require('../constants');
 
 const RECENT_LIMIT = 5;
 
@@ -120,46 +117,7 @@ const getSellerDashboard = async (userId) => {
   };
 };
 
-/**
- * Role-aware dashboard.
- * - buyer → buyer payload
- * - seller → seller payload
- * - buyer_seller → both sections
- */
-const getDashboardForUser = async (userId, roleCode) => {
-  if (roleCode === ROLE_CODES.BUYER) {
-    return getBuyerDashboard(userId);
-  }
-
-  if (roleCode === ROLE_CODES.SELLER) {
-    return getSellerDashboard(userId);
-  }
-
-  if (roleCode === ROLE_CODES.BUYER_SELLER) {
-    const [buyer, seller] = await Promise.all([
-      getBuyerDashboard(userId),
-      getSellerDashboard(userId),
-    ]);
-    return {
-      role: ROLE_CODES.BUYER_SELLER,
-      buyer,
-      seller,
-      chat: {
-        total_unread: buyer.chat.total_unread,
-        as_buyer: buyer.chat.as_buyer,
-        as_seller: seller.chat.as_seller,
-      },
-    };
-  }
-
-  throw new AppError(
-    'Dashboard is only available for buyer, seller, and buyer_seller roles',
-    HTTP_STATUS.FORBIDDEN,
-  );
-};
-
 module.exports = {
   getBuyerDashboard,
   getSellerDashboard,
-  getDashboardForUser,
 };
