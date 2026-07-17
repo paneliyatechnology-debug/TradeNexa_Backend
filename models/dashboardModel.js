@@ -175,11 +175,11 @@ const getRecentSellerRfqQuotations = async (sellerId, limit = 5) => {
       'quotations.rfq_id',
       'quotations.status',
       'quotations.total_amount',
-      'quotations.currency',
       'quotations.created_at',
       'quotations.updated_at',
       'rfqs.rfq_number',
       'rfqs.title as rfq_title',
+      'rfqs.currency as rfq_currency',
     );
 
   return rows.map((row) => ({
@@ -190,7 +190,7 @@ const getRecentSellerRfqQuotations = async (sellerId, limit = 5) => {
     rfq_title: row.rfq_title,
     status: row.status,
     total_amount: row.total_amount != null ? parseFloat(row.total_amount) : null,
-    currency: row.currency || null,
+    currency: row.rfq_currency || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   }));
