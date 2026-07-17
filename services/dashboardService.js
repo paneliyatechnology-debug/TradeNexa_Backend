@@ -41,12 +41,6 @@ const getBuyerDashboard = async (userId) => {
     wishlist: {
       total: wishlist_total,
     },
-    chat: {
-      unread: chat.as_buyer,
-      total_unread: chat.total,
-      as_buyer: chat.as_buyer,
-      as_seller: chat.as_seller,
-    },
   };
 };
 
@@ -83,12 +77,6 @@ const getSellerDashboard = async (userId) => {
     rfq_quotations: {
       ...rfq_quotations,
       opportunities: rfq_opportunities,
-    },
-    chat: {
-      unread: chat.as_seller,
-      total_unread: chat.total,
-      as_buyer: chat.as_buyer,
-      as_seller: chat.as_seller,
     },
   };
 };
