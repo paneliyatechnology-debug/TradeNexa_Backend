@@ -1,5 +1,5 @@
 /**
- * Buyer / seller dashboard controllers.
+ * Buyer / seller / admin dashboard controllers.
  */
 const dashboardService = require('../services/dashboardService');
 const { success } = require('../utils/response');
@@ -24,7 +24,18 @@ const getSellerDashboard = async (req, res, next) => {
   }
 };
 
+/** GET /dashboard/admin — platform-wide metrics for admin panel. */
+const getAdminDashboard = async (req, res, next) => {
+  try {
+    const data = await dashboardService.getAdminDashboard();
+    return success(res, 'Admin dashboard retrieved successfully', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getBuyerDashboard,
   getSellerDashboard,
+  getAdminDashboard,
 };

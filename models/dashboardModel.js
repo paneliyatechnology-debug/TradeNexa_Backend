@@ -459,6 +459,249 @@ const getSellerChartSeries = async (sellerId, { days = DEFAULT_DAILY_DAYS, month
   };
 };
 
+// ==========================================
+// Admin — platform-wide counts
+// ==========================================
+
+const countUsersPlatform = async () => {
+  const roleRows = await db('users')
+    .join('roles', 'users.role_id', 'roles.id')
+    .whereNull('users.deleted_at')
+    .select('roles.code as status')
+    .count('users.id as count')
+    .groupBy('roles.code');
+
+  const by_role = toStatusMap(roleRows);
+
+  const [activeRow, verifiedRow, completedRow] = await Promise.all([
+    db('users').whereNull('deleted_at').where({ is_active: true }).count('* as count').first(),
+    db('users').whereNull('deleted_at').where({ is_verified: true }).count('* as count').first(),
+    db('users').whereNull('deleted_at').where({ is_completed_profile: true }).count('* as count').first(),
+  ]);
+
+  return {
+    total: sumMap(by_role),
+    buyers: (by_role.buyer || 0) + (by_role.buyer_seller || 0),
+    sellers: (by_role.seller || 0) + (by_role.buyer_seller || 0),
+    buyer_seller: by_role.buyer_seller || 0,
+    admins:
+      (by_role.admin || 0) + (by_role.super_admin || 0) + (by_role.supporter || 0),
+    active: parseInt(activeRow?.count || 0, 10),
+    verified: parseInt(verifiedRow?.count || 0, 10),
+    completed_profile: parseInt(completedRow?.count || 0, 10),
+    by_role,
+  };
+};
+
+const countRfqsPlatform = async () => {
+  const rows = await db('rfqs')
+    .whereNull('deleted_at')
+    .select('status')
+    .count('* as count')
+    .groupBy('status');
+
+  const by_status = toStatusMap(rows);
+
+  const [avgQuotations, avgResponse] = await Promise.all([
+    db('rfqs').whereNull('deleted_at').avg('total_quotations as avg_quotations').first(),
+    db('rfq_sellers')
+      .whereNotNull('responded_at')
+      .whereNotNull('viewed_at')
+      .select(db.raw('AVG(TIMESTAMPDIFF(MINUTE, viewed_at, responded_at)) as avg_minutes'))
+      .first(),
+  ]);
+
+  return {
+    total: sumMap(by_status),
+    draft: by_status[RFQ_STATUS.DRAFT] || 0,
+    open: sumKeys(by_status, [
+      RFQ_STATUS.PUBLISHED,
+      RFQ_STATUS.OPEN,
+      RFQ_STATUS.QUOTATION_RECEIVED,
+      RFQ_STATUS.NEGOTIATION,
+    ]),
+    awarded: by_status[RFQ_STATUS.AWARDED] || 0,
+    completed: by_status[RFQ_STATUS.COMPLETED] || 0,
+    cancelled: by_status[RFQ_STATUS.CANCELLED] || 0,
+    expired: by_status[RFQ_STATUS.EXPIRED] || 0,
+    closed: by_status[RFQ_STATUS.CLOSED] || 0,
+    average_quotations_per_rfq: parseFloat(avgQuotations?.avg_quotations || 0),
+    average_response_time_minutes: parseFloat(avgResponse?.avg_minutes || 0),
+    by_status,
+  };
+};
+
+const countInquiriesPlatform = async () => {
+  const rows = await db('inquiries')
+    .whereNull('deleted_at')
+    .select('status')
+    .count('* as count')
+    .groupBy('status');
+
+  const by_status = toStatusMap(rows);
+  return {
+    total: sumMap(by_status),
+    pending: by_status[INQUIRY_STATUS.PENDING] || 0,
+    quoted: by_status[INQUIRY_STATUS.QUOTED] || 0,
+    accepted: by_status[INQUIRY_STATUS.ACCEPTED] || 0,
+    rejected: by_status[INQUIRY_STATUS.REJECTED] || 0,
+    cancelled: by_status[INQUIRY_STATUS.CANCELLED] || 0,
+    closed: by_status[INQUIRY_STATUS.CLOSED] || 0,
+    by_status,
+  };
+};
+
+const countQuotationsPlatform = async () => {
+  const rows = await db('quotations')
+    .select('status')
+    .count('* as count')
+    .groupBy('status');
+
+  const by_status = toStatusMap(rows);
+  return {
+    total: sumMap(by_status),
+    pending_review: sumKeys(by_status, [QUOTATION_STATUS.SUBMITTED, QUOTATION_STATUS.UPDATED]),
+    accepted: by_status[QUOTATION_STATUS.ACCEPTED] || 0,
+    rejected: by_status[QUOTATION_STATUS.REJECTED] || 0,
+    withdrawn: by_status[QUOTATION_STATUS.WITHDRAWN] || 0,
+    by_status,
+  };
+};
+
+const countProductsPlatform = async () => {
+  const rows = await db('products')
+    .whereNull('deleted_at')
+    .select('approval_status')
+    .count('* as count')
+    .groupBy('approval_status');
+
+  const by_approval_status = rows.reduce((acc, row) => {
+    acc[row.approval_status] = parseInt(row.count, 10);
+    return acc;
+  }, {});
+
+  const activeRow = await db('products')
+    .where({ is_active: true, approval_status: 'approved' })
+    .whereNull('deleted_at')
+    .count('* as count')
+    .first();
+
+  return {
+    total: sumMap(by_approval_status),
+    in_review: by_approval_status.in_review || 0,
+    revision_required: by_approval_status.revision_required || 0,
+    approved: by_approval_status.approved || 0,
+    rejected: by_approval_status.rejected || 0,
+    active_approved: parseInt(activeRow?.count || 0, 10),
+    moderation_queue:
+      (by_approval_status.in_review || 0) + (by_approval_status.revision_required || 0),
+    by_approval_status,
+  };
+};
+
+const countChatPlatform = async () => {
+  const [conversationsRow, unreadBuyerRow, unreadSellerRow, messagesRow] = await Promise.all([
+    db('chat_conversations').where({ is_active: true }).count('* as count').first(),
+    db('chat_conversations').where({ is_active: true }).sum('buyer_unread_count as total').first(),
+    db('chat_conversations').where({ is_active: true }).sum('seller_unread_count as total').first(),
+    db('chat_messages').whereNull('deleted_at').count('* as count').first(),
+  ]);
+
+  const buyerUnread = parseInt(unreadBuyerRow?.total || 0, 10);
+  const sellerUnread = parseInt(unreadSellerRow?.total || 0, 10);
+
+  return {
+    conversations: parseInt(conversationsRow?.count || 0, 10),
+    messages: parseInt(messagesRow?.count || 0, 10),
+    unread_total: buyerUnread + sellerUnread,
+  };
+};
+
+const getAdminChartSeries = async ({
+  days = DEFAULT_DAILY_DAYS,
+  months = DEFAULT_MONTHLY_MONTHS,
+} = {}) => {
+  const usersQ = () => db('users').whereNull('deleted_at');
+  const rfqsQ = () => db('rfqs').whereNull('deleted_at');
+  const inquiriesQ = () => db('inquiries').whereNull('deleted_at');
+  const quotationsQ = () => db('quotations');
+  const productsQ = () => db('products').whereNull('deleted_at');
+  const approvedProductsQ = () => productsQ().where({ approval_status: 'approved' });
+  const awardedRfqsQ = () =>
+    rfqsQ().whereIn('status', [RFQ_STATUS.AWARDED, RFQ_STATUS.COMPLETED]);
+  const acceptedInquiriesQ = () =>
+    inquiriesQ().where({ status: INQUIRY_STATUS.ACCEPTED });
+
+  const [
+    users_registered_daily,
+    rfqs_created_daily,
+    inquiries_created_daily,
+    quotations_created_daily,
+    products_submitted_daily,
+    users_registered_monthly,
+    rfqs_created_monthly,
+    inquiries_created_monthly,
+    quotations_created_monthly,
+    products_submitted_monthly,
+    products_approved_monthly,
+    deals_won_monthly_rfqs,
+    deals_won_monthly_inquiries,
+  ] = await Promise.all([
+    groupCountByDay(usersQ(), 'users.created_at', days),
+    groupCountByDay(rfqsQ(), 'rfqs.created_at', days),
+    groupCountByDay(inquiriesQ(), 'inquiries.created_at', days),
+    groupCountByDay(quotationsQ(), 'quotations.created_at', days),
+    groupCountByDay(
+      productsQ(),
+      'COALESCE(products.submitted_at, products.created_at)',
+      days,
+    ),
+    groupCountByMonth(usersQ(), 'users.created_at', months),
+    groupCountByMonth(rfqsQ(), 'rfqs.created_at', months),
+    groupCountByMonth(inquiriesQ(), 'inquiries.created_at', months),
+    groupCountByMonth(quotationsQ(), 'quotations.created_at', months),
+    groupCountByMonth(
+      productsQ(),
+      'COALESCE(products.submitted_at, products.created_at)',
+      months,
+    ),
+    groupCountByMonth(
+      approvedProductsQ(),
+      'COALESCE(products.reviewed_at, products.updated_at)',
+      months,
+    ),
+    groupCountByMonth(awardedRfqsQ(), 'rfqs.updated_at', months),
+    groupCountByMonth(acceptedInquiriesQ(), 'inquiries.updated_at', months),
+  ]);
+
+  const deals_won_monthly = deals_won_monthly_rfqs.map((row, idx) => ({
+    month: row.month,
+    year: row.year,
+    count: row.count + (deals_won_monthly_inquiries[idx]?.count || 0),
+    rfqs_awarded: row.count,
+    inquiries_accepted: deals_won_monthly_inquiries[idx]?.count || 0,
+  }));
+
+  return {
+    period: {
+      daily_days: days,
+      monthly_months: months,
+    },
+    users_registered_daily,
+    rfqs_created_daily,
+    inquiries_created_daily,
+    quotations_created_daily,
+    products_submitted_daily,
+    users_registered_monthly,
+    rfqs_created_monthly,
+    inquiries_created_monthly,
+    quotations_created_monthly,
+    products_submitted_monthly,
+    products_approved_monthly,
+    deals_won_monthly,
+  };
+};
+
 module.exports = {
   getUserDashboardProfile,
   countRfqsByBuyer,
@@ -470,6 +713,13 @@ module.exports = {
   countWishlistByUser,
   getBuyerChartSeries,
   getSellerChartSeries,
+  countUsersPlatform,
+  countRfqsPlatform,
+  countInquiriesPlatform,
+  countQuotationsPlatform,
+  countProductsPlatform,
+  countChatPlatform,
+  getAdminChartSeries,
   toPieSeries,
   DEFAULT_DAILY_DAYS,
   DEFAULT_MONTHLY_MONTHS,
