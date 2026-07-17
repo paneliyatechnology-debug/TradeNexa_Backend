@@ -1,0 +1,165 @@
+/**
+ * Buyer / seller dashboard summary service.
+ *
+ * Aggregates RFQs, inquiries, quotations, products, wishlist, and chat unread.
+ * There is no orders module — "deals" map to awarded RFQs / accepted inquiries.
+ */
+const dashboardModel = require('../models/dashboardModel');
+const chatConversationModel = require('../models/chatConversationModel');
+const { ROLE_CODES } = require('../constants');
+const { AppError } = require('../utils/response');
+const { HTTP_STATUS } = require('../constants');
+
+const RECENT_LIMIT = 5;
+
+const getBuyerDashboard = async (userId) => {
+  const [profile, rfqs, recent_rfqs, pending_quotations, inquiries, recent_inquiries, wishlist_total, chat] =
+    await Promise.all([
+      dashboardModel.getUserDashboardProfile(userId),
+      dashboardModel.countRfqsByBuyer(userId),
+      dashboardModel.getRecentRfqsByBuyer(userId, RECENT_LIMIT),
+      dashboardModel.countPendingRfqQuotationsForBuyer(userId),
+      dashboardModel.countInquiriesByRole(userId, 'buyer_id'),
+      dashboardModel.getRecentInquiriesByRole(userId, 'buyer_id', RECENT_LIMIT),
+      dashboardModel.countWishlistByUser(userId),
+      chatConversationModel.getTotalUnreadCount(userId),
+    ]);
+
+  return {
+    role: 'buyer',
+    profile,
+    summary: {
+      rfqs_total: rfqs.total,
+      rfqs_open: rfqs.open,
+      rfqs_draft: rfqs.draft,
+      rfqs_awarded: rfqs.awarded,
+      inquiries_total: inquiries.total,
+      inquiries_pending: inquiries.pending,
+      inquiries_quoted: inquiries.quoted,
+      inquiries_accepted: inquiries.accepted,
+      pending_quotations_to_review: pending_quotations,
+      wishlist_total,
+      unread_messages: chat.as_buyer,
+    },
+    rfqs: {
+      ...rfqs,
+      recent: recent_rfqs,
+      pending_quotations_to_review: pending_quotations,
+    },
+    inquiries: {
+      ...inquiries,
+      recent: recent_inquiries,
+    },
+    wishlist: {
+      total: wishlist_total,
+    },
+    chat: {
+      unread: chat.as_buyer,
+      total_unread: chat.total,
+      as_buyer: chat.as_buyer,
+      as_seller: chat.as_seller,
+    },
+  };
+};
+
+const getSellerDashboard = async (userId) => {
+  const [
+    profile,
+    products,
+    inquiries,
+    recent_inquiries,
+    rfq_quotations,
+    recent_rfq_quotations,
+    rfq_opportunities,
+    chat,
+  ] = await Promise.all([
+    dashboardModel.getUserDashboardProfile(userId),
+    dashboardModel.countProductsBySeller(userId),
+    dashboardModel.countInquiriesByRole(userId, 'seller_id'),
+    dashboardModel.getRecentInquiriesByRole(userId, 'seller_id', RECENT_LIMIT),
+    dashboardModel.countSellerRfqQuotations(userId),
+    dashboardModel.getRecentSellerRfqQuotations(userId, RECENT_LIMIT),
+    dashboardModel.countSellerRfqOpportunities(userId),
+    chatConversationModel.getTotalUnreadCount(userId),
+  ]);
+
+  return {
+    role: 'seller',
+    profile,
+    summary: {
+      products_total: products.total,
+      products_active: products.active_approved,
+      products_in_review: products.in_review,
+      products_revision_required: products.revision_required,
+      inquiries_pending: inquiries.pending,
+      inquiries_quoted: inquiries.quoted,
+      inquiries_accepted: inquiries.accepted,
+      rfq_quotations_pending: rfq_quotations.pending_review,
+      rfq_quotations_accepted: rfq_quotations.accepted,
+      rfq_opportunities,
+      unread_messages: chat.as_seller,
+      rating: profile?.rating ?? null,
+      response_rate: profile?.response_rate ?? null,
+    },
+    products,
+    inquiries: {
+      ...inquiries,
+      recent: recent_inquiries,
+    },
+    rfq_quotations: {
+      ...rfq_quotations,
+      opportunities: rfq_opportunities,
+      recent: recent_rfq_quotations,
+    },
+    chat: {
+      unread: chat.as_seller,
+      total_unread: chat.total,
+      as_buyer: chat.as_buyer,
+      as_seller: chat.as_seller,
+    },
+  };
+};
+
+/**
+ * Role-aware dashboard.
+ * - buyer → buyer payload
+ * - seller → seller payload
+ * - buyer_seller → both sections
+ */
+const getDashboardForUser = async (userId, roleCode) => {
+  if (roleCode === ROLE_CODES.BUYER) {
+    return getBuyerDashboard(userId);
+  }
+
+  if (roleCode === ROLE_CODES.SELLER) {
+    return getSellerDashboard(userId);
+  }
+
+  if (roleCode === ROLE_CODES.BUYER_SELLER) {
+    const [buyer, seller] = await Promise.all([
+      getBuyerDashboard(userId),
+      getSellerDashboard(userId),
+    ]);
+    return {
+      role: ROLE_CODES.BUYER_SELLER,
+      buyer,
+      seller,
+      chat: {
+        total_unread: buyer.chat.total_unread,
+        as_buyer: buyer.chat.as_buyer,
+        as_seller: seller.chat.as_seller,
+      },
+    };
+  }
+
+  throw new AppError(
+    'Dashboard is only available for buyer, seller, and buyer_seller roles',
+    HTTP_STATUS.FORBIDDEN,
+  );
+};
+
+module.exports = {
+  getBuyerDashboard,
+  getSellerDashboard,
+  getDashboardForUser,
+};

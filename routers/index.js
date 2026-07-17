@@ -21,6 +21,7 @@ const newsRouter = require('./newsRouter');
 const businessTypeRouter = require('./businessTypeRouter');
 const roleRouter = require('./roleRouter');
 const adminAuthRouter = require('./adminAuthRouter');
+const dashboardRouter = require('./dashboardRouter');
 
 const router = express.Router();
 
@@ -30,6 +31,7 @@ const router = express.Router();
 
 router.use('/auth', authRouter);
 router.use('/admin/auth', adminAuthRouter);
+router.use('/dashboard', dashboardRouter);
 router.use('/roles', roleRouter);
 router.use('/business-types', businessTypeRouter);
 router.use('/categories', categoryRouter);
