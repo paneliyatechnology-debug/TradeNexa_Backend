@@ -14,6 +14,13 @@ module.exports = {
     name: process.env.APP_NAME || 'TradeNexa',
     url: process.env.APP_URL || 'http://localhost:3000',
   },
+  /** Web / deep-link targets for push notification click actions. */
+  frontend: {
+    url: process.env.FRONTEND_URL || process.env.WEB_APP_URL || process.env.APP_URL || 'http://localhost:3000',
+    chatPath: process.env.FRONTEND_CHAT_PATH || '/chats',
+    pushIcon: process.env.FRONTEND_PUSH_ICON || '/icons/icon-192.png',
+    pushBadge: process.env.FRONTEND_PUSH_BADGE || '/icons/badge-72.png',
+  },
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET,
     refreshSecret: process.env.JWT_REFRESH_SECRET,

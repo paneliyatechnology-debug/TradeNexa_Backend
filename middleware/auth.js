@@ -7,7 +7,7 @@
 const { validationResult, body } = require('express-validator');
 const { AppError } = require('../utils/response');
 const { verifyAccess } = require('../utils/jwt');
-const { TOKEN_TYPES } = require('../constants');
+const { TOKEN_TYPES, DEVICE_TYPE_VALUES } = require('../constants');
 const userModel = require('../models/userModel');
 
 // ==========================================
@@ -61,9 +61,21 @@ const deviceRules = [
   body('device.device_type')
     .optional({ values: 'falsy' })
     .trim()
-    .isIn(['android', 'ios', 'web'])
-    .withMessage('Invalid device type'),
+    .toLowerCase()
+    .isIn(DEVICE_TYPE_VALUES)
+    .withMessage('Invalid device type (android | ios | web)'),
   body('device.device_token')
+    .optional({ values: 'falsy' })
+    .trim()
+    .notEmpty()
+    .withMessage('Device token cannot be empty'),
+  body('device_type')
+    .optional({ values: 'falsy' })
+    .trim()
+    .toLowerCase()
+    .isIn(DEVICE_TYPE_VALUES)
+    .withMessage('Invalid device type (android | ios | web)'),
+  body('device_token')
     .optional({ values: 'falsy' })
     .trim()
     .notEmpty()
@@ -78,7 +90,19 @@ const sendOtpRules = [mobile(), body('recaptcha_token').optional()];
 const verifyOtpRules = [mobile(), otp(), verificationId(), ...deviceRules];
 const resendOtpRules = [mobile(), verificationId(), body('recaptcha_token').optional()];
 const refreshRules = [body('refresh_token').trim().notEmpty()];
-const logoutRules = [body('refresh_token').optional()];
+const logoutRules = [
+  body('refresh_token').optional(),
+  body('device_token')
+    .optional({ values: 'falsy' })
+    .trim()
+    .notEmpty()
+    .withMessage('Device token cannot be empty'),
+  body('device.device_token')
+    .optional({ values: 'falsy' })
+    .trim()
+    .notEmpty()
+    .withMessage('Device token cannot be empty'),
+];
 
 /**
  * Validation rules for user registration.

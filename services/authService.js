@@ -37,16 +37,23 @@ const isExpired = (date) => new Date(date) < new Date();
  * @returns {{ device_type: string|null, device_token: string|null }|null}
  */
 const getDeviceFromBody = (body) => {
+  let deviceType = null;
+  let deviceToken = null;
+
   if (body.device_type && body.device_token) {
-    return { device_type: body.device_type, device_token: body.device_token };
+    deviceType = body.device_type;
+    deviceToken = body.device_token;
+  } else if (body.device?.device_token) {
+    deviceType = body.device.device_type || null;
+    deviceToken = body.device.device_token;
+  } else {
+    return null;
   }
-  if (body.device?.device_token) {
-    return {
-      device_type: body.device.device_type || null,
-      device_token: body.device.device_token,
-    };
-  }
-  return null;
+
+  return {
+    device_type: deviceType ? String(deviceType).toLowerCase().trim() : null,
+    device_token: String(deviceToken).trim(),
+  };
 };
 
 /**
@@ -285,15 +292,18 @@ const refreshToken = async (token) => {
 };
 
 /**
- * Revoke specific or all active refresh tokens for the user, and remove active device registrations.
+ * Revoke specific or all active refresh tokens for the user, and remove device registrations.
+ * Pass deviceToken to unregister only that platform/device; otherwise all devices are cleared.
  * @param {number} userId - Authenticated user ID
  * @param {string} [token] - Specific refresh token to revoke
+ * @param {string} [deviceToken] - Optional FCM token for the logging-out device
  */
-const logout = async (userId, token) => {
+const logout = async (userId, token, deviceToken = null) => {
   if (token) await userModel.revokeRefreshTokenByValue(userId, token);
   else await userModel.revokeAllRefreshTokens(userId);
 
-  await userModel.deleteUserDevice(userId);
+  if (deviceToken) await userModel.deleteDeviceByToken(deviceToken);
+  else await userModel.deleteUserDevice(userId);
 };
 
 // ==========================================

@@ -480,20 +480,34 @@ const softDeleteUser = async (userId) => {
 const deleteUserDevice = (userId) => db('devices').where({ user_id: userId }).del();
 
 /**
- * Save or replace the user's active device (one device per user).
+ * Save or replace the user's device for a platform (android | ios | web).
+ * Other platforms for the same user are kept so multi-device push works.
  * @param {number} userId - User ID
  * @param {string} deviceType - android | ios | web
- * @param {string} deviceToken - Push notification token
+ * @param {string} deviceToken - FCM registration token
  * @returns {Promise<void>}
  */
 const saveUserDevice = async (userId, deviceType, deviceToken) => {
   if (!deviceToken) return;
 
+  const { DEVICE_TYPE_VALUES } = require('../constants');
+  const normalizedType = String(deviceType || '')
+    .toLowerCase()
+    .trim();
+  const deviceTypeValue = DEVICE_TYPE_VALUES.includes(normalizedType) ? normalizedType : null;
+
   await db.transaction(async (trx) => {
-    await trx('devices').where({ user_id: userId }).del();
+    // Token can only belong to one user
+    await trx('devices').where({ device_token: deviceToken }).del();
+
+    // One active token per platform per user
+    if (deviceTypeValue) {
+      await trx('devices').where({ user_id: userId, device_type: deviceTypeValue }).del();
+    }
+
     await trx('devices').insert({
       user_id: userId,
-      device_type: deviceType || null,
+      device_type: deviceTypeValue,
       device_token: deviceToken,
       last_active: trx.fn.now(),
     });
@@ -501,26 +515,37 @@ const saveUserDevice = async (userId, deviceType, deviceToken) => {
 };
 
 /**
- * Get the registered device for a user (FCM token).
+ * Get all registered devices for a user (Android / iOS / Web).
+ * @param {number} userId
+ * @returns {Promise<Array<{ id: number, device_type: string|null, device_token: string }>>}
+ */
+const findDevicesByUserId = async (userId) => {
+  const rows = await db('devices')
+    .where({ user_id: userId })
+    .whereNotNull('device_token')
+    .orderBy('updated_at', 'desc');
+
+  return rows
+    .filter((row) => row.device_token)
+    .map((row) => ({
+      id: row.id,
+      device_type: row.device_type || null,
+      device_token: row.device_token,
+    }));
+};
+
+/**
+ * Get the most recently updated device for a user (FCM token).
  * @param {number} userId
  * @returns {Promise<{ id: number, device_type: string|null, device_token: string }|null>}
  */
 const findDeviceByUserId = async (userId) => {
-  const row = await db('devices')
-    .where({ user_id: userId })
-    .whereNotNull('device_token')
-    .orderBy('updated_at', 'desc')
-    .first();
-  if (!row?.device_token) return null;
-  return {
-    id: row.id,
-    device_type: row.device_type || null,
-    device_token: row.device_token,
-  };
+  const devices = await findDevicesByUserId(userId);
+  return devices[0] || null;
 };
 
 /**
- * Delete a specific device token (e.g. invalid FCM registration).
+ * Delete a specific device token (e.g. invalid FCM registration or logout from one device).
  * @param {string} deviceToken
  * @returns {Promise<number>}
  */
@@ -559,6 +584,7 @@ module.exports = {
   softDeleteUser,
   deleteUserDevice,
   saveUserDevice,
+  findDevicesByUserId,
   findDeviceByUserId,
   deleteDeviceByToken,
   db,

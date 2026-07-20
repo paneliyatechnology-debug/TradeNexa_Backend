@@ -153,8 +153,9 @@ const getMessaging = () => {
 
 /**
  * Send an FCM message to a single device token.
+ * Pass only the platform blocks that apply (android / apns / webpush).
  * @param {string} token
- * @param {{ notification?: Object, data?: Object, android?: Object, apns?: Object }} payload
+ * @param {{ notification?: Object, data?: Object, android?: Object, apns?: Object, webpush?: Object }} payload
  * @returns {Promise<{ success: boolean, messageId?: string, errorCode?: string }>}
  */
 const sendPushToToken = async (token, payload = {}) => {
@@ -168,22 +169,16 @@ const sendPushToToken = async (token, payload = {}) => {
   }
 
   try {
-    const messageId = await messaging.send({
+    const message = {
       token,
       notification: payload.notification || undefined,
       data: payload.data || undefined,
-      android: payload.android || {
-        priority: 'high',
-        notification: { channelId: 'chat_messages' },
-      },
-      apns: payload.apns || {
-        payload: {
-          aps: {
-            sound: 'default',
-          },
-        },
-      },
-    });
+    };
+    if (payload.android) message.android = payload.android;
+    if (payload.apns) message.apns = payload.apns;
+    if (payload.webpush) message.webpush = payload.webpush;
+
+    const messageId = await messaging.send(message);
     return { success: true, messageId };
   } catch (error) {
     const errorCode = error?.code || error?.errorInfo?.code || 'unknown';

@@ -83,6 +83,15 @@ const OTP_STATUS = {
   EXPIRED: 'expired',
 };
 
+/** Client platforms that register FCM tokens. */
+const DEVICE_TYPES = {
+  ANDROID: 'android',
+  IOS: 'ios',
+  WEB: 'web',
+};
+
+const DEVICE_TYPE_VALUES = Object.values(DEVICE_TYPES);
+
 module.exports = {
   HTTP_STATUS,
   MESSAGES,
@@ -91,4 +100,6 @@ module.exports = {
   LANGUAGE_CODES,
   TOKEN_TYPES,
   OTP_STATUS,
+  DEVICE_TYPES,
+  DEVICE_TYPE_VALUES,
 };
