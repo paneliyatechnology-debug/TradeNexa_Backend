@@ -1,18 +1,8 @@
 /**
- * Buyer / seller / admin dashboard controllers.
+ * Seller / admin dashboard controllers.
  */
 const dashboardService = require('../services/dashboardService');
 const { success } = require('../utils/response');
-
-/** GET /dashboard/buyer — buyer-side metrics only. */
-const getBuyerDashboard = async (req, res, next) => {
-  try {
-    const data = await dashboardService.getBuyerDashboard(req.user.id);
-    return success(res, 'Buyer dashboard retrieved successfully', data);
-  } catch (err) {
-    next(err);
-  }
-};
 
 /** GET /dashboard/seller — seller-side metrics only. */
 const getSellerDashboard = async (req, res, next) => {
@@ -35,7 +25,6 @@ const getAdminDashboard = async (req, res, next) => {
 };
 
 module.exports = {
-  getBuyerDashboard,
   getSellerDashboard,
   getAdminDashboard,
 };

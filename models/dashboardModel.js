@@ -192,48 +192,8 @@ const getUserDashboardProfile = async (userId) => {
 };
 
 // ==========================================
-// RFQ counts
+// RFQ counts (seller)
 // ==========================================
-
-const countRfqsByBuyer = async (buyerId) => {
-  const rows = await db('rfqs')
-    .where({ buyer_id: buyerId })
-    .whereNull('deleted_at')
-    .select('status')
-    .count('* as count')
-    .groupBy('status');
-
-  const by_status = toStatusMap(rows);
-  return {
-    total: sumMap(by_status),
-    draft: by_status[RFQ_STATUS.DRAFT] || 0,
-    open: sumKeys(by_status, [
-      RFQ_STATUS.PUBLISHED,
-      RFQ_STATUS.OPEN,
-      RFQ_STATUS.QUOTATION_RECEIVED,
-      RFQ_STATUS.NEGOTIATION,
-    ]),
-    awarded: by_status[RFQ_STATUS.AWARDED] || 0,
-    completed: by_status[RFQ_STATUS.COMPLETED] || 0,
-    cancelled: by_status[RFQ_STATUS.CANCELLED] || 0,
-    expired: by_status[RFQ_STATUS.EXPIRED] || 0,
-    closed: by_status[RFQ_STATUS.CLOSED] || 0,
-    by_status,
-  };
-};
-
-/** Quotations on the buyer's RFQs awaiting accept/reject. */
-const countPendingRfqQuotationsForBuyer = async (buyerId) => {
-  const row = await db('quotations')
-    .innerJoin('rfqs', 'rfqs.id', 'quotations.rfq_id')
-    .where('rfqs.buyer_id', buyerId)
-    .whereNull('rfqs.deleted_at')
-    .whereIn('quotations.status', [QUOTATION_STATUS.SUBMITTED, QUOTATION_STATUS.UPDATED])
-    .count('quotations.id as count')
-    .first();
-
-  return parseInt(row?.count || 0, 10);
-};
 
 const countSellerRfqQuotations = async (sellerId) => {
   const rows = await db('quotations')
@@ -308,7 +268,7 @@ const countInquiriesByRole = async (userId, roleColumn) => {
 };
 
 // ==========================================
-// Products & wishlist
+// Products
 // ==========================================
 
 const countProductsBySeller = async (sellerId) => {
@@ -338,71 +298,6 @@ const countProductsBySeller = async (sellerId) => {
     rejected: by_approval_status.rejected || 0,
     active_approved: parseInt(activeRow?.count || 0, 10),
     by_approval_status,
-  };
-};
-
-const countWishlistByUser = async (userId) => {
-  const row = await db('wishlist').where({ user_id: userId }).count('* as count').first();
-  return parseInt(row?.count || 0, 10);
-};
-
-// ==========================================
-// Chart series — buyer
-// ==========================================
-
-const getBuyerChartSeries = async (buyerId, { days = DEFAULT_DAILY_DAYS, months = DEFAULT_MONTHLY_MONTHS } = {}) => {
-  const buyerRfqs = () => db('rfqs').where({ buyer_id: buyerId }).whereNull('deleted_at');
-  const buyerInquiries = () => db('inquiries').where({ buyer_id: buyerId }).whereNull('deleted_at');
-  const buyerQuotations = () =>
-    db('quotations')
-      .innerJoin('rfqs', 'rfqs.id', 'quotations.rfq_id')
-      .where('rfqs.buyer_id', buyerId)
-      .whereNull('rfqs.deleted_at');
-  const awardedRfqs = () =>
-    buyerRfqs().whereIn('status', [RFQ_STATUS.AWARDED, RFQ_STATUS.COMPLETED]);
-  const acceptedInquiries = () => buyerInquiries().where({ status: INQUIRY_STATUS.ACCEPTED });
-  const wishlist = () => db('wishlist').where({ user_id: buyerId });
-
-  const [
-    rfqs_created_daily,
-    inquiries_created_daily,
-    quotations_received_daily,
-    wishlist_added_daily,
-    rfqs_created_monthly,
-    inquiries_created_monthly,
-    deals_won_monthly_rfqs,
-    deals_won_monthly_inquiries,
-  ] = await Promise.all([
-    groupCountByDay(buyerRfqs(), 'rfqs.created_at', days),
-    groupCountByDay(buyerInquiries(), 'inquiries.created_at', days),
-    groupCountByDay(buyerQuotations(), 'quotations.created_at', days),
-    groupCountByDay(wishlist(), 'wishlist.created_at', days),
-    groupCountByMonth(buyerRfqs(), 'rfqs.created_at', months),
-    groupCountByMonth(buyerInquiries(), 'inquiries.created_at', months),
-    groupCountByMonth(awardedRfqs(), 'rfqs.updated_at', months),
-    groupCountByMonth(acceptedInquiries(), 'inquiries.updated_at', months),
-  ]);
-
-  const deals_won_monthly = deals_won_monthly_rfqs.map((row, idx) => ({
-    month: row.month,
-    year: row.year,
-    count: row.count + (deals_won_monthly_inquiries[idx]?.count || 0),
-    rfqs_awarded: row.count,
-    inquiries_accepted: deals_won_monthly_inquiries[idx]?.count || 0,
-  }));
-
-  return {
-    period: {
-      daily_days: days,
-      monthly_months: months,
-    },
-    rfqs_created_daily,
-    inquiries_created_daily,
-    quotations_received_daily,
-    wishlist_added_daily,
-    rfqs_created_monthly,
-    inquiries_created_monthly,
-    deals_won_monthly,
   };
 };
 
@@ -704,14 +599,10 @@ const getAdminChartSeries = async ({
 
 module.exports = {
   getUserDashboardProfile,
-  countRfqsByBuyer,
-  countPendingRfqQuotationsForBuyer,
   countSellerRfqQuotations,
   countSellerRfqOpportunities,
   countInquiriesByRole,
   countProductsBySeller,
-  countWishlistByUser,
-  getBuyerChartSeries,
   getSellerChartSeries,
   countUsersPlatform,
   countRfqsPlatform,

@@ -1,65 +1,11 @@
 /**
- * Buyer / seller dashboard summary service.
+ * Seller / admin dashboard summary service.
  *
- * Aggregates RFQs, inquiries, quotations, products, wishlist, and chart series.
+ * Aggregates RFQs, inquiries, quotations, products, and chart series.
  * There is no orders module — "deals" map to awarded RFQs / accepted inquiries.
  */
 const dashboardModel = require('../models/dashboardModel');
 const chatConversationModel = require('../models/chatConversationModel');
-
-const getBuyerDashboard = async (userId) => {
-  const [profile, rfqs, pending_quotations, inquiries, wishlist_total, chat, chartSeries] =
-    await Promise.all([
-      dashboardModel.getUserDashboardProfile(userId),
-      dashboardModel.countRfqsByBuyer(userId),
-      dashboardModel.countPendingRfqQuotationsForBuyer(userId),
-      dashboardModel.countInquiriesByRole(userId, 'buyer_id'),
-      dashboardModel.countWishlistByUser(userId),
-      chatConversationModel.getTotalUnreadCount(userId),
-      dashboardModel.getBuyerChartSeries(userId),
-    ]);
-
-  return {
-    role: 'buyer',
-    profile,
-    summary: {
-      rfqs_total: rfqs.total,
-      rfqs_open: rfqs.open,
-      rfqs_draft: rfqs.draft,
-      rfqs_awarded: rfqs.awarded,
-      inquiries_total: inquiries.total,
-      inquiries_pending: inquiries.pending,
-      inquiries_quoted: inquiries.quoted,
-      inquiries_accepted: inquiries.accepted,
-      pending_quotations_to_review: pending_quotations,
-      wishlist_total,
-      unread_messages: chat.as_buyer,
-    },
-    rfqs: {
-      ...rfqs,
-      pending_quotations_to_review: pending_quotations,
-    },
-    inquiries,
-    wishlist: {
-      total: wishlist_total,
-    },
-    charts: {
-      ...chartSeries,
-      // Pie / donut — use label + value with chart libraries
-      rfqs_by_status: dashboardModel.toPieSeries(rfqs.by_status),
-      inquiries_by_status: dashboardModel.toPieSeries(inquiries.by_status),
-      rfqs_lifecycle: [
-        { label: 'draft', value: rfqs.draft },
-        { label: 'open', value: rfqs.open },
-        { label: 'awarded', value: rfqs.awarded },
-        { label: 'completed', value: rfqs.completed },
-        { label: 'cancelled', value: rfqs.cancelled },
-        { label: 'expired', value: rfqs.expired },
-        { label: 'closed', value: rfqs.closed },
-      ].filter((item) => item.value > 0),
-    },
-  };
-};
 
 const getSellerDashboard = async (userId) => {
   const [profile, products, inquiries, rfq_quotations, rfq_opportunities, chat, chartSeries] =
@@ -181,7 +127,6 @@ const getAdminDashboard = async () => {
 };
 
 module.exports = {
-  getBuyerDashboard,
   getSellerDashboard,
   getAdminDashboard,
 };
