@@ -1,8 +1,9 @@
 /**
  * Seller / admin dashboard summary service.
  *
- * Seller dashboard returns four KPIs only:
- * total products, today's leads, profile views, replies sent.
+ * Seller dashboard KPIs:
+ * total products, today's leads, profile views, replies sent,
+ * top performing product (by product inquiry volume).
  */
 const dashboardModel = require('../models/dashboardModel');
 
@@ -22,8 +23,15 @@ const getSellerDashboard = async (userId) => {
     },
     profile_views: metrics.profile_views,
     replies_sent: metrics.replies_sent,
+    top_performing_product: metrics.top_performing_product,
   };
 };
+
+/**
+ * Paginated top-performing products for seller (ranked by product inquiries).
+ */
+const listTopPerformingProducts = async (userId, filters = {}) =>
+  dashboardModel.listTopPerformingProductsForSeller(userId, filters);
 
 /**
  * Platform-wide admin dashboard (all users, RFQs, inquiries, products, chat).
@@ -94,5 +102,6 @@ const getAdminDashboard = async () => {
 
 module.exports = {
   getSellerDashboard,
+  listTopPerformingProducts,
   getAdminDashboard,
 };

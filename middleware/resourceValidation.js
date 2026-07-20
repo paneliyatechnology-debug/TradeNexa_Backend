@@ -701,6 +701,23 @@ const inquiryListQuery = [
   ...listSortQuery(INQUIRY_SORT_BY_VALUES),
 ];
 
+const SELLER_TOP_PERFORMING_PRODUCT_SORT_BY_VALUES = [
+  'inquiries_total',
+  'inquiries_pending',
+  'inquiries_quoted',
+  'inquiries_accepted',
+  'name',
+  'price',
+  'id',
+  'created_at',
+];
+
+/** GET /dashboard/seller/top-performing-products */
+const sellerTopPerformingProductsQuery = [
+  ...paginationQuery,
+  ...listSortQuery(SELLER_TOP_PERFORMING_PRODUCT_SORT_BY_VALUES),
+];
+
 /** POST /inquiries/:id/reject — optional seller reason. */
 const inquiryRejectRules = [
   body('reason').optional({ values: 'falsy' }).trim().isLength({ max: 1000 }),
@@ -1177,6 +1194,7 @@ module.exports = {
   inquiryUpdateRules,
   inquiryListQuery,
   inquiryRejectRules,
+  sellerTopPerformingProductsQuery,
   serviceCreateRules,
   serviceUpdateRules,
   serviceListQuery,

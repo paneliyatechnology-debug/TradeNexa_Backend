@@ -14,6 +14,24 @@ const getSellerDashboard = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /dashboard/seller/top-performing-products
+ * Paginated products ranked by product inquiry volume.
+ */
+const listTopPerformingProducts = async (req, res, next) => {
+  try {
+    const data = await dashboardService.listTopPerformingProducts(req.user.id, {
+      page: req.query.page,
+      limit: req.query.limit,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
+    });
+    return success(res, 'Top performing products retrieved successfully', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 /** GET /dashboard/admin — platform-wide metrics for admin panel. */
 const getAdminDashboard = async (req, res, next) => {
   try {
@@ -26,5 +44,6 @@ const getAdminDashboard = async (req, res, next) => {
 
 module.exports = {
   getSellerDashboard,
+  listTopPerformingProducts,
   getAdminDashboard,
 };

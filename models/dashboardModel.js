@@ -5,6 +5,8 @@
  */
 const db = require('../database/knex');
 const { resolveMediaUrl } = require('../utils/media');
+const { paginate } = require('../utils/pagination');
+const { applyListSort } = require('../utils/listQuery');
 const {
   RFQ_STATUS,
   RFQ_VISIBILITY,
@@ -367,20 +369,144 @@ const countRepliesSentForSeller = async (sellerId) => {
   return parseInt(row?.count || 0, 10);
 };
 
-/** Bundle the four seller dashboard KPIs. */
+/**
+ * Format a top-performing product row (shared by single + list APIs).
+ * @param {Object} row
+ * @returns {Object}
+ */
+const formatTopPerformingProductRow = (row) => ({
+  ranking_method: 'product_inquiries',
+  id: row.id,
+  name: row.name,
+  slug: row.slug || null,
+  thumbnail: row.thumbnail ? resolveMediaUrl(row.thumbnail) : null,
+  price: row.price != null ? parseFloat(row.price) : null,
+  currency: row.currency || null,
+  unit: row.unit || null,
+  moq: row.moq != null ? parseInt(row.moq, 10) : null,
+  approval_status: row.approval_status || null,
+  is_active: !!row.is_active,
+  inquiries_total: parseInt(row.inquiries_total || 0, 10),
+  inquiries_pending: parseInt(row.inquiries_pending || 0, 10),
+  inquiries_quoted: parseInt(row.inquiries_quoted || 0, 10),
+  inquiries_accepted: parseInt(row.inquiries_accepted || 0, 10),
+});
+
+const TOP_PERFORMING_PRODUCT_SORT_FIELDS = {
+  inquiries_total: 'inquiries_total',
+  inquiries_pending: 'inquiries_pending',
+  inquiries_quoted: 'inquiries_quoted',
+  inquiries_accepted: 'inquiries_accepted',
+  name: 'p.name',
+  price: 'p.price',
+  id: 'p.id',
+  created_at: 'p.created_at',
+};
+
+/** Base query: seller products with inquiry aggregates. */
+const baseTopPerformingProductsQuery = (sellerId) =>
+  db('products as p')
+    .leftJoin('inquiries as i', function () {
+      this.on('i.product_id', '=', 'p.id')
+        .andOn('i.seller_id', '=', db.raw('?', [sellerId]))
+        .andOnNull('i.deleted_at');
+    })
+    .where('p.seller_id', sellerId)
+    .whereNull('p.deleted_at')
+    .select(
+      'p.id',
+      'p.name',
+      'p.slug',
+      'p.thumbnail',
+      'p.price',
+      'p.currency',
+      'p.unit',
+      'p.moq',
+      'p.approval_status',
+      'p.is_active',
+      'p.created_at',
+      db.raw('COUNT(i.id) as inquiries_total'),
+      db.raw(
+        `SUM(CASE WHEN i.status = ? THEN 1 ELSE 0 END) as inquiries_pending`,
+        [INQUIRY_STATUS.PENDING],
+      ),
+      db.raw(
+        `SUM(CASE WHEN i.status = ? THEN 1 ELSE 0 END) as inquiries_quoted`,
+        [INQUIRY_STATUS.QUOTED],
+      ),
+      db.raw(
+        `SUM(CASE WHEN i.status = ? THEN 1 ELSE 0 END) as inquiries_accepted`,
+        [INQUIRY_STATUS.ACCEPTED],
+      ),
+    )
+    .groupBy(
+      'p.id',
+      'p.name',
+      'p.slug',
+      'p.thumbnail',
+      'p.price',
+      'p.currency',
+      'p.unit',
+      'p.moq',
+      'p.approval_status',
+      'p.is_active',
+      'p.created_at',
+    );
+
+/**
+ * Top performing product for a seller — ranked by product inquiry volume (all-time).
+ * Returns null when the seller has no products or no inquiries.
+ */
+const getTopPerformingProductByInquiries = async (sellerId) => {
+  const row = await baseTopPerformingProductsQuery(sellerId)
+    .havingRaw('COUNT(i.id) > 0')
+    .orderBy('inquiries_total', 'desc')
+    .orderBy('p.id', 'desc')
+    .first();
+
+  if (!row) return null;
+  return formatTopPerformingProductRow(row);
+};
+
+/**
+ * Paginated top-performing products list for a seller (by product inquiries).
+ * @param {number} sellerId
+ * @param {Object} [filters]
+ * @returns {Promise<{ results: Array, pagination: Object }>}
+ */
+const listTopPerformingProductsForSeller = async (sellerId, filters = {}) => {
+  const q = baseTopPerformingProductsQuery(sellerId).havingRaw('COUNT(i.id) > 0');
+
+  applyListSort(q, filters, TOP_PERFORMING_PRODUCT_SORT_FIELDS, {
+    defaultSortBy: 'inquiries_total',
+    defaultSortOrder: 'desc',
+  });
+  q.orderBy('p.id', 'desc');
+
+  const page = parseInt(filters.page, 10) || 1;
+  const limit = parseInt(filters.limit, 10) || 10;
+  const paginated = await paginate(q, page, limit);
+  paginated.results = paginated.results.map(formatTopPerformingProductRow);
+  return paginated;
+};
+
+/** Bundle seller dashboard KPIs + top performing product. */
 const getSellerDashboardMetrics = async (sellerId) => {
-  const [total_products, todays_leads, profile_views, replies_sent] = await Promise.all([
-    countTotalProductsForSeller(sellerId),
-    countTodaysLeadsForSeller(sellerId),
-    countProfileViewsForSeller(sellerId),
-    countRepliesSentForSeller(sellerId),
-  ]);
+  const [total_products, todays_leads, profile_views, replies_sent, top_performing_product] =
+    await Promise.all([
+      countTotalProductsForSeller(sellerId),
+      countTodaysLeadsForSeller(sellerId),
+      countProfileViewsForSeller(sellerId),
+      countRepliesSentForSeller(sellerId),
+      getTopPerformingProductByInquiries(sellerId),
+    ]);
 
   return {
     total_products,
     todays_leads,
     profile_views,
     replies_sent,
+    top_performing_product,
   };
 };
 
@@ -687,6 +813,8 @@ module.exports = {
   countInquiriesByRole,
   countProductsBySeller,
   getSellerDashboardMetrics,
+  listTopPerformingProductsForSeller,
+  TOP_PERFORMING_PRODUCT_SORT_FIELDS,
   getSellerChartSeries,
   countUsersPlatform,
   countRfqsPlatform,
