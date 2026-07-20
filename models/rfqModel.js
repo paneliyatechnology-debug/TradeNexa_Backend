@@ -163,8 +163,12 @@ const applyRfqFilters = (q, filters = {}) => {
       this.where('rfqs.expected_price', '<=', max).orWhere('rfqs.budget', '<=', max);
     });
   }
-  if (filters.date_from) q.where('rfqs.created_at', '>=', filters.date_from);
-  if (filters.date_to) q.where('rfqs.created_at', '<=', filters.date_to);
+  if (filters.date) {
+    q.whereRaw('DATE(rfqs.created_at) = ?', [String(filters.date).slice(0, 10)]);
+  } else {
+    if (filters.date_from) q.where('rfqs.created_at', '>=', filters.date_from);
+    if (filters.date_to) q.where('rfqs.created_at', '<=', filters.date_to);
+  }
   if (filters.is_active !== undefined) q.where('rfqs.is_active', filters.is_active);
   if (filters.visibility) {
     q.where('rfqs.visibility', filters.visibility);

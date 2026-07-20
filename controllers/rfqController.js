@@ -32,6 +32,7 @@ const buildListFilters = (req, { excludeOwnBuyer = false } = {}) => ({
   max_expected_price: req.query.max_expected_price,
   date_from: req.query.date_from,
   date_to: req.query.date_to,
+  date: req.query.date,
   page: req.query.page,
   limit: req.query.limit,
   sort_by: req.query.sort_by,

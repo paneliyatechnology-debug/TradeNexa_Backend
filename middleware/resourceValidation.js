@@ -694,6 +694,10 @@ const inquiryListQuery = [
   ...paginationQuery,
   query('status').optional().isIn(INQUIRY_STATUS_VALUES).withMessage('Invalid inquiry status'),
   query('product_id').optional().isInt({ min: 1 }).withMessage('product_id must be a positive integer'),
+  query('date')
+    .optional()
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('date must be YYYY-MM-DD'),
   ...listSortQuery(INQUIRY_SORT_BY_VALUES),
 ];
 
@@ -815,6 +819,10 @@ const rfqListQuery = [
   query('max_expected_price').optional().isFloat({ min: 0 }).withMessage('Max expected price must be positive'),
   query('date_from').optional().isISO8601().withMessage('date_from must be a valid ISO8601 timestamp'),
   query('date_to').optional().isISO8601().withMessage('date_to must be a valid ISO8601 timestamp'),
+  query('date')
+    .optional()
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('date must be YYYY-MM-DD'),
   ...paginationQuery,
   isActiveQuery(),
   ...listSortQuery(RFQ_SORT_BY_VALUES),

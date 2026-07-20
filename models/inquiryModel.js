@@ -146,6 +146,10 @@ const applyFilters = (q, filters = {}) => {
   }
   if (filters.is_active !== undefined) q.where('inquiries.is_active', filters.is_active);
 
+  if (filters.date) {
+    q.whereRaw('DATE(inquiries.created_at) = ?', [String(filters.date).slice(0, 10)]);
+  }
+
   if (filters.search) {
     const term = `%${String(filters.search).trim()}%`;
     q.where((builder) => {
