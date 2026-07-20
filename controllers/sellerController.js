@@ -23,13 +23,24 @@ const resolveExcludeSellerId = async (req) => {
 /**
  * GET /sellers/:id
  * Retrieve a single seller profile by ID.
+ * Increments profile_views_count unless the viewer is the seller themselves.
  */
 const getSeller = async (req, res, next) => {
   try {
-    const seller = await sellerModel.findSellerById(req.params.id);
+    const sellerId = parseInt(req.params.id, 10);
+    const seller = await sellerModel.findSellerById(sellerId);
     if (!seller) {
       return next(new AppError('Seller not found', HTTP_STATUS.NOT_FOUND));
     }
+
+    const viewerId = req.user?.id ? Number(req.user.id) : null;
+    if (!viewerId || viewerId !== sellerId) {
+      const updatedCount = await sellerModel.incrementProfileViews(sellerId, viewerId);
+      if (updatedCount > 0) {
+        seller.profile_views_count = updatedCount;
+      }
+    }
+
     return success(res, 'Seller details retrieved successfully', seller);
   } catch (err) {
     next(err);

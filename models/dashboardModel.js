@@ -12,6 +12,7 @@ const {
   RFQ_SELLER_VISIBLE_STATUSES,
 } = require('../constants/rfq');
 const { INQUIRY_STATUS } = require('../constants/inquiry');
+const { CHAT_MESSAGE_TYPE } = require('../constants/chat');
 
 const DEFAULT_DAILY_DAYS = 30;
 const DEFAULT_MONTHLY_MONTHS = 6;
@@ -298,6 +299,88 @@ const countProductsBySeller = async (sellerId) => {
     rejected: by_approval_status.rejected || 0,
     active_approved: parseInt(activeRow?.count || 0, 10),
     by_approval_status,
+  };
+};
+
+// ==========================================
+// Slim seller dashboard KPIs
+// ==========================================
+
+/** All non-deleted products for seller. */
+const countTotalProductsForSeller = async (sellerId) => {
+  const row = await db('products')
+    .where({ seller_id: sellerId })
+    .whereNull('deleted_at')
+    .count('* as count')
+    .first();
+  return parseInt(row?.count || 0, 10);
+};
+
+/**
+ * Today's leads = product inquiries created today + private RFQ invites created today.
+ */
+const countTodaysLeadsForSeller = async (sellerId) => {
+  const [inquiryRow, inviteRow] = await Promise.all([
+    db('inquiries')
+      .where({ seller_id: sellerId })
+      .whereNull('deleted_at')
+      .whereRaw('DATE(created_at) = CURDATE()')
+      .count('* as count')
+      .first(),
+    db('rfq_sellers')
+      .where({ seller_id: sellerId })
+      .whereRaw('DATE(created_at) = CURDATE()')
+      .count('* as count')
+      .first(),
+  ]);
+
+  const inquiries = parseInt(inquiryRow?.count || 0, 10);
+  const rfq_invites = parseInt(inviteRow?.count || 0, 10);
+  return {
+    total: inquiries + rfq_invites,
+    inquiries,
+    rfq_invites,
+  };
+};
+
+/** Profile views from company_details.profile_views_count. */
+const countProfileViewsForSeller = async (sellerId) => {
+  const row = await db('company_details')
+    .where({ user_id: sellerId })
+    .select('profile_views_count')
+    .first();
+  return parseInt(row?.profile_views_count || 0, 10);
+};
+
+/**
+ * Replies sent = chat messages from this seller (exclude SYSTEM), all-time.
+ */
+const countRepliesSentForSeller = async (sellerId) => {
+  const row = await db('chat_messages as m')
+    .innerJoin('chat_conversations as c', 'c.id', 'm.conversation_id')
+    .where('c.seller_id', sellerId)
+    .where('m.sender_id', sellerId)
+    .whereNull('m.deleted_at')
+    .whereNot('m.message_type', CHAT_MESSAGE_TYPE.SYSTEM)
+    .count('m.id as count')
+    .first();
+  return parseInt(row?.count || 0, 10);
+};
+
+/** Bundle the four seller dashboard KPIs. */
+const getSellerDashboardMetrics = async (sellerId) => {
+  const [total_products, todays_leads, profile_views, replies_sent] = await Promise.all([
+    countTotalProductsForSeller(sellerId),
+    countTodaysLeadsForSeller(sellerId),
+    countProfileViewsForSeller(sellerId),
+    countRepliesSentForSeller(sellerId),
+  ]);
+
+  return {
+    total_products,
+    todays_leads,
+    profile_views,
+    replies_sent,
   };
 };
 
@@ -603,6 +686,7 @@ module.exports = {
   countSellerRfqOpportunities,
   countInquiriesByRole,
   countProductsBySeller,
+  getSellerDashboardMetrics,
   getSellerChartSeries,
   countUsersPlatform,
   countRfqsPlatform,

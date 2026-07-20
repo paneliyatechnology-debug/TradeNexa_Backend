@@ -17,6 +17,6 @@ const router = express.Router();
 router.get('/', optionalAuthenticate, sellerListQuery, validate, sellerController.getSellers);
 router.get('/verified', optionalAuthenticate, sellerController.getVerifiedSellers);
 router.get('/nearby', optionalAuthenticate, sellerNearbyRules, validate, sellerController.getNearbySellers);
-router.get('/:id', idParam, validate, sellerController.getSeller);
+router.get('/:id', optionalAuthenticate, idParam, validate, sellerController.getSeller);
 
 module.exports = router;

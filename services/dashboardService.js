@@ -1,61 +1,27 @@
 /**
  * Seller / admin dashboard summary service.
  *
- * Aggregates RFQs, inquiries, quotations, products, and chart series.
- * There is no orders module — "deals" map to awarded RFQs / accepted inquiries.
+ * Seller dashboard returns four KPIs only:
+ * total products, today's leads, profile views, replies sent.
  */
 const dashboardModel = require('../models/dashboardModel');
-const chatConversationModel = require('../models/chatConversationModel');
 
 const getSellerDashboard = async (userId) => {
-  const [profile, products, inquiries, rfq_quotations, rfq_opportunities, chat, chartSeries] =
-    await Promise.all([
-      dashboardModel.getUserDashboardProfile(userId),
-      dashboardModel.countProductsBySeller(userId),
-      dashboardModel.countInquiriesByRole(userId, 'seller_id'),
-      dashboardModel.countSellerRfqQuotations(userId),
-      dashboardModel.countSellerRfqOpportunities(userId),
-      chatConversationModel.getTotalUnreadCount(userId),
-      dashboardModel.getSellerChartSeries(userId),
-    ]);
+  const metrics = await dashboardModel.getSellerDashboardMetrics(userId);
+  const today = new Date();
+  const as_of = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
   return {
     role: 'seller',
-    profile,
-    summary: {
-      products_total: products.total,
-      products_active: products.active_approved,
-      products_in_review: products.in_review,
-      products_revision_required: products.revision_required,
-      inquiries_pending: inquiries.pending,
-      inquiries_quoted: inquiries.quoted,
-      inquiries_accepted: inquiries.accepted,
-      rfq_quotations_pending: rfq_quotations.pending_review,
-      rfq_quotations_accepted: rfq_quotations.accepted,
-      rfq_opportunities,
-      unread_messages: chat.as_seller,
-      rating: profile?.rating ?? null,
-      response_rate: profile?.response_rate ?? null,
+    as_of,
+    total_products: metrics.total_products,
+    todays_leads: metrics.todays_leads.total,
+    todays_leads_breakdown: {
+      inquiries: metrics.todays_leads.inquiries,
+      rfq_invites: metrics.todays_leads.rfq_invites,
     },
-    products,
-    inquiries,
-    rfq_quotations: {
-      ...rfq_quotations,
-      opportunities: rfq_opportunities,
-    },
-    charts: {
-      ...chartSeries,
-      products_by_approval: dashboardModel.toPieSeries(products.by_approval_status),
-      inquiries_by_status: dashboardModel.toPieSeries(inquiries.by_status),
-      quotations_by_status: dashboardModel.toPieSeries(rfq_quotations.by_status),
-      pipeline: [
-        { label: 'rfq_opportunities', value: rfq_opportunities },
-        { label: 'inquiries_pending', value: inquiries.pending },
-        { label: 'quotations_pending', value: rfq_quotations.pending_review },
-        { label: 'quotations_accepted', value: rfq_quotations.accepted },
-        { label: 'inquiries_accepted', value: inquiries.accepted },
-      ].filter((item) => item.value > 0),
-    },
+    profile_views: metrics.profile_views,
+    replies_sent: metrics.replies_sent,
   };
 };
 

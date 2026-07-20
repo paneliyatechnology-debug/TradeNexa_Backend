@@ -43,6 +43,8 @@ const formatSellerRow = (row) => ({
   is_active: row.is_active !== undefined ? !!row.is_active : undefined,
   rating: parseFloat(row.rating || 0),
   response_rate: parseFloat(row.response_rate || 0),
+  profile_views_count:
+    row.profile_views_count !== undefined ? parseInt(row.profile_views_count || 0, 10) : undefined,
   distance: row.distance !== undefined ? parseFloat(row.distance || 0) : undefined,
 });
 
@@ -66,6 +68,7 @@ const findSellerById = async (id) => {
       'company_details.rating',
       'company_details.response_rate',
       'company_details.years_in_business',
+      'company_details.profile_views_count',
       'addresses.latitude',
       'addresses.longitude',
       'cities.name as city',
@@ -156,8 +159,45 @@ const findNearbySellers = async (latitude, longitude, maxDistance = 50, filters 
   return paginated;
 };
 
+/**
+ * Record a profile view: insert event log + increment lifetime counter.
+ * Enables daily growth charts via seller_profile_views.viewed_at.
+ * No-op when company_details is missing.
+ * @param {number} sellerId
+ * @param {number|null} [viewerUserId]
+ * @returns {Promise<number>} Updated lifetime count
+ */
+const incrementProfileViews = async (sellerId, viewerUserId = null) => {
+  const existing = await db('company_details').where({ user_id: sellerId }).first();
+  if (!existing) return 0;
+
+  await db.transaction(async (trx) => {
+    await trx('seller_profile_views').insert({
+      seller_id: sellerId,
+      viewer_user_id: viewerUserId || null,
+      viewed_at: trx.fn.now(),
+    });
+    await trx('company_details').where({ user_id: sellerId }).increment('profile_views_count', 1);
+  });
+
+  const row = await db('company_details').where({ user_id: sellerId }).select('profile_views_count').first();
+  return parseInt(row?.profile_views_count || 0, 10);
+};
+
+/**
+ * Read profile views count for a seller.
+ * @param {number} sellerId
+ * @returns {Promise<number>}
+ */
+const getProfileViewsCount = async (sellerId) => {
+  const row = await db('company_details').where({ user_id: sellerId }).select('profile_views_count').first();
+  return parseInt(row?.profile_views_count || 0, 10);
+};
+
 module.exports = {
   findSellerById,
   findSellers,
   findNearbySellers,
+  incrementProfileViews,
+  getProfileViewsCount,
 };
