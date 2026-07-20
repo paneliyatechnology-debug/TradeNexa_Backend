@@ -4,6 +4,7 @@
  * Room naming: conversation:{id}, user:{id}
  */
 const { CHAT_SOCKET_EVENT } = require('../constants/chat');
+const pushNotificationService = require('./pushNotificationService');
 
 let io = null;
 
@@ -45,6 +46,9 @@ const emitNewMessage = (conversation, message) => {
       last_context_id: conversation.last_context_id || null,
     });
   });
+
+  // Fire-and-forget FCM push (skipped if recipient is in the conversation room)
+  void pushNotificationService.sendChatMessagePush(conversation, message);
 };
 
 const emitConversationUpdated = (conversationId, actorId = null, extras = {}) => {

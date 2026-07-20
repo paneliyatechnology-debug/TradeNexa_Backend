@@ -138,4 +138,74 @@ const resendOtp = async (firebaseVerificationId, recaptchaToken = null) => {
   return { firebaseVerificationId: data.sessionInfo };
 };
 
-module.exports = { init, sendOtp, verifyOtp, resendOtp };
+// ==========================================
+// FCM push messaging
+// ==========================================
+
+/**
+ * @returns {import('firebase-admin').messaging.Messaging|null}
+ */
+const getMessaging = () => {
+  const app = init();
+  if (!app) return null;
+  return admin.messaging();
+};
+
+/**
+ * Send an FCM message to a single device token.
+ * @param {string} token
+ * @param {{ notification?: Object, data?: Object, android?: Object, apns?: Object }} payload
+ * @returns {Promise<{ success: boolean, messageId?: string, errorCode?: string }>}
+ */
+const sendPushToToken = async (token, payload = {}) => {
+  const messaging = getMessaging();
+  if (!messaging) {
+    logger.warn('FCM skipped: Firebase not configured');
+    return { success: false, errorCode: 'firebase_not_configured' };
+  }
+  if (!token) {
+    return { success: false, errorCode: 'missing_token' };
+  }
+
+  try {
+    const messageId = await messaging.send({
+      token,
+      notification: payload.notification || undefined,
+      data: payload.data || undefined,
+      android: payload.android || {
+        priority: 'high',
+        notification: { channelId: 'chat_messages' },
+      },
+      apns: payload.apns || {
+        payload: {
+          aps: {
+            sound: 'default',
+          },
+        },
+      },
+    });
+    return { success: true, messageId };
+  } catch (error) {
+    const errorCode = error?.code || error?.errorInfo?.code || 'unknown';
+    logger.warn('FCM send failed', { errorCode, message: error.message });
+    return { success: false, errorCode };
+  }
+};
+
+/** True when the FCM token should be removed from devices table. */
+const isInvalidFcmTokenError = (errorCode) =>
+  [
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-registration-token',
+    'messaging/invalid-argument',
+  ].includes(errorCode);
+
+module.exports = {
+  init,
+  sendOtp,
+  verifyOtp,
+  resendOtp,
+  getMessaging,
+  sendPushToToken,
+  isInvalidFcmTokenError,
+};

@@ -500,6 +500,33 @@ const saveUserDevice = async (userId, deviceType, deviceToken) => {
   });
 };
 
+/**
+ * Get the registered device for a user (FCM token).
+ * @param {number} userId
+ * @returns {Promise<{ id: number, device_type: string|null, device_token: string }|null>}
+ */
+const findDeviceByUserId = async (userId) => {
+  const row = await db('devices')
+    .where({ user_id: userId })
+    .whereNotNull('device_token')
+    .orderBy('updated_at', 'desc')
+    .first();
+  if (!row?.device_token) return null;
+  return {
+    id: row.id,
+    device_type: row.device_type || null,
+    device_token: row.device_token,
+  };
+};
+
+/**
+ * Delete a specific device token (e.g. invalid FCM registration).
+ * @param {string} deviceToken
+ * @returns {Promise<number>}
+ */
+const deleteDeviceByToken = (deviceToken) =>
+  db('devices').where({ device_token: deviceToken }).del();
+
 module.exports = {
   uuidv4,
   findUserById,
@@ -532,5 +559,7 @@ module.exports = {
   softDeleteUser,
   deleteUserDevice,
   saveUserDevice,
+  findDeviceByUserId,
+  deleteDeviceByToken,
   db,
 };

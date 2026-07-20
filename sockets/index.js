@@ -14,11 +14,57 @@ const userModel = require('../models/userModel');
 const userPresenceModel = require('../models/userPresenceModel');
 const chatService = require('../services/chatService');
 const chatSocketEmitter = require('../services/chatSocketEmitter');
+const pushNotificationService = require('../services/pushNotificationService');
 const { CHAT_PRESENCE_STATUS, CHAT_SOCKET_EVENT, CHAT_MESSAGE_TYPE } = require('../constants/chat');
 const config = require('../config');
 const logger = require('../utils/logger');
 
 const onlineUsers = new Map();
+/** userId → Map(conversationId → Set(socketId)) — used to suppress chat push while viewing. */
+const activeConversations = new Map();
+
+const trackConversationJoin = (userId, conversationId, socketId) => {
+  const uid = Number(userId);
+  const cid = Number(conversationId);
+  if (!uid || !cid || !socketId) return;
+
+  if (!activeConversations.has(uid)) activeConversations.set(uid, new Map());
+  const byConv = activeConversations.get(uid);
+  if (!byConv.has(cid)) byConv.set(cid, new Set());
+  byConv.get(cid).add(socketId);
+};
+
+const trackConversationLeave = (userId, conversationId, socketId) => {
+  const uid = Number(userId);
+  const cid = Number(conversationId);
+  const byConv = activeConversations.get(uid);
+  if (!byConv) return;
+
+  const sockets = byConv.get(cid);
+  if (!sockets) return;
+  sockets.delete(socketId);
+  if (!sockets.size) byConv.delete(cid);
+  if (!byConv.size) activeConversations.delete(uid);
+};
+
+const clearSocketConversations = (userId, socketId) => {
+  const uid = Number(userId);
+  const byConv = activeConversations.get(uid);
+  if (!byConv) return;
+
+  for (const [cid, sockets] of byConv.entries()) {
+    sockets.delete(socketId);
+    if (!sockets.size) byConv.delete(cid);
+  }
+  if (!byConv.size) activeConversations.delete(uid);
+};
+
+const isUserActiveInConversation = (userId, conversationId) => {
+  const byConv = activeConversations.get(Number(userId));
+  if (!byConv) return false;
+  const sockets = byConv.get(Number(conversationId));
+  return Boolean(sockets?.size);
+};
 
 const extractToken = (socket) => {
   const authToken = socket.handshake.auth?.token || socket.handshake.query?.token;
@@ -61,6 +107,7 @@ const initSocket = (httpServer) => {
   });
 
   chatSocketEmitter.setIo(io);
+  pushNotificationService.setActiveConversationChecker(isUserActiveInConversation);
 
   io.use(async (socket, next) => {
     try {
@@ -107,6 +154,7 @@ const initSocket = (httpServer) => {
         if (!conversationId) return;
         await chatService.assertUserCanJoinConversation(conversationId, userId);
         socket.join(chatSocketEmitter.conversationRoom(conversationId));
+        trackConversationJoin(userId, conversationId, socket.id);
       } catch (error) {
         socket.emit(CHAT_SOCKET_EVENT.ERROR, { message: error.message });
       }
@@ -115,6 +163,7 @@ const initSocket = (httpServer) => {
     socket.on(CHAT_SOCKET_EVENT.CONVERSATION_LEAVE, ({ conversation_id: conversationId }) => {
       if (!conversationId) return;
       socket.leave(chatSocketEmitter.conversationRoom(conversationId));
+      trackConversationLeave(userId, conversationId, socket.id);
     });
 
     // ==========================================
@@ -230,6 +279,7 @@ const initSocket = (httpServer) => {
     });
 
     socket.on('disconnect', async () => {
+      clearSocketConversations(userId, socket.id);
       const stillOnline = removeOnlineSocket(userId, socket.id);
       if (!stillOnline) {
         const presence = await userPresenceModel.upsertPresence(userId, CHAT_PRESENCE_STATUS.OFFLINE);
@@ -245,4 +295,4 @@ const initSocket = (httpServer) => {
   return io;
 };
 
-module.exports = { initSocket, isUserOnline };
+module.exports = { initSocket, isUserOnline, isUserActiveInConversation };
