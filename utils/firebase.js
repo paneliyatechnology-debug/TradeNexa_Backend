@@ -192,7 +192,6 @@ const isInvalidFcmTokenError = (errorCode) =>
   [
     'messaging/registration-token-not-registered',
     'messaging/invalid-registration-token',
-    'messaging/invalid-argument',
   ].includes(errorCode);
 
 module.exports = {

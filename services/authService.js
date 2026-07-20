@@ -9,6 +9,7 @@ const firebase = require('../utils/firebase');
 const { generateAuthTokens, signRegistration, verifyRefresh } = require('../utils/jwt');
 const { AppError } = require('../utils/response');
 const { TOKEN_TYPES, OTP_STATUS } = require('../constants');
+const logger = require('../utils/logger');
 
 const OTP_EXPIRY_MINUTES = 10;
 
@@ -36,12 +37,12 @@ const isExpired = (date) => new Date(date) < new Date();
  * @param {Object} body - Request body
  * @returns {{ device_type: string|null, device_token: string|null }|null}
  */
-const getDeviceFromBody = (body) => {
+const getDeviceFromBody = (body = {}) => {
   let deviceType = null;
   let deviceToken = null;
 
-  if (body.device_type && body.device_token) {
-    deviceType = body.device_type;
+  if (body.device_token) {
+    deviceType = body.device_type || null;
     deviceToken = body.device_token;
   } else if (body.device?.device_token) {
     deviceType = body.device.device_type || null;
@@ -50,9 +51,12 @@ const getDeviceFromBody = (body) => {
     return null;
   }
 
+  const token = String(deviceToken).trim();
+  if (!token) return null;
+
   return {
     device_type: deviceType ? String(deviceType).toLowerCase().trim() : null,
-    device_token: String(deviceToken).trim(),
+    device_token: token,
   };
 };
 
@@ -110,14 +114,25 @@ const issueTokens = async (user, req) => {
     login_at: new Date(),
   });
 
-  // Track and update the user's active device token
+  // Persist FCM token from verify-otp / register body (device_type + device_token)
   const device = getDeviceFromBody(req.body);
   if (device?.device_token) {
     try {
       await userModel.saveUserDevice(user.id, device.device_type, device.device_token);
+      logger.info('FCM device saved on auth', {
+        userId: user.id,
+        deviceType: device.device_type,
+      });
     } catch (error) {
-      console.error('Failed to update user device token:', error.message);
+      logger.error('Failed to save FCM device token on auth', {
+        userId: user.id,
+        error: error.message,
+      });
     }
+  } else {
+    logger.warn('Auth completed without device_token — chat push will not work until token is saved', {
+      userId: user.id,
+    });
   }
 
   const freshUser = await userModel.findUserById(user.id);
@@ -329,6 +344,22 @@ const getProfile = (userId) => profileService.getProfile(userId);
 const updateProfile = (userId, data, files) => profileService.updateProfile(userId, data, files);
 
 /**
+ * Register or refresh the FCM device token for the authenticated user.
+ * Call this from web/android/ios after login and whenever the token refreshes.
+ * @param {number} userId
+ * @param {string} deviceType - android | ios | web
+ * @param {string} deviceToken
+ */
+const registerDevice = async (userId, deviceType, deviceToken) => {
+  if (!deviceToken) throw new AppError('device_token is required', 400);
+  await userModel.saveUserDevice(userId, deviceType, deviceToken);
+  return {
+    device_type: String(deviceType || '').toLowerCase().trim() || null,
+    registered: true,
+  };
+};
+
+/**
  * Soft delete user profile and clean up active sessions.
  * @param {number} userId - User ID
  * @returns {Promise<void>}
@@ -347,6 +378,7 @@ module.exports = {
   register,
   refreshToken,
   logout,
+  registerDevice,
   getProfile,
   updateProfile,
   deleteProfile,

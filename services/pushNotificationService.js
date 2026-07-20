@@ -2,7 +2,8 @@
  * Cross-platform push notifications via Firebase Cloud Messaging (FCM).
  *
  * Supports Android, iOS, and Web. Sends to every registered device for the
- * recipient. Skips push when the recipient is actively viewing the conversation.
+ * recipient. Native apps skip push while the chat room is open; web always
+ * receives FCM (the browser hides notifications when the tab is focused).
  */
 const userModel = require('../models/userModel');
 const chatMessageModel = require('../models/chatMessageModel');
@@ -34,6 +35,16 @@ const normalizeDeviceType = (deviceType) => {
     .toLowerCase()
     .trim();
   return DEVICE_TYPE_VALUES.includes(type) ? type : null;
+};
+
+const toAbsoluteUrl = (pathOrUrl) => {
+  if (!pathOrUrl) return undefined;
+  const value = String(pathOrUrl).trim();
+  if (!value) return undefined;
+  if (/^https?:\/\//i.test(value)) return value;
+  const base = String(config.frontend?.url || config.app?.url || '').replace(/\/$/, '');
+  if (!base) return undefined;
+  return `${base}${value.startsWith('/') ? value : `/${value}`}`;
 };
 
 const resolveRecipientIds = (conversation, message) => {
@@ -125,19 +136,24 @@ const buildPlatformPushPayload = (deviceType, { title, body, data, badge, conver
 
   if (type === DEVICE_TYPES.WEB) {
     const link = buildWebChatLink(conversationId);
+    const icon = toAbsoluteUrl(config.frontend.pushIcon);
+    const badgeIcon = toAbsoluteUrl(config.frontend.pushBadge);
+
+    const webNotification = {
+      title,
+      body,
+      requireInteraction: true,
+      tag: `chat-${conversationId}`,
+    };
+    if (icon) webNotification.icon = icon;
+    if (badgeIcon) webNotification.badge = badgeIcon;
+
     return {
       notification,
       data: commonData,
       webpush: {
         headers: { Urgency: 'high' },
-        notification: {
-          title,
-          body,
-          icon: config.frontend.pushIcon,
-          badge: config.frontend.pushBadge,
-          requireInteraction: true,
-          tag: `chat-${conversationId}`,
-        },
+        notification: webNotification,
         ...(link ? { fcmOptions: { link } } : {}),
       },
     };
@@ -149,7 +165,7 @@ const buildPlatformPushPayload = (deviceType, { title, body, data, badge, conver
 
 /**
  * Send FCM push for a new chat message to all devices of the other participant(s).
- * Fire-and-forget safe — never throws to callers.
+ * Uses tokens saved from verify-otp / register. Fire-and-forget — never throws.
  * @param {Object} conversation
  * @param {Object} message
  */
@@ -162,7 +178,13 @@ const sendChatMessagePush = async (conversation, message) => {
     }
 
     const recipientIds = resolveRecipientIds(conversation, message);
-    if (!recipientIds.length) return;
+    if (!recipientIds.length) {
+      logger.info('Chat push skipped: no recipients', {
+        conversationId: conversation.id,
+        messageId: message.id,
+      });
+      return;
+    }
 
     const title = buildChatNotificationTitle(message);
     const body = buildChatNotificationBody(message);
@@ -180,15 +202,15 @@ const sendChatMessagePush = async (conversation, message) => {
 
     await Promise.all(
       recipientIds.map(async (recipientId) => {
-        if (
-          isUserActiveInConversationFn &&
-          isUserActiveInConversationFn(recipientId, conversation.id)
-        ) {
+        const devices = await userModel.findDevicesByUserId(recipientId);
+        if (!devices.length) {
+          logger.warn('Chat push skipped: no device token registered', {
+            recipientId,
+            conversationId: conversation.id,
+            messageId: message.id,
+          });
           return;
         }
-
-        const devices = await userModel.findDevicesByUserId(recipientId);
-        if (!devices.length) return;
 
         let badge = 1;
         try {
@@ -210,10 +232,28 @@ const sendChatMessagePush = async (conversation, message) => {
 
             const result = await firebase.sendPushToToken(device.device_token, payload);
 
-            if (!result.success && firebase.isInvalidFcmTokenError(result.errorCode)) {
+            if (result.success) {
+              logger.info('Chat push sent', {
+                recipientId,
+                deviceType: device.device_type,
+                conversationId: conversation.id,
+                messageId: message.id,
+                messageIdFcm: result.messageId,
+              });
+              return;
+            }
+
+            logger.warn('Chat push failed', {
+              recipientId,
+              deviceType: device.device_type,
+              conversationId: conversation.id,
+              errorCode: result.errorCode,
+            });
+
+            if (firebase.isInvalidFcmTokenError(result.errorCode)) {
               await userModel.deleteDeviceByToken(device.device_token);
               logger.info('Removed invalid FCM device token', {
-                userId: recipientId,
+                recipientId,
                 deviceType: device.device_type,
                 errorCode: result.errorCode,
               });
@@ -223,7 +263,7 @@ const sendChatMessagePush = async (conversation, message) => {
       }),
     );
   } catch (error) {
-    logger.warn('Chat push notification failed', { error: error.message });
+    logger.warn('Chat push notification failed', { error: error.message, stack: error.stack });
   }
 };
 

@@ -104,6 +104,21 @@ const logoutRules = [
     .withMessage('Device token cannot be empty'),
 ];
 
+/** Required device registration (after login / when FCM token refreshes). */
+const registerDeviceRules = [
+  body('device_type')
+    .trim()
+    .notEmpty()
+    .withMessage('device_type is required')
+    .toLowerCase()
+    .isIn(DEVICE_TYPE_VALUES)
+    .withMessage('Invalid device type (android | ios | web)'),
+  body('device_token')
+    .trim()
+    .notEmpty()
+    .withMessage('device_token is required'),
+];
+
 /**
  * Validation rules for user registration.
  */
@@ -253,6 +268,7 @@ module.exports = {
   registerRules,
   refreshRules,
   logoutRules,
+  registerDeviceRules,
   authenticate,
   optionalAuthenticate,
   verifyRegistration,

@@ -47,7 +47,7 @@ const emitNewMessage = (conversation, message) => {
     });
   });
 
-  // Fire-and-forget FCM push (skipped if recipient is in the conversation room)
+  // Fire-and-forget FCM push to recipient devices saved via verify-otp / register
   void pushNotificationService.sendChatMessagePush(conversation, message);
 };
 

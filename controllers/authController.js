@@ -100,6 +100,23 @@ const logout = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /auth/device
+ * Register / refresh FCM push token for android | ios | web.
+ */
+const registerDevice = async (req, res, next) => {
+  try {
+    const data = await authService.registerDevice(
+      req.user.id,
+      req.body.device_type,
+      req.body.device_token,
+    );
+    return success(res, 'Device registered for push notifications', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ==========================================
 // Profile
 // ==========================================
@@ -150,6 +167,7 @@ module.exports = {
   register,
   refreshToken,
   logout,
+  registerDevice,
   getProfile,
   updateProfile,
   deleteProfile,
