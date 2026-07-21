@@ -1,9 +1,7 @@
 /**
  * Cross-platform push notifications via Firebase Cloud Messaging (FCM).
  *
- * Supports Android, iOS, and Web. Sends to every registered device for the
- * recipient. Native apps skip push while the chat room is open; web always
- * receives FCM (the browser hides notifications when the tab is focused).
+ * Supports Android, iOS, and Web. Tokens are saved from verify-otp / register.
  */
 const userModel = require('../models/userModel');
 const chatMessageModel = require('../models/chatMessageModel');
@@ -21,11 +19,23 @@ const setActiveConversationChecker = (fn) => {
   isUserActiveInConversationFn = typeof fn === 'function' ? fn : null;
 };
 
+const sanitizeText = (value, maxLen = 250) => {
+  const text = String(value == null ? '' : value)
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return '';
+  return text.length > maxLen ? `${text.slice(0, maxLen - 1)}…` : text;
+};
+
 const stringifyData = (data = {}) => {
   const out = {};
   Object.entries(data).forEach(([key, value]) => {
     if (value === undefined || value === null) return;
-    out[key] = String(value);
+    const str = String(value);
+    if (!str) return;
+    // FCM data values must be strings; keep payload small
+    out[String(key)] = str.length > 500 ? str.slice(0, 500) : str;
   });
   return out;
 };
@@ -52,7 +62,10 @@ const resolveRecipientIds = (conversation, message) => {
 };
 
 const buildChatNotificationTitle = (message) =>
-  message.sender_company_name || message.sender_name || 'New message';
+  sanitizeText(
+    message.sender_company_name || message.sender_name || 'New message',
+    100,
+  ) || 'New message';
 
 const buildChatNotificationBody = (message) => {
   const preview = chatMessageModel.buildPreview(
@@ -60,29 +73,34 @@ const buildChatNotificationBody = (message) => {
     message.content || message.message,
     message.metadata,
   );
-  return preview || 'You have a new message';
+  return sanitizeText(preview || 'You have a new message', 250) || 'You have a new message';
 };
 
 const buildWebChatLink = (conversationId) => {
   const base = String(config.frontend?.url || '').replace(/\/$/, '');
   if (!base || !conversationId) return null;
+  if (!/^https:\/\//i.test(base)) return null; // FCM web links must be https
   const path = String(config.frontend?.chatPath || '/chats').replace(/\/$/, '');
   return `${base}${path}/${conversationId}`;
 };
 
 /**
  * Build an FCM payload tailored to the client platform.
- * @param {string|null} deviceType
- * @param {{ title: string, body: string, data: Object, badge: number, conversationId: number|string }} opts
+ * Web uses notification + data only (no webpush block — avoids invalid-argument).
  */
 const buildPlatformPushPayload = (deviceType, { title, body, data, badge, conversationId }) => {
   const type = normalizeDeviceType(deviceType);
+  const safeTitle = sanitizeText(title, 100) || 'New message';
+  const safeBody = sanitizeText(body, 250) || 'You have a new message';
+
   const commonData = stringifyData({
     ...data,
+    title: safeTitle,
+    body: safeBody,
     platform: type || 'unknown',
   });
 
-  const notification = { title, body };
+  const notification = { title: safeTitle, body: safeBody };
 
   if (type === DEVICE_TYPES.ANDROID) {
     return {
@@ -91,13 +109,11 @@ const buildPlatformPushPayload = (deviceType, { title, body, data, badge, conver
       android: {
         priority: 'high',
         notification: {
-          title,
-          body,
+          title: safeTitle,
+          body: safeBody,
           channelId: 'chat_messages',
           sound: 'default',
           clickAction: 'OPEN_CHAT',
-          defaultSound: true,
-          notificationCount: badge,
         },
       },
     };
@@ -114,41 +130,31 @@ const buildPlatformPushPayload = (deviceType, { title, body, data, badge, conver
         },
         payload: {
           aps: {
-            alert: { title, body },
+            alert: { title: safeTitle, body: safeBody },
             sound: 'default',
-            badge,
-            'mutable-content': 1,
+            badge: Number.isFinite(badge) ? badge : 1,
           },
         },
       },
     };
   }
 
-  if (type === DEVICE_TYPES.WEB) {
-    const link = buildWebChatLink(conversationId);
-    return {
-      notification,
-      data: commonData,
-      webpush: {
-        headers: { Urgency: 'high' },
-        notification: {
-          title,
-          body,
-        },
-        ...(link ? { fcmOptions: { link } } : {}),
-      },
-    };
-  }
-
-  // Unknown platform — notification + data only (FCM routes by token type)
-  return { notification, data: commonData };
+  // WEB + unknown: minimal payload only.
+  // Do NOT send webpush / fcmOptions.link — those commonly cause messaging/invalid-argument
+  // when the domain is not registered in Firebase or the link shape is rejected.
+  const clickUrl = type === DEVICE_TYPES.WEB ? buildWebChatLink(conversationId) : null;
+  return {
+    notification,
+    data: stringifyData({
+      ...commonData,
+      ...(clickUrl ? { click_url: clickUrl } : {}),
+    }),
+  };
 };
 
 /**
  * Send FCM push for a new chat message to all devices of the other participant(s).
  * Uses tokens saved from verify-otp / register. Fire-and-forget — never throws.
- * @param {Object} conversation
- * @param {Object} message
  */
 const sendChatMessagePush = async (conversation, message) => {
   try {
@@ -164,17 +170,9 @@ const sendChatMessagePush = async (conversation, message) => {
       messageId: message.id,
       senderId: message.sender_id,
       recipientIds,
-      buyerId: conversation.buyer_id,
-      sellerId: conversation.seller_id,
     });
 
-    if (!recipientIds.length) {
-      logger.info('Chat push skipped: no recipients', {
-        conversationId: conversation.id,
-        messageId: message.id,
-      });
-      return;
-    }
+    if (!recipientIds.length) return;
 
     const title = buildChatNotificationTitle(message);
     const body = buildChatNotificationBody(message);
@@ -197,7 +195,6 @@ const sendChatMessagePush = async (conversation, message) => {
           logger.warn('Chat push skipped: no device token registered', {
             recipientId,
             conversationId: conversation.id,
-            messageId: message.id,
           });
           return;
         }
@@ -207,11 +204,21 @@ const sendChatMessagePush = async (conversation, message) => {
           const unread = await chatConversationModel.getTotalUnreadCount(recipientId);
           badge = Math.max(1, unread?.total || 1);
         } catch {
-          // ignore badge lookup failures
+          // ignore
         }
 
         await Promise.all(
           devices.map(async (device) => {
+            const tokenLen = String(device.device_token || '').length;
+            if (tokenLen < 20) {
+              logger.warn('Chat push skipped: device token looks invalid', {
+                recipientId,
+                deviceType: device.device_type,
+                tokenLen,
+              });
+              return;
+            }
+
             const payload = buildPlatformPushPayload(device.device_type, {
               title,
               body,
@@ -238,6 +245,8 @@ const sendChatMessagePush = async (conversation, message) => {
               deviceType: device.device_type,
               conversationId: conversation.id,
               errorCode: result.errorCode,
+              errorMessage: result.errorMessage,
+              tokenLen,
             });
 
             if (firebase.isInvalidFcmTokenError(result.errorCode)) {

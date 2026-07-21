@@ -153,10 +153,10 @@ const getMessaging = () => {
 
 /**
  * Send an FCM message to a single device token.
- * Retries once with a minimal payload if the rich web/android payload is rejected.
+ * Uses a minimal payload first for reliability (avoids webpush invalid-argument).
  * @param {string} token
  * @param {{ notification?: Object, data?: Object, android?: Object, apns?: Object, webpush?: Object }} payload
- * @returns {Promise<{ success: boolean, messageId?: string, errorCode?: string }>}
+ * @returns {Promise<{ success: boolean, messageId?: string, errorCode?: string, errorMessage?: string }>}
  */
 const sendPushToToken = async (token, payload = {}) => {
   const messaging = getMessaging();
@@ -164,53 +164,96 @@ const sendPushToToken = async (token, payload = {}) => {
     logger.warn('FCM skipped: Firebase not configured');
     return { success: false, errorCode: 'firebase_not_configured' };
   }
-  if (!token) {
+
+  const cleanToken = String(token || '')
+    .trim()
+    .replace(/^"+|"+$/g, '')
+    .replace(/\s+/g, '');
+  if (!cleanToken) {
     return { success: false, errorCode: 'missing_token' };
   }
 
-  const buildMessage = (p) => {
-    const message = {
-      token,
-      notification: p.notification || undefined,
-      data: p.data || undefined,
-    };
-    if (p.android) message.android = p.android;
-    if (p.apns) message.apns = p.apns;
-    if (p.webpush) message.webpush = p.webpush;
-    return message;
+  const notification = payload.notification
+    ? {
+        title: String(payload.notification.title || 'New message').slice(0, 100),
+        body: String(payload.notification.body || 'You have a new message').slice(0, 250),
+      }
+    : undefined;
+
+  const data = payload.data
+    ? Object.fromEntries(
+        Object.entries(payload.data)
+          .filter(([, v]) => v !== undefined && v !== null)
+          .map(([k, v]) => [String(k), String(v)]),
+      )
+    : undefined;
+
+  // Attempt 1: notification + data only (works for android / ios / web tokens)
+  const minimalMessage = {
+    token: cleanToken,
+    ...(notification ? { notification } : {}),
+    ...(data && Object.keys(data).length ? { data } : {}),
   };
 
   try {
-    const messageId = await messaging.send(buildMessage(payload));
+    const messageId = await messaging.send(minimalMessage);
     return { success: true, messageId };
   } catch (error) {
     const errorCode = error?.code || error?.errorInfo?.code || 'unknown';
-    logger.warn('FCM send failed', {
-      errorCode,
-      message: error.message,
-    });
+    const errorMessage = error?.message || error?.errorInfo?.message || String(error);
+    logger.warn('FCM minimal send failed', { errorCode, errorMessage, tokenLen: cleanToken.length });
 
-    // Retry with notification + data only (drop platform extras that often fail for web)
-    if (payload.notification || payload.data) {
+    // Attempt 2: platform-specific extras (android / apns only — never webpush)
+    const richMessage = {
+      token: cleanToken,
+      ...(notification ? { notification } : {}),
+      ...(data && Object.keys(data).length ? { data } : {}),
+    };
+    if (payload.android) richMessage.android = payload.android;
+    if (payload.apns) richMessage.apns = payload.apns;
+
+    if (payload.android || payload.apns) {
       try {
-        const messageId = await messaging.send({
-          token,
-          notification: payload.notification || undefined,
-          data: payload.data || undefined,
-        });
-        logger.info('FCM send succeeded on minimal retry', { messageId });
+        const messageId = await messaging.send(richMessage);
+        logger.info('FCM send succeeded with platform extras', { messageId });
         return { success: true, messageId };
-      } catch (retryError) {
-        const retryCode = retryError?.code || retryError?.errorInfo?.code || 'unknown';
-        logger.warn('FCM minimal retry failed', {
-          errorCode: retryCode,
-          message: retryError.message,
+      } catch (richError) {
+        const richCode = richError?.code || richError?.errorInfo?.code || 'unknown';
+        const richMessageText =
+          richError?.message || richError?.errorInfo?.message || String(richError);
+        logger.warn('FCM rich send failed', {
+          errorCode: richCode,
+          errorMessage: richMessageText,
         });
-        return { success: false, errorCode: retryCode };
+        return { success: false, errorCode: richCode, errorMessage: richMessageText };
       }
     }
 
-    return { success: false, errorCode };
+    // Attempt 3: data-only (service worker can display notification on web)
+    if (data && Object.keys(data).length) {
+      try {
+        const messageId = await messaging.send({
+          token: cleanToken,
+          data: {
+            ...data,
+            title: notification?.title || data.title || 'New message',
+            body: notification?.body || data.body || 'You have a new message',
+          },
+        });
+        logger.info('FCM send succeeded as data-only', { messageId });
+        return { success: true, messageId };
+      } catch (dataError) {
+        const dataCode = dataError?.code || dataError?.errorInfo?.code || 'unknown';
+        const dataMessage = dataError?.message || dataError?.errorInfo?.message || String(dataError);
+        logger.warn('FCM data-only send failed', {
+          errorCode: dataCode,
+          errorMessage: dataMessage,
+        });
+        return { success: false, errorCode: dataCode, errorMessage: dataMessage };
+      }
+    }
+
+    return { success: false, errorCode, errorMessage };
   }
 };
 
