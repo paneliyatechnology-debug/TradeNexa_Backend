@@ -477,64 +477,118 @@ const softDeleteUser = async (userId) => {
  * @param {number} userId - User ID
  * @returns {Promise<void>}
  */
+/**
+ * Delete all device registrations for a user.
+ * @param {number} userId
+ * @returns {Promise<number>}
+ */
 const deleteUserDevice = (userId) => db('devices').where({ user_id: userId }).del();
 
 /**
- * Save or replace the user's device for a platform (android | ios | web).
- * Other platforms for the same user are kept so multi-device push works.
- * @param {number} userId - User ID
- * @param {string} deviceType - android | ios | web
- * @param {string} deviceToken - FCM registration token
- * @returns {Promise<void>}
+ * Delete one platform token for a user (android | ios | web).
+ * @param {number} userId
+ * @param {string} deviceType
+ * @returns {Promise<number>}
  */
-const saveUserDevice = async (userId, deviceType, deviceToken) => {
-  if (!deviceToken) return;
-
-  const { DEVICE_TYPE_VALUES } = require('../constants');
+const deleteUserDeviceByType = (userId, deviceType) => {
   const normalizedType = String(deviceType || '')
     .toLowerCase()
     .trim();
-  const deviceTypeValue = DEVICE_TYPE_VALUES.includes(normalizedType) ? normalizedType : null;
-  const token = String(deviceToken).trim();
-  if (!token) return;
-
-  await db.transaction(async (trx) => {
-    // One active token per platform per user (do NOT wipe other users' rows —
-    // same browser / same FCM token can be used by two accounts while testing).
-    if (deviceTypeValue) {
-      await trx('devices').where({ user_id: userId, device_type: deviceTypeValue }).del();
-    } else {
-      await trx('devices').where({ user_id: userId }).whereNull('device_type').del();
-    }
-    await trx('devices').where({ user_id: userId, device_token: token }).del();
-
-    await trx('devices').insert({
-      user_id: userId,
-      device_type: deviceTypeValue,
-      device_token: token,
-      last_active: trx.fn.now(),
-    });
-  });
+  if (!normalizedType) return Promise.resolve(0);
+  return db('devices').where({ user_id: userId, device_type: normalizedType }).del();
 };
 
 /**
- * Get all registered devices for a user (Android / iOS / Web).
+ * Save or replace the user's FCM token for one platform only.
+ *
+ * Rules:
+ * - Max 3 tokens per user: one for android, one for ios, one for web
+ * - Same device_type login → replace that platform's token
+ * - Other device_types are left unchanged
+ *
+ * @param {number} userId
+ * @param {string} deviceType - android | ios | web (required)
+ * @param {string} deviceToken - FCM registration token
+ * @returns {Promise<{ device_type: string, replaced: boolean }>}
+ */
+const saveUserDevice = async (userId, deviceType, deviceToken) => {
+  const { DEVICE_TYPE_VALUES } = require('../constants');
+  const { AppError } = require('../utils/response');
+
+  const token = String(deviceToken || '').trim();
+  if (!token) throw new AppError('device_token is required', 400);
+
+  const normalizedType = String(deviceType || '')
+    .toLowerCase()
+    .trim();
+  if (!DEVICE_TYPE_VALUES.includes(normalizedType)) {
+    throw new AppError('device_type must be android, ios, or web', 400);
+  }
+
+  let replaced = false;
+
+  await db.transaction(async (trx) => {
+    const existing = await trx('devices')
+      .where({ user_id: userId, device_type: normalizedType })
+      .orderBy('updated_at', 'desc')
+      .orderBy('id', 'desc')
+      .first();
+
+    if (existing) {
+      await trx('devices').where({ id: existing.id }).update({
+        device_token: token,
+        last_active: trx.fn.now(),
+        updated_at: trx.fn.now(),
+      });
+      replaced = true;
+
+      // Keep only one row for this user + device_type
+      await trx('devices')
+        .where({ user_id: userId, device_type: normalizedType })
+        .whereNot('id', existing.id)
+        .del();
+    } else {
+      await trx('devices').insert({
+        user_id: userId,
+        device_type: normalizedType,
+        device_token: token,
+        last_active: trx.fn.now(),
+      });
+    }
+
+    // Drop legacy rows without a platform
+    await trx('devices').where({ user_id: userId }).whereNull('device_type').del();
+  });
+
+  return { device_type: normalizedType, replaced };
+};
+
+/**
+ * Get all registered devices for a user (up to 3: android / ios / web).
  * @param {number} userId
  * @returns {Promise<Array<{ id: number, device_type: string|null, device_token: string }>>}
  */
 const findDevicesByUserId = async (userId) => {
+  const { DEVICE_TYPE_VALUES } = require('../constants');
+
   const rows = await db('devices')
     .where({ user_id: userId })
     .whereNotNull('device_token')
+    .whereIn('device_type', DEVICE_TYPE_VALUES)
     .orderBy('updated_at', 'desc');
 
-  return rows
-    .filter((row) => row.device_token)
-    .map((row) => ({
+  // One row per device_type (latest wins if duplicates somehow exist)
+  const byType = new Map();
+  for (const row of rows) {
+    if (!row.device_token || byType.has(row.device_type)) continue;
+    byType.set(row.device_type, {
       id: row.id,
-      device_type: row.device_type || null,
+      device_type: row.device_type,
       device_token: row.device_token,
-    }));
+    });
+  }
+
+  return Array.from(byType.values());
 };
 
 /**
@@ -586,6 +640,7 @@ module.exports = {
   createLoginLog,
   softDeleteUser,
   deleteUserDevice,
+  deleteUserDeviceByType,
   saveUserDevice,
   findDevicesByUserId,
   findDeviceByUserId,

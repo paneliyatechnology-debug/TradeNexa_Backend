@@ -93,7 +93,11 @@ const refreshToken = async (req, res, next) => {
 const logout = async (req, res, next) => {
   try {
     const deviceToken = req.body.device_token || req.body.device?.device_token || null;
-    await authService.logout(req.user.id, req.body.refresh_token, deviceToken);
+    const deviceType = req.body.device_type || req.body.device?.device_type || null;
+    await authService.logout(req.user.id, req.body.refresh_token, {
+      deviceToken,
+      deviceType,
+    });
     return success(res, MESSAGES.LOGOUT_SUCCESS);
   } catch (err) {
     next(err);

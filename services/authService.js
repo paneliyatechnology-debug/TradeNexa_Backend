@@ -114,18 +114,20 @@ const issueTokens = async (user, req) => {
     login_at: new Date(),
   });
 
-  // Persist FCM token from verify-otp / register body (device_type + device_token)
+  // Persist FCM token from verify-otp / register (one token per device_type; others kept)
   const device = getDeviceFromBody(req.body);
   if (device?.device_token) {
     try {
-      await userModel.saveUserDevice(user.id, device.device_type, device.device_token);
+      const saved = await userModel.saveUserDevice(user.id, device.device_type, device.device_token);
       logger.info('FCM device saved on auth', {
         userId: user.id,
-        deviceType: device.device_type,
+        deviceType: saved.device_type,
+        replaced: saved.replaced,
       });
     } catch (error) {
       logger.error('Failed to save FCM device token on auth', {
         userId: user.id,
+        deviceType: device.device_type,
         error: error.message,
       });
     }
@@ -307,18 +309,38 @@ const refreshToken = async (token) => {
 };
 
 /**
- * Revoke specific or all active refresh tokens for the user, and remove device registrations.
- * Pass deviceToken to unregister only that platform/device; otherwise all devices are cleared.
- * @param {number} userId - Authenticated user ID
- * @param {string} [token] - Specific refresh token to revoke
- * @param {string} [deviceToken] - Optional FCM token for the logging-out device
+ * Revoke refresh tokens and unregister only the logging-out platform/device.
+ * Other device_types (android / ios / web) stay registered for push.
+ * @param {number} userId
+ * @param {string} [token] - refresh token
+ * @param {{ deviceToken?: string|null, deviceType?: string|null }} [device]
  */
-const logout = async (userId, token, deviceToken = null) => {
+const logout = async (userId, token, device = {}) => {
+  const deviceToken = device.deviceToken || null;
+  const deviceType = device.deviceType || null;
+
   if (token) await userModel.revokeRefreshTokenByValue(userId, token);
   else await userModel.revokeAllRefreshTokens(userId);
 
-  if (deviceToken) await userModel.deleteDeviceByToken(deviceToken);
-  else await userModel.deleteUserDevice(userId);
+  if (deviceToken) {
+    await userModel.deleteDeviceByToken(deviceToken);
+  } else if (deviceType) {
+    await userModel.deleteUserDeviceByType(userId, deviceType);
+  }
+  // If neither token nor type is sent, keep all platform tokens so other devices still get push
+};
+
+/**
+ * Register or refresh the FCM device token for one platform.
+ * Same device_type replaces that token; other platforms are unchanged (max 3 total).
+ */
+const registerDevice = async (userId, deviceType, deviceToken) => {
+  const result = await userModel.saveUserDevice(userId, deviceType, deviceToken);
+  return {
+    device_type: result.device_type,
+    replaced: result.replaced,
+    registered: true,
+  };
 };
 
 // ==========================================
@@ -342,22 +364,6 @@ const getProfile = (userId) => profileService.getProfile(userId);
  * @returns {Promise<Object>}
  */
 const updateProfile = (userId, data, files) => profileService.updateProfile(userId, data, files);
-
-/**
- * Register or refresh the FCM device token for the authenticated user.
- * Call this from web/android/ios after login and whenever the token refreshes.
- * @param {number} userId
- * @param {string} deviceType - android | ios | web
- * @param {string} deviceToken
- */
-const registerDevice = async (userId, deviceType, deviceToken) => {
-  if (!deviceToken) throw new AppError('device_token is required', 400);
-  await userModel.saveUserDevice(userId, deviceType, deviceToken);
-  return {
-    device_type: String(deviceType || '').toLowerCase().trim() || null,
-    registered: true,
-  };
-};
 
 /**
  * Soft delete user profile and clean up active sessions.

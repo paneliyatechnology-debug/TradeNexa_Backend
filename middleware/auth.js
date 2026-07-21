@@ -102,6 +102,18 @@ const logoutRules = [
     .trim()
     .notEmpty()
     .withMessage('Device token cannot be empty'),
+  body('device_type')
+    .optional({ values: 'falsy' })
+    .trim()
+    .toLowerCase()
+    .isIn(DEVICE_TYPE_VALUES)
+    .withMessage('Invalid device type (android | ios | web)'),
+  body('device.device_type')
+    .optional({ values: 'falsy' })
+    .trim()
+    .toLowerCase()
+    .isIn(DEVICE_TYPE_VALUES)
+    .withMessage('Invalid device type (android | ios | web)'),
 ];
 
 /** Required device registration (after login / when FCM token refreshes). */
