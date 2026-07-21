@@ -24,13 +24,38 @@ const { generateQuotationNumber } = require('../utils/rfqNumbers');
 const chatService = require('./chatService');
 const { CHAT_SYSTEM_EVENT } = require('../constants/chat');
 const logger = require('../utils/logger');
+const notificationService = require('./notificationService');
+const {
+  NOTIFICATION_TYPE,
+  NOTIFICATION_CLICK_ACTION,
+} = require('../constants/notification');
 
 // ==========================================
-// Notification hooks (integration points only)
+// Notification hooks (FCM — targeted users only)
 // ==========================================
 
+/**
+ * Log + optional FCM. Prefer notifyUser / notifyUsers for real pushes.
+ * Kept for backward-compatible call sites that only need audit logging.
+ */
 const notify = (event, payload = {}) => {
   logger.info(`[RFQ Notification Hook] ${event}`, { event, ...payload });
+};
+
+/** Fire-and-forget FCM to one user. */
+const notifyUser = (receiverId, params) => {
+  void notificationService.send({ receiverId, ...params });
+};
+
+/** Fire-and-forget FCM to many users. */
+const notifyUsers = (receiverIds, params) => {
+  void notificationService.sendToMany(receiverIds, params);
+};
+
+/** Seller ids invited / assigned on an RFQ (for status broadcasts). */
+const listRfqSellerIds = async (rfqId) => {
+  const rows = await rfqSellerModel.listAssignedSellersByRfqId(rfqId);
+  return (rows || []).map((r) => r.user_id || r.id).filter(Boolean);
 };
 
 const getBuyerId = (rfq) => rfq.buyer_id;
@@ -379,7 +404,22 @@ const cancelRfq = async (id, buyerId, isAdmin = false) => {
   await rfqModel.updateRfq(id, { status: RFQ_STATUS.CANCELLED, updated_by: buyerId });
   await rfqAuditModel.logAction({ rfqId: id, action: RFQ_AUDIT_ACTION.RFQ_CANCELLED, actorId: buyerId });
   notify('RFQ_CANCELLED', { rfqId: id, buyerId });
-  await chatService.recordRfqEventForSellers(id, CHAT_SYSTEM_EVENT.RFQ_CANCELLED, buyerId);
+  await chatService.recordRfqEventForSellers(id, CHAT_SYSTEM_EVENT.RFQ_CANCELLED, buyerId, {
+    skip_push: true,
+  });
+
+  const sellerIds = await listRfqSellerIds(id);
+  notifyUsers(sellerIds, {
+    type: NOTIFICATION_TYPE.RFQ_STATUS_UPDATED,
+    title: 'RFQ Cancelled',
+    body: 'An RFQ you were invited to has been cancelled.',
+    referenceId: id,
+    senderId: buyerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
+    webPath: `/rfqs/${id}`,
+    data: { rfq_id: id, status: RFQ_STATUS.CANCELLED },
+  });
+
   return getRfqDetail(id);
 };
 
@@ -391,6 +431,19 @@ const closeRfq = async (id, buyerId, isAdmin = false) => {
   await rfqModel.updateRfq(id, { status: RFQ_STATUS.CLOSED, updated_by: buyerId });
   await rfqAuditModel.logAction({ rfqId: id, action: RFQ_AUDIT_ACTION.RFQ_CLOSED, actorId: buyerId });
   notify('RFQ_CLOSED', { rfqId: id, buyerId });
+
+  const sellerIds = await listRfqSellerIds(id);
+  notifyUsers(sellerIds, {
+    type: NOTIFICATION_TYPE.RFQ_STATUS_UPDATED,
+    title: 'RFQ Closed',
+    body: 'An RFQ you were invited to has been closed.',
+    referenceId: id,
+    senderId: buyerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
+    webPath: `/rfqs/${id}`,
+    data: { rfq_id: id, status: RFQ_STATUS.CLOSED },
+  });
+
   return getRfqDetail(id);
 };
 
@@ -490,6 +543,17 @@ const adminUpdateStatus = async (id, status, adminId) => {
     metadata: { status },
   });
 
+  notifyUser(rfq.buyer_id, {
+    type: NOTIFICATION_TYPE.RFQ_STATUS_UPDATED,
+    title: 'RFQ Status Updated',
+    body: `Your RFQ status is now ${status}.`,
+    referenceId: id,
+    senderId: adminId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
+    webPath: `/rfqs/${id}`,
+    data: { rfq_id: id, status },
+  });
+
   return getRfqDetail(id);
 };
 
@@ -584,9 +648,20 @@ const submitQuotation = async (rfqId, data, sellerId) => {
       { rfqId, quotationId: created.id, action: RFQ_AUDIT_ACTION.QUOTATION_SUBMITTED, actorId: sellerId },
       trx,
     );
-    notify('NEW_QUOTATION', { rfqId, quotationId: created.id, sellerId });
 
     return created;
+  });
+
+  notify('NEW_QUOTATION', { rfqId, quotationId: quotation.id, sellerId });
+  notifyUser(rfq.buyer_id, {
+    type: NOTIFICATION_TYPE.RFQ_NEW_QUOTATION,
+    title: 'New Quotation on RFQ',
+    body: 'A seller has submitted a quotation on your RFQ.',
+    referenceId: quotation.id,
+    senderId: sellerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
+    webPath: `/rfqs/${rfqId}`,
+    data: { rfq_id: rfqId, quotation_id: quotation.id },
   });
 
   await chatService.recordSystemEvent({
@@ -595,6 +670,7 @@ const submitQuotation = async (rfqId, data, sellerId) => {
     quotationId: quotation.id,
     eventType: CHAT_SYSTEM_EVENT.QUOTATION_SUBMITTED,
     actorId: sellerId,
+    metadata: { skip_push: true },
   });
 
   return quotationModel.findById(quotation.id);
@@ -633,12 +709,27 @@ const updateQuotation = async (quotationId, data, sellerId) => {
     notify('QUOTATION_UPDATED', { quotationId, sellerId });
   });
 
+  const rfq = await rfqModel.findRfqById(quotation.rfq_id, { raw: true });
+  if (rfq?.buyer_id) {
+    notifyUser(rfq.buyer_id, {
+      type: NOTIFICATION_TYPE.RFQ_QUOTATION_UPDATED,
+      title: 'RFQ Quotation Updated',
+      body: 'A seller has updated their quotation on your RFQ.',
+      referenceId: quotationId,
+      senderId: sellerId,
+      clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
+      webPath: `/rfqs/${quotation.rfq_id}`,
+      data: { rfq_id: quotation.rfq_id, quotation_id: quotationId },
+    });
+  }
+
   await chatService.recordSystemEvent({
     rfqId: quotation.rfq_id,
     sellerId,
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.QUOTATION_UPDATED,
     actorId: sellerId,
+    metadata: { skip_push: true },
   });
 
   return quotationModel.findById(quotationId);
@@ -698,12 +789,24 @@ const acceptQuotation = async (quotationId, buyerId, isAdmin = false) => {
     notify('QUOTATION_ACCEPTED', { rfqId: quotation.rfq_id, quotationId, sellerId: quotation.seller_id });
   });
 
+  notifyUser(quotation.seller_id, {
+    type: NOTIFICATION_TYPE.RFQ_QUOTATION_ACCEPTED,
+    title: 'RFQ Quotation Accepted',
+    body: 'Your RFQ quotation has been accepted.',
+    referenceId: quotationId,
+    senderId: buyerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
+    webPath: `/rfqs/${quotation.rfq_id}`,
+    data: { rfq_id: quotation.rfq_id, quotation_id: quotationId },
+  });
+
   await chatService.recordSystemEvent({
     rfqId: quotation.rfq_id,
     sellerId: quotation.seller_id,
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.QUOTATION_ACCEPTED,
     actorId: buyerId,
+    metadata: { skip_push: true },
   });
   await chatService.recordSystemEvent({
     rfqId: quotation.rfq_id,
@@ -711,6 +814,7 @@ const acceptQuotation = async (quotationId, buyerId, isAdmin = false) => {
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.RFQ_AWARDED,
     actorId: buyerId,
+    metadata: { skip_push: true },
   });
 
   return quotationModel.findById(quotationId);
@@ -733,12 +837,24 @@ const rejectQuotation = async (quotationId, buyerId, isAdmin = false) => {
     actorId: buyerId,
   });
   notify('QUOTATION_REJECTED', { quotationId, buyerId });
+  notifyUser(quotation.seller_id, {
+    type: NOTIFICATION_TYPE.RFQ_QUOTATION_REJECTED,
+    title: 'RFQ Quotation Rejected',
+    body: 'Your RFQ quotation was rejected by the buyer.',
+    referenceId: quotationId,
+    senderId: buyerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
+    webPath: `/rfqs/${quotation.rfq_id}`,
+    data: { rfq_id: quotation.rfq_id, quotation_id: quotationId },
+  });
+
   await chatService.recordSystemEvent({
     rfqId: quotation.rfq_id,
     sellerId: quotation.seller_id,
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.QUOTATION_REJECTED,
     actorId: buyerId,
+    metadata: { skip_push: true },
   });
   return quotationModel.findById(quotationId);
 };
@@ -768,13 +884,30 @@ const requestRevision = async (quotationId, buyerId, remarks) => {
     metadata: { remarks: buyerRemark },
   });
   notify('NEGOTIATION_REQUEST', { quotationId, buyerId, remarks: buyerRemark });
+  notifyUser(quotation.seller_id, {
+    type: NOTIFICATION_TYPE.RFQ_STATUS_UPDATED,
+    title: 'Revision Requested',
+    body: buyerRemark
+      ? `Buyer requested a revision: ${buyerRemark}`
+      : 'Buyer requested a revision on your RFQ quotation.',
+    referenceId: quotationId,
+    senderId: buyerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
+    webPath: `/rfqs/${quotation.rfq_id}`,
+    data: {
+      rfq_id: quotation.rfq_id,
+      quotation_id: quotationId,
+      status: RFQ_STATUS.NEGOTIATION,
+    },
+  });
+
   await chatService.recordSystemEvent({
     rfqId: quotation.rfq_id,
     sellerId: quotation.seller_id,
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.REVISION_REQUESTED,
     actorId: buyerId,
-    metadata: { remarks: buyerRemark },
+    metadata: { remarks: buyerRemark, skip_push: true },
   });
   return quotationModel.findById(quotationId);
 };
@@ -797,12 +930,14 @@ const reviseQuotation = async (quotationId, data, sellerId) => {
     actorId: sellerId,
   });
   notify('NEGOTIATION_RESPONSE', { quotationId, sellerId });
+  // updateQuotation already notifies the buyer of RFQ_QUOTATION_UPDATED
   await chatService.recordSystemEvent({
     rfqId: quotation.rfq_id,
     sellerId,
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.QUOTATION_REVISED,
     actorId: sellerId,
+    metadata: { skip_push: true },
   });
   return updated;
 };

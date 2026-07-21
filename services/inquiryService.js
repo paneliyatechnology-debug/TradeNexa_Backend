@@ -24,6 +24,20 @@ const {
 } = require('../constants/inquiry');
 const { CHAT_SYSTEM_EVENT } = require('../constants/chat');
 const { PRODUCT_APPROVAL_STATUS } = require('../constants/product');
+const notificationService = require('./notificationService');
+const {
+  NOTIFICATION_TYPE,
+  NOTIFICATION_CLICK_ACTION,
+} = require('../constants/notification');
+
+// ==========================================
+// Push helpers (never throw — safe after DB commits)
+// ==========================================
+
+/** Fire-and-forget business push for inquiry / inquiry-quotation events. */
+const pushInquiryNotify = (params) => {
+  void notificationService.send(params);
+};
 
 // ==========================================
 // Helpers
@@ -165,6 +179,21 @@ const createInquiry = async (buyerId, data) => {
     return raw.id;
   });
 
+  pushInquiryNotify({
+    receiverId: product.seller_id,
+    type: NOTIFICATION_TYPE.INQUIRY_RECEIVED,
+    title: 'New Product Inquiry',
+    body: 'You have received a new inquiry on your product.',
+    referenceId: inquiryId,
+    senderId: buyerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_INQUIRY,
+    webPath: `/inquiries/${inquiryId}`,
+    data: {
+      inquiry_id: inquiryId,
+      product_id: product.id,
+    },
+  });
+
   return enrichInquiryDetail(inquiryId);
 };
 
@@ -254,7 +283,21 @@ const rejectInquiry = async (inquiryId, sellerId, reason = null) => {
     inquiryId,
     eventType: CHAT_SYSTEM_EVENT.INQUIRY_REJECTED,
     actorId: sellerId,
-    metadata: reason ? { reason } : {},
+    metadata: { ...(reason ? { reason } : {}), skip_push: true },
+  });
+
+  pushInquiryNotify({
+    receiverId: inquiry.buyer_id,
+    type: NOTIFICATION_TYPE.INQUIRY_REJECTED,
+    title: 'Inquiry Rejected',
+    body: reason
+      ? `Your inquiry was rejected: ${reason}`
+      : 'Your inquiry was rejected by the seller.',
+    referenceId: inquiryId,
+    senderId: sellerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_INQUIRY,
+    webPath: `/inquiries/${inquiryId}`,
+    data: { inquiry_id: inquiryId, product_id: inquiry.product_id },
   });
 
   return enrichInquiryDetail(inquiryId);
@@ -310,6 +353,23 @@ const submitQuotation = async (inquiryId, sellerId, data) => {
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.QUOTATION_SUBMITTED,
     actorId: sellerId,
+    metadata: { skip_push: true },
+  });
+
+  pushInquiryNotify({
+    receiverId: inquiry.buyer_id,
+    type: NOTIFICATION_TYPE.QUOTATION_RECEIVED,
+    title: 'New Quotation Received',
+    body: 'A seller has sent you a quotation on your inquiry.',
+    referenceId: quotationId,
+    senderId: sellerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
+    webPath: `/inquiries/${inquiryId}`,
+    data: {
+      inquiry_id: inquiryId,
+      quotation_id: quotationId,
+      product_id: inquiry.product_id,
+    },
   });
 
   return inquiryQuotationModel.findById(quotationId);
@@ -342,6 +402,23 @@ const updateQuotation = async (quotationId, sellerId, data) => {
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.QUOTATION_UPDATED,
     actorId: sellerId,
+    metadata: { skip_push: true },
+  });
+
+  pushInquiryNotify({
+    receiverId: inquiry.buyer_id,
+    type: NOTIFICATION_TYPE.QUOTATION_UPDATED,
+    title: 'Quotation Updated',
+    body: 'A seller has updated their quotation on your inquiry.',
+    referenceId: quotationId,
+    senderId: sellerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
+    webPath: `/inquiries/${inquiry.id}`,
+    data: {
+      inquiry_id: inquiry.id,
+      quotation_id: quotationId,
+      product_id: inquiry.product_id,
+    },
   });
 
   return inquiryQuotationModel.findById(quotationId);
@@ -405,12 +482,30 @@ const acceptQuotation = async (quotationId, buyerId) => {
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.QUOTATION_ACCEPTED,
     actorId: buyerId,
+    metadata: { skip_push: true },
   });
   await chatService.recordInquirySystemEvent({
     inquiryId: inquiry.id,
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.INQUIRY_ACCEPTED,
     actorId: buyerId,
+    metadata: { skip_push: true },
+  });
+
+  pushInquiryNotify({
+    receiverId: inquiry.seller_id,
+    type: NOTIFICATION_TYPE.QUOTATION_ACCEPTED,
+    title: 'Quotation Accepted',
+    body: 'Your quotation has been accepted by the buyer.',
+    referenceId: quotationId,
+    senderId: buyerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
+    webPath: `/inquiries/${inquiry.id}`,
+    data: {
+      inquiry_id: inquiry.id,
+      quotation_id: quotationId,
+      product_id: inquiry.product_id,
+    },
   });
 
   return inquiryQuotationModel.findById(quotationId);
@@ -435,6 +530,23 @@ const rejectQuotation = async (quotationId, buyerId) => {
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.QUOTATION_REJECTED,
     actorId: buyerId,
+    metadata: { skip_push: true },
+  });
+
+  pushInquiryNotify({
+    receiverId: inquiry.seller_id,
+    type: NOTIFICATION_TYPE.QUOTATION_REJECTED,
+    title: 'Quotation Rejected',
+    body: 'Your quotation was rejected by the buyer.',
+    referenceId: quotationId,
+    senderId: buyerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
+    webPath: `/inquiries/${inquiry.id}`,
+    data: {
+      inquiry_id: inquiry.id,
+      quotation_id: quotationId,
+      product_id: inquiry.product_id,
+    },
   });
 
   return inquiryQuotationModel.findById(quotationId);

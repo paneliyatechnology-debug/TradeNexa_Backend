@@ -17,14 +17,66 @@ const {
   PRODUCT_MATERIAL_EDIT_FIELDS,
 } = require('../constants/product');
 const logger = require('../utils/logger');
+const notificationService = require('./notificationService');
+const {
+  NOTIFICATION_TYPE,
+  NOTIFICATION_CLICK_ACTION,
+} = require('../constants/notification');
 
 // ==========================================
-// Notification hooks (integration points only)
+// Notification hooks (FCM to seller)
 // ==========================================
 
-/** Log-only hook — swap for push/email/in-app later (same pattern as RFQ). */
+/**
+ * Push product-approval events to the product owner (seller).
+ * Never throws — failures are logged inside notificationService.
+ */
 const notify = (event, payload = {}) => {
   logger.info(`[Product Approval Hook] ${event}`, { event, ...payload });
+
+  const sellerId = payload.sellerId;
+  if (!sellerId) return;
+
+  const productId = payload.productId;
+  const remarks = payload.remarks ? String(payload.remarks).slice(0, 120) : null;
+
+  const map = {
+    PRODUCT_APPROVED: {
+      type: NOTIFICATION_TYPE.PRODUCT_APPROVED,
+      title: 'Product Approved',
+      body: 'Your product has been approved and is now visible to buyers.',
+    },
+    PRODUCT_REVISION_REQUIRED: {
+      type: NOTIFICATION_TYPE.PRODUCT_REVISION_REQUIRED,
+      title: 'Product Revision Required',
+      body: remarks
+        ? `Revision required: ${remarks}`
+        : 'Your product needs changes before it can be approved.',
+    },
+    PRODUCT_REJECTED: {
+      type: NOTIFICATION_TYPE.PRODUCT_REJECTED,
+      title: 'Product Rejected',
+      body: remarks ? `Product rejected: ${remarks}` : 'Your product was rejected by admin.',
+    },
+  };
+
+  const spec = map[event];
+  if (!spec) return;
+
+  void notificationService.send({
+    receiverId: sellerId,
+    type: spec.type,
+    title: spec.title,
+    body: spec.body,
+    referenceId: productId,
+    senderId: payload.adminId || null,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_PRODUCT,
+    webPath: productId ? `/products/${productId}` : null,
+    data: {
+      product_id: productId,
+      remarks: remarks || undefined,
+    },
+  });
 };
 
 // ==========================================
