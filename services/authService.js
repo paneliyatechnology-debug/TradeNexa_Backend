@@ -33,7 +33,8 @@ const addMinutes = (date, mins) => new Date(date.getTime() + mins * 60000);
 const isExpired = (date) => new Date(date) < new Date();
 
 /**
- * Extract device info from request body (flat fields or nested device object).
+ * Extract FCM device info from request body (flat fields or nested `device` object).
+ * Expected on verify-otp / register: device_type (android|ios|web) + device_token (real FCM token).
  * @param {Object} body - Request body
  * @returns {{ device_type: string|null, device_token: string|null }|null}
  */
@@ -114,7 +115,9 @@ const issueTokens = async (user, req) => {
     login_at: new Date(),
   });
 
-  // Persist FCM token from verify-otp / register (one token per device_type; others kept)
+  // Persist FCM token from verify-otp / register.
+  // One token per device_type (android | ios | web); other platforms are kept.
+  // Clients must send a real FCM token — placeholders like "dev_token_…" are skipped at send time.
   const device = getDeviceFromBody(req.body);
   if (device?.device_token) {
     try {

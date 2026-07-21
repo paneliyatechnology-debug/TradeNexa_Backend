@@ -472,13 +472,13 @@ const softDeleteUser = async (userId) => {
   });
 };
 
+// ==========================================
+// Device / FCM token operations
+// ==========================================
+
 /**
- * Delete device registration for a user.
- * @param {number} userId - User ID
- * @returns {Promise<void>}
- */
-/**
- * Delete all device registrations for a user.
+ * Delete all device registrations for a user (all platforms).
+ * Prefer deleteUserDeviceByType / deleteDeviceByToken on single-device logout.
  * @param {number} userId
  * @returns {Promise<number>}
  */

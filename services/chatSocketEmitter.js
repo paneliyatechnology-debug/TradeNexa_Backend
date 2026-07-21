@@ -2,16 +2,24 @@
  * Socket.IO emit helpers for chat real-time events.
  *
  * Room naming: conversation:{id}, user:{id}
+ *
+ * After broadcasting a new message over sockets, also triggers FCM push
+ * (android / ios / web) via pushNotificationService — lazy-required to avoid
+ * circular dependency with chatService.
  */
 const { CHAT_SOCKET_EVENT } = require('../constants/chat');
 
 let io = null;
 
+/** Attach the Socket.IO server instance (called once from sockets/index.js). */
 const setIo = (socketIo) => {
   io = socketIo;
 };
 
+/** Room id for a conversation thread. */
 const conversationRoom = (conversationId) => `conversation:${conversationId}`;
+
+/** Personal room for a user (inbox updates, unread, read receipts). */
 const userRoom = (userId) => `user:${userId}`;
 
 const emitToConversation = (conversationId, event, payload) => {
@@ -24,7 +32,11 @@ const emitToUser = (userId, event, payload) => {
   io.to(userRoom(userId)).emit(event, payload);
 };
 
-/** Notify participants of a new message (canonical receive_message + legacy message:new). */
+/**
+ * Notify participants of a new message (socket) and queue FCM push.
+ * Canonical: receive_message; legacy: message:new.
+ * Push is fire-and-forget and must not block the socket emit path.
+ */
 const emitNewMessage = (conversation, message) => {
   const payload = {
     conversation_id: conversation.id,
@@ -46,7 +58,7 @@ const emitNewMessage = (conversation, message) => {
     });
   });
 
-  // Always send FCM after socket emit (lazy require avoids circular init issues)
+  // FCM to all registered platforms for the other participant(s)
   setImmediate(() => {
     try {
       const pushNotificationService = require('./pushNotificationService');

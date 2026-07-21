@@ -107,6 +107,7 @@ const initSocket = (httpServer) => {
   });
 
   chatSocketEmitter.setIo(io);
+  // Optional: track which conversation a socket is viewing (for future push suppress UX)
   pushNotificationService.setActiveConversationChecker(isUserActiveInConversation);
 
   io.use(async (socket, next) => {

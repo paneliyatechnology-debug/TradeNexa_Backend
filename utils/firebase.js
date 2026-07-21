@@ -1,7 +1,8 @@
 /**
- * Firebase phone authentication integration.
+ * Firebase Admin integration.
  *
- * Initializes the Firebase Admin SDK and provides OTP send/verify/resend via the REST API.
+ * - Phone OTP: Identity Toolkit REST (send / verify / resend)
+ * - Push: FCM messaging for android | ios | web chat notifications
  */
 const admin = require('firebase-admin');
 const config = require('../config');
@@ -143,6 +144,7 @@ const resendOtp = async (firebaseVerificationId, recaptchaToken = null) => {
 // ==========================================
 
 /**
+ * Lazy FCM messaging client (requires successful init()).
  * @returns {import('firebase-admin').messaging.Messaging|null}
  */
 const getMessaging = () => {
@@ -152,10 +154,35 @@ const getMessaging = () => {
 };
 
 /**
- * Send an FCM message to a single device token.
- * Uses a minimal payload first for reliability (avoids webpush invalid-argument).
- * @param {string} token
- * @param {{ notification?: Object, data?: Object, android?: Object, apns?: Object, webpush?: Object }} payload
+ * Strip reserved / empty keys from an FCM data map (all values must be strings).
+ * @param {Object|undefined} data
+ * @returns {Object<string, string>|undefined}
+ */
+const sanitizeFcmData = (data) => {
+  if (!data) return undefined;
+  const out = Object.fromEntries(
+    Object.entries(data)
+      .filter(([k, v]) => {
+        if (v === undefined || v === null) return false;
+        const key = String(k);
+        if (key === 'from' || key === 'message_type') return false;
+        if (key.startsWith('google.') || key.startsWith('gcm.')) return false;
+        return true;
+      })
+      .map(([k, v]) => [String(k), String(v)]),
+  );
+  return Object.keys(out).length ? out : undefined;
+};
+
+/**
+ * Send one FCM message to a device registration token.
+ *
+ * Strategy:
+ * - android / ios: try platform extras first (channel / APNs), then fall back to notification+data
+ * - web: notification+data only, then data-only fallback
+ *
+ * @param {string} token - FCM registration token
+ * @param {{ notification?: Object, data?: Object, android?: Object, apns?: Object }} payload
  * @returns {Promise<{ success: boolean, messageId?: string, errorCode?: string, errorMessage?: string }>}
  */
 const sendPushToToken = async (token, payload = {}) => {
@@ -180,63 +207,67 @@ const sendPushToToken = async (token, payload = {}) => {
       }
     : undefined;
 
-  const data = payload.data
-    ? Object.fromEntries(
-        Object.entries(payload.data)
-          .filter(([k, v]) => {
-            if (v === undefined || v === null) return false;
-            const key = String(k);
-            if (key === 'from' || key === 'message_type') return false;
-            if (key.startsWith('google.') || key.startsWith('gcm.')) return false;
-            return true;
-          })
-          .map(([k, v]) => [String(k), String(v)]),
-      )
-    : undefined;
+  const data = sanitizeFcmData(payload.data);
 
-  // Attempt 1: notification + data only (works for android / ios / web tokens)
-  const minimalMessage = {
+  const baseMessage = {
     token: cleanToken,
     ...(notification ? { notification } : {}),
-    ...(data && Object.keys(data).length ? { data } : {}),
+    ...(data ? { data } : {}),
   };
 
+  const hasNativeExtras = Boolean(payload.android || payload.apns);
+
+  // ---------- Native (android / ios): prefer channel / APNs config ----------
+  if (hasNativeExtras) {
+    const richMessage = {
+      ...baseMessage,
+      ...(payload.android ? { android: payload.android } : {}),
+      ...(payload.apns ? { apns: payload.apns } : {}),
+    };
+
+    try {
+      const messageId = await messaging.send(richMessage);
+      return { success: true, messageId };
+    } catch (error) {
+      const errorCode = error?.code || error?.errorInfo?.code || 'unknown';
+      const errorMessage = error?.message || error?.errorInfo?.message || String(error);
+      logger.warn('FCM native (android/ios) send failed — retrying minimal', {
+        errorCode,
+        errorMessage,
+        tokenLen: cleanToken.length,
+      });
+
+      try {
+        const messageId = await messaging.send(baseMessage);
+        logger.info('FCM send succeeded on minimal fallback', { messageId });
+        return { success: true, messageId };
+      } catch (retryError) {
+        const retryCode = retryError?.code || retryError?.errorInfo?.code || 'unknown';
+        const retryMessage =
+          retryError?.message || retryError?.errorInfo?.message || String(retryError);
+        logger.warn('FCM minimal fallback failed', {
+          errorCode: retryCode,
+          errorMessage: retryMessage,
+        });
+        return { success: false, errorCode: retryCode, errorMessage: retryMessage };
+      }
+    }
+  }
+
+  // ---------- Web / generic: notification + data, then data-only ----------
   try {
-    const messageId = await messaging.send(minimalMessage);
+    const messageId = await messaging.send(baseMessage);
     return { success: true, messageId };
   } catch (error) {
     const errorCode = error?.code || error?.errorInfo?.code || 'unknown';
     const errorMessage = error?.message || error?.errorInfo?.message || String(error);
-    logger.warn('FCM minimal send failed', { errorCode, errorMessage, tokenLen: cleanToken.length });
+    logger.warn('FCM minimal send failed', {
+      errorCode,
+      errorMessage,
+      tokenLen: cleanToken.length,
+    });
 
-    // Attempt 2: platform-specific extras (android / apns only — never webpush)
-    const richMessage = {
-      token: cleanToken,
-      ...(notification ? { notification } : {}),
-      ...(data && Object.keys(data).length ? { data } : {}),
-    };
-    if (payload.android) richMessage.android = payload.android;
-    if (payload.apns) richMessage.apns = payload.apns;
-
-    if (payload.android || payload.apns) {
-      try {
-        const messageId = await messaging.send(richMessage);
-        logger.info('FCM send succeeded with platform extras', { messageId });
-        return { success: true, messageId };
-      } catch (richError) {
-        const richCode = richError?.code || richError?.errorInfo?.code || 'unknown';
-        const richMessageText =
-          richError?.message || richError?.errorInfo?.message || String(richError);
-        logger.warn('FCM rich send failed', {
-          errorCode: richCode,
-          errorMessage: richMessageText,
-        });
-        return { success: false, errorCode: richCode, errorMessage: richMessageText };
-      }
-    }
-
-    // Attempt 3: data-only (service worker can display notification on web)
-    if (data && Object.keys(data).length) {
+    if (data) {
       try {
         const messageId = await messaging.send({
           token: cleanToken,
@@ -263,7 +294,12 @@ const sendPushToToken = async (token, payload = {}) => {
   }
 };
 
-/** True when the FCM token should be removed from devices table. */
+/**
+ * Whether FCM reported a permanently bad registration token (safe to delete from DB).
+ * Do not treat messaging/invalid-argument as token death — that is usually a payload issue.
+ * @param {string} errorCode
+ * @returns {boolean}
+ */
 const isInvalidFcmTokenError = (errorCode) =>
   [
     'messaging/registration-token-not-registered',

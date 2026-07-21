@@ -83,13 +83,21 @@ const OTP_STATUS = {
   EXPIRED: 'expired',
 };
 
-/** Client platforms that register FCM tokens. */
+// ==========================================
+// Device types (FCM push platforms)
+// ==========================================
+
+/**
+ * Client platforms that may register an FCM token.
+ * Each user stores at most one token per type (android | ios | web).
+ */
 const DEVICE_TYPES = {
   ANDROID: 'android',
   IOS: 'ios',
   WEB: 'web',
 };
 
+/** Allowed device_type values for auth / devices table. */
 const DEVICE_TYPE_VALUES = Object.values(DEVICE_TYPES);
 
 module.exports = {
