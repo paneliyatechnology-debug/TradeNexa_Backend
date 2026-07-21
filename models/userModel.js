@@ -495,20 +495,23 @@ const saveUserDevice = async (userId, deviceType, deviceToken) => {
     .toLowerCase()
     .trim();
   const deviceTypeValue = DEVICE_TYPE_VALUES.includes(normalizedType) ? normalizedType : null;
+  const token = String(deviceToken).trim();
+  if (!token) return;
 
   await db.transaction(async (trx) => {
-    // Token can only belong to one user
-    await trx('devices').where({ device_token: deviceToken }).del();
-
-    // One active token per platform per user
+    // One active token per platform per user (do NOT wipe other users' rows —
+    // same browser / same FCM token can be used by two accounts while testing).
     if (deviceTypeValue) {
       await trx('devices').where({ user_id: userId, device_type: deviceTypeValue }).del();
+    } else {
+      await trx('devices').where({ user_id: userId }).whereNull('device_type').del();
     }
+    await trx('devices').where({ user_id: userId, device_token: token }).del();
 
     await trx('devices').insert({
       user_id: userId,
       device_type: deviceTypeValue,
-      device_token: deviceToken,
+      device_token: token,
       last_active: trx.fn.now(),
     });
   });

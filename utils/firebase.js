@@ -153,7 +153,7 @@ const getMessaging = () => {
 
 /**
  * Send an FCM message to a single device token.
- * Pass only the platform blocks that apply (android / apns / webpush).
+ * Retries once with a minimal payload if the rich web/android payload is rejected.
  * @param {string} token
  * @param {{ notification?: Object, data?: Object, android?: Object, apns?: Object, webpush?: Object }} payload
  * @returns {Promise<{ success: boolean, messageId?: string, errorCode?: string }>}
@@ -168,21 +168,48 @@ const sendPushToToken = async (token, payload = {}) => {
     return { success: false, errorCode: 'missing_token' };
   }
 
-  try {
+  const buildMessage = (p) => {
     const message = {
       token,
-      notification: payload.notification || undefined,
-      data: payload.data || undefined,
+      notification: p.notification || undefined,
+      data: p.data || undefined,
     };
-    if (payload.android) message.android = payload.android;
-    if (payload.apns) message.apns = payload.apns;
-    if (payload.webpush) message.webpush = payload.webpush;
+    if (p.android) message.android = p.android;
+    if (p.apns) message.apns = p.apns;
+    if (p.webpush) message.webpush = p.webpush;
+    return message;
+  };
 
-    const messageId = await messaging.send(message);
+  try {
+    const messageId = await messaging.send(buildMessage(payload));
     return { success: true, messageId };
   } catch (error) {
     const errorCode = error?.code || error?.errorInfo?.code || 'unknown';
-    logger.warn('FCM send failed', { errorCode, message: error.message });
+    logger.warn('FCM send failed', {
+      errorCode,
+      message: error.message,
+    });
+
+    // Retry with notification + data only (drop platform extras that often fail for web)
+    if (payload.notification || payload.data) {
+      try {
+        const messageId = await messaging.send({
+          token,
+          notification: payload.notification || undefined,
+          data: payload.data || undefined,
+        });
+        logger.info('FCM send succeeded on minimal retry', { messageId });
+        return { success: true, messageId };
+      } catch (retryError) {
+        const retryCode = retryError?.code || retryError?.errorInfo?.code || 'unknown';
+        logger.warn('FCM minimal retry failed', {
+          errorCode: retryCode,
+          message: retryError.message,
+        });
+        return { success: false, errorCode: retryCode };
+      }
+    }
+
     return { success: false, errorCode };
   }
 };

@@ -37,16 +37,6 @@ const normalizeDeviceType = (deviceType) => {
   return DEVICE_TYPE_VALUES.includes(type) ? type : null;
 };
 
-const toAbsoluteUrl = (pathOrUrl) => {
-  if (!pathOrUrl) return undefined;
-  const value = String(pathOrUrl).trim();
-  if (!value) return undefined;
-  if (/^https?:\/\//i.test(value)) return value;
-  const base = String(config.frontend?.url || config.app?.url || '').replace(/\/$/, '');
-  if (!base) return undefined;
-  return `${base}${value.startsWith('/') ? value : `/${value}`}`;
-};
-
 const resolveRecipientIds = (conversation, message) => {
   const buyerId = Number(conversation.buyer_id);
   const sellerId = Number(conversation.seller_id);
@@ -136,24 +126,15 @@ const buildPlatformPushPayload = (deviceType, { title, body, data, badge, conver
 
   if (type === DEVICE_TYPES.WEB) {
     const link = buildWebChatLink(conversationId);
-    const icon = toAbsoluteUrl(config.frontend.pushIcon);
-    const badgeIcon = toAbsoluteUrl(config.frontend.pushBadge);
-
-    const webNotification = {
-      title,
-      body,
-      requireInteraction: true,
-      tag: `chat-${conversationId}`,
-    };
-    if (icon) webNotification.icon = icon;
-    if (badgeIcon) webNotification.badge = badgeIcon;
-
     return {
       notification,
       data: commonData,
       webpush: {
         headers: { Urgency: 'high' },
-        notification: webNotification,
+        notification: {
+          title,
+          body,
+        },
         ...(link ? { fcmOptions: { link } } : {}),
       },
     };
@@ -178,6 +159,15 @@ const sendChatMessagePush = async (conversation, message) => {
     }
 
     const recipientIds = resolveRecipientIds(conversation, message);
+    logger.info('Chat push starting', {
+      conversationId: conversation.id,
+      messageId: message.id,
+      senderId: message.sender_id,
+      recipientIds,
+      buyerId: conversation.buyer_id,
+      sellerId: conversation.seller_id,
+    });
+
     if (!recipientIds.length) {
       logger.info('Chat push skipped: no recipients', {
         conversationId: conversation.id,

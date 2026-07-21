@@ -4,7 +4,6 @@
  * Room naming: conversation:{id}, user:{id}
  */
 const { CHAT_SOCKET_EVENT } = require('../constants/chat');
-const pushNotificationService = require('./pushNotificationService');
 
 let io = null;
 
@@ -47,8 +46,21 @@ const emitNewMessage = (conversation, message) => {
     });
   });
 
-  // Fire-and-forget FCM push to recipient devices saved via verify-otp / register
-  void pushNotificationService.sendChatMessagePush(conversation, message);
+  // Always send FCM after socket emit (lazy require avoids circular init issues)
+  setImmediate(() => {
+    try {
+      const pushNotificationService = require('./pushNotificationService');
+      pushNotificationService
+        .sendChatMessagePush(conversation, message)
+        .catch((error) => {
+          const logger = require('../utils/logger');
+          logger.warn('Chat push promise rejected', { error: error.message });
+        });
+    } catch (error) {
+      const logger = require('../utils/logger');
+      logger.warn('Chat push failed to start', { error: error.message });
+    }
+  });
 };
 
 const emitConversationUpdated = (conversationId, actorId = null, extras = {}) => {
