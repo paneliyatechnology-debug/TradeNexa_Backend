@@ -100,10 +100,6 @@ const sendChatMessagePush = async (conversation, message) => {
 
     const title = buildChatNotificationTitle(message);
     const body = buildChatNotificationBody(message);
-    const chatPath = String(require('../config').frontend?.chatPath || '/chats').replace(
-      /\/$/,
-      '',
-    );
 
     await Promise.all(
       recipientIds.map(async (recipientId) => {
@@ -123,7 +119,6 @@ const sendChatMessagePush = async (conversation, message) => {
           referenceId: conversation.id,
           senderId: message.sender_id,
           clickAction: NOTIFICATION_CLICK_ACTION.OPEN_CHAT,
-          webPath: `${chatPath}/${conversation.id}`,
           channelId: 'chat_messages',
           badge,
           data: {

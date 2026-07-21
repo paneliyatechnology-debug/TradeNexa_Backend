@@ -71,7 +71,6 @@ const notify = (event, payload = {}) => {
     referenceId: productId,
     senderId: payload.adminId || null,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_PRODUCT,
-    webPath: productId ? `/products/${productId}` : null,
     data: {
       product_id: productId,
       remarks: remarks || undefined,

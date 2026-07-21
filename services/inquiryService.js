@@ -187,7 +187,6 @@ const createInquiry = async (buyerId, data) => {
     referenceId: inquiryId,
     senderId: buyerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_INQUIRY,
-    webPath: `/inquiries/${inquiryId}`,
     data: {
       inquiry_id: inquiryId,
       product_id: product.id,
@@ -296,7 +295,6 @@ const rejectInquiry = async (inquiryId, sellerId, reason = null) => {
     referenceId: inquiryId,
     senderId: sellerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_INQUIRY,
-    webPath: `/inquiries/${inquiryId}`,
     data: { inquiry_id: inquiryId, product_id: inquiry.product_id },
   });
 
@@ -364,7 +362,6 @@ const submitQuotation = async (inquiryId, sellerId, data) => {
     referenceId: quotationId,
     senderId: sellerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
-    webPath: `/inquiries/${inquiryId}`,
     data: {
       inquiry_id: inquiryId,
       quotation_id: quotationId,
@@ -413,7 +410,6 @@ const updateQuotation = async (quotationId, sellerId, data) => {
     referenceId: quotationId,
     senderId: sellerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
-    webPath: `/inquiries/${inquiry.id}`,
     data: {
       inquiry_id: inquiry.id,
       quotation_id: quotationId,
@@ -500,7 +496,6 @@ const acceptQuotation = async (quotationId, buyerId) => {
     referenceId: quotationId,
     senderId: buyerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
-    webPath: `/inquiries/${inquiry.id}`,
     data: {
       inquiry_id: inquiry.id,
       quotation_id: quotationId,
@@ -541,7 +536,6 @@ const rejectQuotation = async (quotationId, buyerId) => {
     referenceId: quotationId,
     senderId: buyerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
-    webPath: `/inquiries/${inquiry.id}`,
     data: {
       inquiry_id: inquiry.id,
       quotation_id: quotationId,

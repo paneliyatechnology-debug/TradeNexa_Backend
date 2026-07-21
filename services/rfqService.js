@@ -416,7 +416,6 @@ const cancelRfq = async (id, buyerId, isAdmin = false) => {
     referenceId: id,
     senderId: buyerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
-    webPath: `/rfqs/${id}`,
     data: { rfq_id: id, status: RFQ_STATUS.CANCELLED },
   });
 
@@ -440,7 +439,6 @@ const closeRfq = async (id, buyerId, isAdmin = false) => {
     referenceId: id,
     senderId: buyerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
-    webPath: `/rfqs/${id}`,
     data: { rfq_id: id, status: RFQ_STATUS.CLOSED },
   });
 
@@ -550,7 +548,6 @@ const adminUpdateStatus = async (id, status, adminId) => {
     referenceId: id,
     senderId: adminId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
-    webPath: `/rfqs/${id}`,
     data: { rfq_id: id, status },
   });
 
@@ -660,7 +657,6 @@ const submitQuotation = async (rfqId, data, sellerId) => {
     referenceId: quotation.id,
     senderId: sellerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
-    webPath: `/rfqs/${rfqId}`,
     data: { rfq_id: rfqId, quotation_id: quotation.id },
   });
 
@@ -718,7 +714,6 @@ const updateQuotation = async (quotationId, data, sellerId) => {
       referenceId: quotationId,
       senderId: sellerId,
       clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
-      webPath: `/rfqs/${quotation.rfq_id}`,
       data: { rfq_id: quotation.rfq_id, quotation_id: quotationId },
     });
   }
@@ -796,7 +791,6 @@ const acceptQuotation = async (quotationId, buyerId, isAdmin = false) => {
     referenceId: quotationId,
     senderId: buyerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
-    webPath: `/rfqs/${quotation.rfq_id}`,
     data: { rfq_id: quotation.rfq_id, quotation_id: quotationId },
   });
 
@@ -844,7 +838,6 @@ const rejectQuotation = async (quotationId, buyerId, isAdmin = false) => {
     referenceId: quotationId,
     senderId: buyerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
-    webPath: `/rfqs/${quotation.rfq_id}`,
     data: { rfq_id: quotation.rfq_id, quotation_id: quotationId },
   });
 
@@ -893,7 +886,6 @@ const requestRevision = async (quotationId, buyerId, remarks) => {
     referenceId: quotationId,
     senderId: buyerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
-    webPath: `/rfqs/${quotation.rfq_id}`,
     data: {
       rfq_id: quotation.rfq_id,
       quotation_id: quotationId,

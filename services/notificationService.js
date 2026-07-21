@@ -23,7 +23,6 @@
  */
 const userModel = require('../models/userModel');
 const firebase = require('../utils/firebase');
-const config = require('../config');
 const logger = require('../utils/logger');
 const { DEVICE_TYPES, DEVICE_TYPE_VALUES } = require('../constants');
 const {
@@ -99,22 +98,9 @@ const looksLikeValidFcmToken = (token) => {
 };
 
 /**
- * HTTPS deep link for web clients (optional data.click_url).
- * @param {string} pathSuffix - e.g. `/inquiries/12`
- * @returns {string|null}
- */
-const buildWebLink = (pathSuffix) => {
-  const base = String(config.frontend?.url || '').replace(/\/$/, '');
-  if (!base || !pathSuffix) return null;
-  if (!/^https:\/\//i.test(base)) return null;
-  const path = pathSuffix.startsWith('/') ? pathSuffix : `/${pathSuffix}`;
-  return `${base}${path}`;
-};
-
-/**
  * Build platform-specific FCM payload (parity across android / ios / web).
  * @param {string|null} deviceType
- * @param {{ title: string, body: string, data: Object }} opts
+ * @param {{ title: string, body: string, data: Object, channelId?: string, badge?: number }} opts
  */
 const buildPlatformPushPayload = (deviceType, { title, body, data, channelId, badge }) => {
   const type = normalizeDeviceType(deviceType);
@@ -187,7 +173,6 @@ const buildPlatformPushPayload = (deviceType, { title, body, data, channelId, ba
  * @param {Object} [params.data] - Extra stringifiable metadata for the client
  * @param {number|null} [params.senderId]
  * @param {string|null} [params.clickAction]
- * @param {string|null} [params.webPath] - Optional path appended to FRONTEND_URL for data.click_url
  * @param {string|null} [params.channelId] - Android notification channel (default trade_nexa_notifications)
  * @param {number|null} [params.badge] - iOS badge count
  * @returns {Promise<{ sent: number, skipped: boolean, reason?: string }>}
@@ -201,7 +186,6 @@ const send = async ({
   data = {},
   senderId = null,
   clickAction = null,
-  webPath = null,
   channelId = null,
   badge = null,
 }) => {
@@ -228,13 +212,11 @@ const send = async ({
       return { sent: 0, skipped: true, reason: 'no_device' };
     }
 
-    const clickUrl = webPath ? buildWebLink(webPath) : null;
     const baseData = stringifyData({
       type,
       reference_id: referenceId,
       sender_id: senderId,
       click_action: clickAction || undefined,
-      ...(clickUrl ? { click_url: clickUrl } : {}),
       ...data,
     });
 
