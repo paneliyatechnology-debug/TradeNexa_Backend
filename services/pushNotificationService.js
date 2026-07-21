@@ -29,13 +29,18 @@ const sanitizeText = (value, maxLen = 250) => {
 };
 
 const stringifyData = (data = {}) => {
+  // FCM reserves: from, message_type, google.*, gcm.*
+  const RESERVED = new Set(['from', 'message_type']);
   const out = {};
   Object.entries(data).forEach(([key, value]) => {
     if (value === undefined || value === null) return;
+    const k = String(key);
+    if (!k || RESERVED.has(k) || k.startsWith('google.') || k.startsWith('gcm.')) {
+      return;
+    }
     const str = String(value);
     if (!str) return;
-    // FCM data values must be strings; keep payload small
-    out[String(key)] = str.length > 500 ? str.slice(0, 500) : str;
+    out[k] = str.length > 500 ? str.slice(0, 500) : str;
   });
   return out;
 };
@@ -180,7 +185,8 @@ const sendChatMessagePush = async (conversation, message) => {
       type: 'chat_message',
       conversation_id: conversation.id,
       message_id: message.id,
-      message_type: message.message_type,
+      // FCM reserves the key "message_type" — use chat_message_type instead
+      chat_message_type: message.message_type,
       sender_id: message.sender_id,
       sender_name: message.sender_name,
       context_type: conversation.last_context_type,

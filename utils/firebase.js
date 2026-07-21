@@ -183,7 +183,13 @@ const sendPushToToken = async (token, payload = {}) => {
   const data = payload.data
     ? Object.fromEntries(
         Object.entries(payload.data)
-          .filter(([, v]) => v !== undefined && v !== null)
+          .filter(([k, v]) => {
+            if (v === undefined || v === null) return false;
+            const key = String(k);
+            if (key === 'from' || key === 'message_type') return false;
+            if (key.startsWith('google.') || key.startsWith('gcm.')) return false;
+            return true;
+          })
           .map(([k, v]) => [String(k), String(v)]),
       )
     : undefined;
