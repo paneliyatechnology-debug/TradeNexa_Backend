@@ -955,6 +955,7 @@ const seedRfqContextMessage = async ({
   const rfqMeta = {
     event_type: CHAT_SYSTEM_EVENT.RFQ_SHARED,
     actor_id: actorId,
+    skip_push: true,
     ...buildRfqMessageMeta(rfq),
   };
 
@@ -962,6 +963,7 @@ const seedRfqContextMessage = async ({
     ? {
         ...rfqMeta,
         ...buildQuotationMessageMeta(quotation, { contextType: CHAT_CONTEXT_TYPE.RFQ }),
+        skip_push: true,
       }
     : rfqMeta;
 
@@ -998,6 +1000,7 @@ const seedRfqContextMessage = async ({
             rfq_id: rfq.id,
             rfq_number: rfq.rfq_number || null,
             context_type: CHAT_CONTEXT_TYPE.RFQ,
+            skip_push: true,
             ...buildRfqMessageMeta(rfq),
           },
         },
@@ -1138,6 +1141,7 @@ const persistInquirySeedMessages = async ({
         price: product.price,
         currency: product.currency,
         inquiry_id: inquiryId || conversation.inquiry_id || null,
+        skip_push: true,
       },
     },
     trx,
@@ -1156,7 +1160,7 @@ const persistInquirySeedMessages = async ({
     {
       message_type: CHAT_MESSAGE_TYPE.TEXT,
       content: message,
-      metadata: inquiryId ? { inquiry_id: inquiryId } : null,
+      metadata: inquiryId ? { inquiry_id: inquiryId, skip_push: true } : { skip_push: true },
     },
     trx,
   );
@@ -1171,6 +1175,7 @@ const persistInquirySeedMessages = async ({
         event_type: CHAT_SYSTEM_EVENT.INQUIRY_CREATED,
         inquiry_id: inquiryId || conversation.inquiry_id,
         product_id: product.id,
+        skip_push: true,
       },
     },
     trx,

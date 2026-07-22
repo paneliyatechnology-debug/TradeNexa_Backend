@@ -3,6 +3,12 @@
  * notificationService (shared android / ios / web transport).
  *
  * Triggered from chatSocketEmitter.emitNewMessage after every persisted message.
+ *
+ * Important: RFQ / inquiry workflow already sends a dedicated business push
+ * (QUOTATION_RECEIVED, RFQ_NEW_QUOTATION, …). Chat must NOT also FCM for:
+ * - SYSTEM timeline messages
+ * - workflow QUOTATION / PRODUCT cards that carry `metadata.skip_push` or `event_type`
+ * Otherwise the receiver gets duplicate notifications for one action.
  */
 const chatMessageModel = require('../models/chatMessageModel');
 const chatConversationModel = require('../models/chatConversationModel');
@@ -44,12 +50,54 @@ const resolveRecipientIds = (conversation, message) => {
   const sellerId = Number(conversation.seller_id);
   const senderId = message.sender_id != null ? Number(message.sender_id) : null;
 
+  // System / bot messages have no sender — never blast both sides with chat FCM.
+  // Workflow events use business notificationService instead.
   if (senderId == null) {
-    return [buyerId, sellerId].filter(Boolean);
+    return [];
   }
   if (senderId === buyerId) return [sellerId].filter(Boolean);
   if (senderId === sellerId) return [buyerId].filter(Boolean);
   return [buyerId, sellerId].filter((id) => id && id !== senderId);
+};
+
+/**
+ * Truthy skip_push from JSON metadata (boolean, "true", or 1).
+ * @param {*} value
+ * @returns {boolean}
+ */
+const isSkipPushFlag = (value) =>
+  value === true || value === 1 || value === '1' || String(value).toLowerCase() === 'true';
+
+/**
+ * Whether this chat message should skip FCM (business push already covers it).
+ * @param {Object} message
+ * @returns {boolean}
+ */
+const shouldSkipChatPush = (message) => {
+  if (!message) return true;
+
+  const meta = message.metadata && typeof message.metadata === 'object' ? message.metadata : {};
+
+  // Explicit flag from inquiryService / rfqService workflow hooks
+  if (isSkipPushFlag(meta.skip_push)) return true;
+
+  // SYSTEM timeline rows are never chat FCM — business modules notify the right role
+  if (message.message_type === CHAT_MESSAGE_TYPE.SYSTEM) return true;
+
+  // Quotation cards posted by recordSystemEvent / recordInquirySystemEvent
+  if (message.message_type === CHAT_MESSAGE_TYPE.QUOTATION && meta.event_type) {
+    return true;
+  }
+
+  // Product cards tied to inquiry workflow seeds
+  if (
+    message.message_type === CHAT_MESSAGE_TYPE.PRODUCT &&
+    (meta.event_type || isSkipPushFlag(meta.skip_push))
+  ) {
+    return true;
+  }
+
+  return false;
 };
 
 const buildChatNotificationTitle = (message) =>
@@ -84,7 +132,14 @@ const sendChatMessagePush = async (conversation, message) => {
   try {
     if (!conversation?.id || !message) return;
 
-    if (message.message_type === CHAT_MESSAGE_TYPE.SYSTEM && message.metadata?.skip_push) {
+    if (shouldSkipChatPush(message)) {
+      logger.info('Chat push skipped (workflow / system message)', {
+        conversationId: conversation.id,
+        messageId: message.id,
+        messageType: message.message_type,
+        eventType: message.metadata?.event_type || null,
+        skipPush: message.metadata?.skip_push ?? null,
+      });
       return;
     }
 
@@ -103,6 +158,17 @@ const sendChatMessagePush = async (conversation, message) => {
 
     await Promise.all(
       recipientIds.map(async (recipientId) => {
+        if (
+          typeof isUserActiveInConversationFn === 'function' &&
+          isUserActiveInConversationFn(recipientId, conversation.id)
+        ) {
+          logger.info('Chat push skipped: user active in conversation', {
+            conversationId: conversation.id,
+            recipientId,
+          });
+          return;
+        }
+
         let badge = 1;
         try {
           const unread = await chatConversationModel.getTotalUnreadCount(recipientId);
@@ -141,6 +207,7 @@ module.exports = {
   setActiveConversationChecker,
   sendChatMessagePush,
   resolveRecipientIds,
+  shouldSkipChatPush,
   buildChatNotificationTitle,
   buildChatNotificationBody,
 };
