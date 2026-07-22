@@ -29,6 +29,7 @@ const {
   NOTIFICATION_TYPE,
   NOTIFICATION_CLICK_ACTION,
 } = require('../constants/notification');
+const notificationCopy = require('../utils/notificationCopy');
 
 // ==========================================
 // Push helpers (never throw — safe after DB commits)
@@ -38,6 +39,19 @@ const {
 const pushInquiryNotify = (params) => {
   void notificationService.send(params);
 };
+
+/** Context fields from a joined inquiry row (raw findById). */
+const inquiryNotifyContext = (inquiry = {}) => ({
+  productName: inquiry.product_name,
+  buyerName: inquiry.buyer_name,
+  buyerCompany: inquiry.buyer_company_name,
+  sellerName: inquiry.seller_name,
+  sellerCompany: inquiry.seller_company_name,
+  inquiryNumber: inquiry.inquiry_number,
+  quantity: inquiry.quantity,
+  unit: inquiry.unit,
+  currency: inquiry.currency || 'INR',
+});
 
 // ==========================================
 // Helpers
@@ -179,17 +193,30 @@ const createInquiry = async (buyerId, data) => {
     return raw.id;
   });
 
+  const inquiryRow = await inquiryModel.findById(inquiryId, { raw: true });
+  const ctx = inquiryNotifyContext(inquiryRow || {});
+  const copy = notificationCopy.inquiryReceived({
+    productName: ctx.productName || product.name,
+    buyerCompany: ctx.buyerCompany,
+    buyerName: ctx.buyerName,
+    quantity: data.quantity ?? ctx.quantity,
+    unit: data.unit || ctx.unit || product.unit,
+    inquiryNumber: ctx.inquiryNumber,
+  });
+
   pushInquiryNotify({
     receiverId: product.seller_id,
     type: NOTIFICATION_TYPE.INQUIRY_RECEIVED,
-    title: 'New Product Inquiry',
-    body: 'You have received a new inquiry on your product.',
+    title: copy.title,
+    body: copy.body,
     referenceId: inquiryId,
     senderId: buyerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_INQUIRY,
     data: {
       inquiry_id: inquiryId,
       product_id: product.id,
+      inquiry_number: ctx.inquiryNumber || undefined,
+      product_name: ctx.productName || product.name || undefined,
     },
   });
 
@@ -285,17 +312,29 @@ const rejectInquiry = async (inquiryId, sellerId, reason = null) => {
     metadata: { ...(reason ? { reason } : {}), skip_push: true },
   });
 
+  const ctx = inquiryNotifyContext(inquiry);
+  const copy = notificationCopy.inquiryRejected({
+    productName: ctx.productName,
+    sellerCompany: ctx.sellerCompany,
+    sellerName: ctx.sellerName,
+    reason,
+    inquiryNumber: ctx.inquiryNumber,
+  });
+
   pushInquiryNotify({
     receiverId: inquiry.buyer_id,
     type: NOTIFICATION_TYPE.INQUIRY_REJECTED,
-    title: 'Inquiry Rejected',
-    body: reason
-      ? `Your inquiry was rejected: ${reason}`
-      : 'Your inquiry was rejected by the seller.',
+    title: copy.title,
+    body: copy.body,
     referenceId: inquiryId,
     senderId: sellerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_INQUIRY,
-    data: { inquiry_id: inquiryId, product_id: inquiry.product_id },
+    data: {
+      inquiry_id: inquiryId,
+      product_id: inquiry.product_id,
+      inquiry_number: ctx.inquiryNumber || undefined,
+      product_name: ctx.productName || undefined,
+    },
   });
 
   return enrichInquiryDetail(inquiryId);
@@ -354,11 +393,24 @@ const submitQuotation = async (inquiryId, sellerId, data) => {
     metadata: { skip_push: true },
   });
 
+  const quotation = await inquiryQuotationModel.findById(quotationId, { raw: true });
+  const ctx = inquiryNotifyContext(inquiry);
+  const copy = notificationCopy.quotationReceived({
+    productName: ctx.productName,
+    sellerCompany: ctx.sellerCompany,
+    sellerName: ctx.sellerName,
+    totalAmount: quotation?.total_amount ?? data.price,
+    currency: inquiry.currency || 'INR',
+    quantity: quotation?.quantity ?? data.quantity ?? inquiry.quantity,
+    unit: quotation?.unit || data.unit || inquiry.unit,
+    inquiryNumber: ctx.inquiryNumber,
+  });
+
   pushInquiryNotify({
     receiverId: inquiry.buyer_id,
     type: NOTIFICATION_TYPE.QUOTATION_RECEIVED,
-    title: 'New Quotation Received',
-    body: 'A seller has sent you a quotation on your inquiry.',
+    title: copy.title,
+    body: copy.body,
     referenceId: quotationId,
     senderId: sellerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
@@ -366,6 +418,9 @@ const submitQuotation = async (inquiryId, sellerId, data) => {
       inquiry_id: inquiryId,
       quotation_id: quotationId,
       product_id: inquiry.product_id,
+      inquiry_number: ctx.inquiryNumber || undefined,
+      product_name: ctx.productName || undefined,
+      quotation_number: quotation?.quotation_number || undefined,
     },
   });
 
@@ -402,11 +457,22 @@ const updateQuotation = async (quotationId, sellerId, data) => {
     metadata: { skip_push: true },
   });
 
+  const updatedQuote = await inquiryQuotationModel.findById(quotationId, { raw: true });
+  const ctx = inquiryNotifyContext(inquiry);
+  const copy = notificationCopy.quotationUpdated({
+    productName: ctx.productName,
+    sellerCompany: ctx.sellerCompany,
+    sellerName: ctx.sellerName,
+    totalAmount: updatedQuote?.total_amount ?? payload.total_amount ?? data.price,
+    currency: inquiry.currency || 'INR',
+    inquiryNumber: ctx.inquiryNumber,
+  });
+
   pushInquiryNotify({
     receiverId: inquiry.buyer_id,
     type: NOTIFICATION_TYPE.QUOTATION_UPDATED,
-    title: 'Quotation Updated',
-    body: 'A seller has updated their quotation on your inquiry.',
+    title: copy.title,
+    body: copy.body,
     referenceId: quotationId,
     senderId: sellerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
@@ -414,6 +480,9 @@ const updateQuotation = async (quotationId, sellerId, data) => {
       inquiry_id: inquiry.id,
       quotation_id: quotationId,
       product_id: inquiry.product_id,
+      inquiry_number: ctx.inquiryNumber || undefined,
+      product_name: ctx.productName || undefined,
+      quotation_number: updatedQuote?.quotation_number || quotation.quotation_number || undefined,
     },
   });
 
@@ -488,11 +557,20 @@ const acceptQuotation = async (quotationId, buyerId) => {
     metadata: { skip_push: true },
   });
 
+  const ctx = inquiryNotifyContext(inquiry);
+  const copy = notificationCopy.quotationAccepted({
+    productName: ctx.productName,
+    buyerCompany: ctx.buyerCompany,
+    buyerName: ctx.buyerName,
+    totalAmount: quotation.total_amount,
+    currency: inquiry.currency || 'INR',
+  });
+
   pushInquiryNotify({
     receiverId: inquiry.seller_id,
     type: NOTIFICATION_TYPE.QUOTATION_ACCEPTED,
-    title: 'Quotation Accepted',
-    body: 'Your quotation has been accepted by the buyer.',
+    title: copy.title,
+    body: copy.body,
     referenceId: quotationId,
     senderId: buyerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
@@ -500,6 +578,9 @@ const acceptQuotation = async (quotationId, buyerId) => {
       inquiry_id: inquiry.id,
       quotation_id: quotationId,
       product_id: inquiry.product_id,
+      inquiry_number: ctx.inquiryNumber || undefined,
+      product_name: ctx.productName || undefined,
+      quotation_number: quotation.quotation_number || undefined,
     },
   });
 
@@ -528,11 +609,18 @@ const rejectQuotation = async (quotationId, buyerId) => {
     metadata: { skip_push: true },
   });
 
+  const ctx = inquiryNotifyContext(inquiry);
+  const copy = notificationCopy.quotationRejected({
+    productName: ctx.productName,
+    buyerCompany: ctx.buyerCompany,
+    buyerName: ctx.buyerName,
+  });
+
   pushInquiryNotify({
     receiverId: inquiry.seller_id,
     type: NOTIFICATION_TYPE.QUOTATION_REJECTED,
-    title: 'Quotation Rejected',
-    body: 'Your quotation was rejected by the buyer.',
+    title: copy.title,
+    body: copy.body,
     referenceId: quotationId,
     senderId: buyerId,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_QUOTATION,
@@ -540,6 +628,9 @@ const rejectQuotation = async (quotationId, buyerId) => {
       inquiry_id: inquiry.id,
       quotation_id: quotationId,
       product_id: inquiry.product_id,
+      inquiry_number: ctx.inquiryNumber || undefined,
+      product_name: ctx.productName || undefined,
+      quotation_number: quotation.quotation_number || undefined,
     },
   });
 
