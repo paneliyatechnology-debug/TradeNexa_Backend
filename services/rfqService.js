@@ -91,6 +91,39 @@ const listRfqSellerIds = async (rfqId, buyerId = null) => {
     .filter((id) => id && Number(id) !== excludeBuyer);
 };
 
+/**
+ * FCM + in-app inbox for sellers who should receive a new RFQ invite.
+ * Never notifies the buyer (creator).
+ */
+const notifySellersOfNewRfq = async (rfq, buyerId, sellerIds = null) => {
+  if (!rfq?.id || !buyerId) return;
+
+  const ids =
+    sellerIds != null
+      ? [...new Set(sellerIds.map(Number).filter((id) => id && id !== Number(buyerId)))]
+      : await listRfqSellerIds(rfq.id, buyerId);
+
+  if (!ids.length) return;
+
+  const copy = notificationCopy.rfqReceived({
+    rfq,
+    buyerCompany: rfq.company_name,
+    buyerName: rfq.buyer_name,
+    quantity: rfq.quantity,
+    unit: rfq.unit,
+  });
+
+  notifyUsers(ids, {
+    type: NOTIFICATION_TYPE.RFQ_RECEIVED,
+    title: copy.title,
+    body: copy.body,
+    referenceId: rfq.id,
+    senderId: buyerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_RFQ,
+    data: rfqNotifyData(rfq),
+  });
+};
+
 const getBuyerId = (rfq) => rfq.buyer_id;
 
 const mapRfqAddressFields = (data) => ({
@@ -307,6 +340,9 @@ const publishRfq = async (id, buyerId) => {
   // PRIVATE RFQ: open chats with invited sellers (same as inquiry create → product chat seed)
   if (rfq.visibility === RFQ_VISIBILITY.PRIVATE) {
     await chatService.initializeRfqChatsForInvitedSellers(id, buyerId);
+    // Business + in-app notification to invited sellers (not the buyer)
+    const fresh = await rfqModel.findRfqById(id, { raw: true });
+    await notifySellersOfNewRfq(fresh || rfq, buyerId);
   }
 
   return getRfqDetail(id);
@@ -389,7 +425,7 @@ const updateRfq = async (id, data, actorId, isAdmin = false) => {
       await rfqSellerModel.assignSellers(id, sellerIds);
       notify('SELLER_ASSIGNED', { rfqId: id, sellerIds });
 
-      // Published PRIVATE RFQ: open chats with newly assigned sellers
+      // Published PRIVATE RFQ: open chats with newly assigned sellers + notify them
       if (
         nextVisibility === RFQ_VISIBILITY.PRIVATE &&
         rfq.status !== RFQ_STATUS.DRAFT &&
@@ -402,6 +438,8 @@ const updateRfq = async (id, data, actorId, isAdmin = false) => {
             actorId,
           });
         }
+        const fresh = await rfqModel.findRfqById(id, { raw: true });
+        await notifySellersOfNewRfq(fresh || rfq, getBuyerId(rfq), sellerIds);
       }
     } else if (nextVisibility === RFQ_VISIBILITY.PRIVATE) {
       const invitedCount = await rfqSellerModel.countByRfqId(id);

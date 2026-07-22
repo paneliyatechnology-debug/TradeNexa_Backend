@@ -157,6 +157,20 @@ const quotationRejected = ({ productName, buyerCompany, buyerName }) => {
 // RFQ copy
 // ==========================================
 
+/** Seller invited / receives a new RFQ (publish or assign). */
+const rfqReceived = ({ rfq, buyerCompany, buyerName, quantity, unit }) => {
+  const label = rfqLabel(rfq);
+  const buyer = partyLabel({
+    companyName: buyerCompany || rfq.company_name,
+    fullName: buyerName || rfq.buyer_name,
+    fallback: 'A buyer',
+  });
+  return {
+    title: `New RFQ — ${truncate(rfq.title || rfq.rfq_number || 'RFQ', 50)}`,
+    body: `${buyer} invited you to quote on "${label}"${qtyPhrase(quantity ?? rfq.quantity, unit || rfq.unit)}.`,
+  };
+};
+
 const rfqCancelled = (rfq) => {
   const label = rfqLabel(rfq);
   return {
@@ -273,6 +287,7 @@ module.exports = {
   quotationUpdated,
   quotationAccepted,
   quotationRejected,
+  rfqReceived,
   rfqCancelled,
   rfqClosed,
   rfqStatusUpdated,
