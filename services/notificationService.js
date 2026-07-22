@@ -383,7 +383,14 @@ const send = async ({
  * @param {Object} payload - Same shape as send(), without receiverId
  */
 const sendToMany = async (receiverIds, payload) => {
-  const ids = [...new Set((receiverIds || []).map(Number).filter(Boolean))];
+  const sender = payload?.senderId != null ? Number(payload.senderId) : null;
+  const ids = [
+    ...new Set(
+      (receiverIds || [])
+        .map(Number)
+        .filter((id) => id && (sender == null || id !== sender)),
+    ),
+  ];
   await Promise.all(ids.map((receiverId) => send({ ...payload, receiverId })));
 };
 

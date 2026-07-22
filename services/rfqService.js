@@ -46,12 +46,19 @@ const notify = (event, payload = {}) => {
 
 /** Fire-and-forget FCM to one user. */
 const notifyUser = (receiverId, params) => {
+  // Never notify the actor about their own action
+  if (params?.senderId != null && Number(params.senderId) === Number(receiverId)) {
+    return;
+  }
   void notificationService.send({ receiverId, ...params });
 };
 
-/** Fire-and-forget FCM to many users. */
+/** Fire-and-forget FCM to many users (excludes senderId when provided). */
 const notifyUsers = (receiverIds, params) => {
-  void notificationService.sendToMany(receiverIds, params);
+  const sender = params?.senderId != null ? Number(params.senderId) : null;
+  const ids = [...new Set((receiverIds || []).map(Number).filter((id) => id && id !== sender))];
+  if (!ids.length) return;
+  void notificationService.sendToMany(ids, params);
 };
 
 /** Seller / buyer display label for notification copy. */
@@ -75,10 +82,13 @@ const rfqNotifyData = (rfq, extra = {}) => ({
   ...extra,
 });
 
-/** Seller ids invited / assigned on an RFQ (for status broadcasts). */
-const listRfqSellerIds = async (rfqId) => {
+/** Seller ids invited / assigned on an RFQ (excludes the RFQ buyer). */
+const listRfqSellerIds = async (rfqId, buyerId = null) => {
   const rows = await rfqSellerModel.listAssignedSellersByRfqId(rfqId);
-  return (rows || []).map((r) => r.user_id || r.id).filter(Boolean);
+  const excludeBuyer = buyerId != null ? Number(buyerId) : null;
+  return (rows || [])
+    .map((r) => r.user_id || r.id)
+    .filter((id) => id && Number(id) !== excludeBuyer);
 };
 
 const getBuyerId = (rfq) => rfq.buyer_id;
@@ -156,8 +166,11 @@ const normalizeSellerIds = (sellerIds) => [
  * Resolve visibility + invited sellers.
  * seller_ids without explicit visibility → PRIVATE so invites land in seller feed.
  */
-const resolveInviteFields = (data = {}) => {
-  const sellerIds = normalizeSellerIds(data.seller_ids);
+const resolveInviteFields = (data = {}, buyerId = null) => {
+  const buyer = buyerId != null ? Number(buyerId) : null;
+  const sellerIds = normalizeSellerIds(data.seller_ids).filter(
+    (id) => !buyer || Number(id) !== buyer,
+  );
   let visibility = data.visibility || null;
 
   if (!visibility && sellerIds.length) {
@@ -235,7 +248,7 @@ const getRfqDetail = async (id, options = {}) => {
 
 const createDraftRfq = async (data, buyerId) => {
   validateRfqDates(data);
-  const { visibility, sellerIds } = resolveInviteFields(data);
+  const { visibility, sellerIds } = resolveInviteFields(data, buyerId);
 
   if (visibility === RFQ_VISIBILITY.PRIVATE && !sellerIds.length) {
     throw new AppError('PRIVATE RFQs require at least one seller_id', 400);
@@ -361,7 +374,9 @@ const updateRfq = async (id, data, actorId, isAdmin = false) => {
         ? data.visibility
         : rfq.visibility || RFQ_VISIBILITY.PUBLIC;
     const sellerIds =
-      data.seller_ids !== undefined ? normalizeSellerIds(data.seller_ids) : null;
+      data.seller_ids !== undefined
+        ? normalizeSellerIds(data.seller_ids).filter((id) => Number(id) !== Number(getBuyerId(rfq)))
+        : null;
 
     if (data.visibility !== undefined) {
       payload.visibility = nextVisibility;
@@ -431,7 +446,7 @@ const cancelRfq = async (id, buyerId, isAdmin = false) => {
     skip_push: true,
   });
 
-  const sellerIds = await listRfqSellerIds(id);
+  const sellerIds = await listRfqSellerIds(id, buyerId);
   const copy = notificationCopy.rfqCancelled(rfq);
   notifyUsers(sellerIds, {
     type: NOTIFICATION_TYPE.RFQ_STATUS_UPDATED,
@@ -455,7 +470,7 @@ const closeRfq = async (id, buyerId, isAdmin = false) => {
   await rfqAuditModel.logAction({ rfqId: id, action: RFQ_AUDIT_ACTION.RFQ_CLOSED, actorId: buyerId });
   notify('RFQ_CLOSED', { rfqId: id, buyerId });
 
-  const sellerIds = await listRfqSellerIds(id);
+  const sellerIds = await listRfqSellerIds(id, buyerId);
   const copy = notificationCopy.rfqClosed(rfq);
   notifyUsers(sellerIds, {
     type: NOTIFICATION_TYPE.RFQ_STATUS_UPDATED,

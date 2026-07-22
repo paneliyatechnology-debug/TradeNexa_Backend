@@ -22,9 +22,10 @@ const {
   QUOTATION_STATUS,
   QUOTATION_EDITABLE_STATUSES,
 } = require('../constants/inquiry');
-const { CHAT_SYSTEM_EVENT } = require('../constants/chat');
+const { CHAT_SYSTEM_EVENT, CHAT_SOCKET_EVENT } = require('../constants/chat');
 const { PRODUCT_APPROVAL_STATUS } = require('../constants/product');
 const notificationService = require('./notificationService');
+const chatSocketEmitter = require('./chatSocketEmitter');
 const {
   NOTIFICATION_TYPE,
   NOTIFICATION_CLICK_ACTION,
@@ -37,6 +38,9 @@ const notificationCopy = require('../utils/notificationCopy');
 
 /** Fire-and-forget business push for inquiry / inquiry-quotation events. */
 const pushInquiryNotify = (params) => {
+  if (params?.senderId != null && Number(params.senderId) === Number(params.receiverId)) {
+    return;
+  }
   void notificationService.send(params);
 };
 
@@ -219,6 +223,26 @@ const createInquiry = async (buyerId, data) => {
       product_name: ctx.productName || product.name || undefined,
     },
   });
+
+  // Realtime for seller only — creator (buyer) must not get a new-message notification
+  try {
+    const conversation = await chatConversationModel.findOrCreateBuyerSellerConversation({
+      buyerId,
+      sellerId: product.seller_id,
+      initiatedBy: buyerId,
+    });
+    if (conversation?.id) {
+      chatSocketEmitter.emitToUser(product.seller_id, CHAT_SOCKET_EVENT.CONVERSATION_UPDATED, {
+        conversation_id: conversation.id,
+        last_context_type: conversation.last_context_type,
+        last_context_id: conversation.last_context_id,
+        inquiry_id: inquiryId,
+      });
+      chatService.pushUnreadSummary(product.seller_id);
+    }
+  } catch {
+    // best-effort realtime
+  }
 
   return enrichInquiryDetail(inquiryId);
 };

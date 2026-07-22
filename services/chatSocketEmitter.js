@@ -33,30 +33,67 @@ const emitToUser = (userId, event, payload) => {
 };
 
 /**
- * Notify participants of a new message (socket) and queue FCM push.
+ * Notify participants of a new message (socket) and optionally queue FCM push.
  * Canonical: receive_message; legacy: message:new.
- * Push is fire-and-forget and must not block the socket emit path.
+ *
+ * @param {Object} conversation
+ * @param {Object} message
+ * @param {Object} [options]
+ * @param {boolean} [options.skipPush] - Do not send FCM (workflow seeds / business push already sent)
+ * @param {boolean} [options.skipConversationEmit] - Do not broadcast to conversation room
+ * @param {number[]} [options.excludeUserIds] - Skip personal conversation:updated for these users (e.g. creator)
+ * @param {number[]} [options.onlyUserIds] - If set, only these users get personal receive_message + conversation:updated
  */
-const emitNewMessage = (conversation, message) => {
+const emitNewMessage = (conversation, message, options = {}) => {
   const payload = {
     conversation_id: conversation.id,
     message,
   };
 
-  emitToConversation(conversation.id, CHAT_SOCKET_EVENT.RECEIVE_MESSAGE, payload);
-  emitToConversation(conversation.id, CHAT_SOCKET_EVENT.MESSAGE_NEW, payload);
+  const exclude = new Set(
+    (options.excludeUserIds || []).map((id) => Number(id)).filter(Boolean),
+  );
+  const onlyUserIds = Array.isArray(options.onlyUserIds)
+    ? [...new Set(options.onlyUserIds.map((id) => Number(id)).filter(Boolean))]
+    : null;
 
-  const recipients = [conversation.buyer_id, conversation.seller_id];
-  recipients.forEach((uid) => {
-    emitToUser(uid, CHAT_SOCKET_EVENT.CONVERSATION_UPDATED, {
-      conversation_id: conversation.id,
-      last_message: message,
-      last_message_at: message.created_at,
-      last_message_sender_id: message.sender_id,
-      last_context_type: conversation.last_context_type || null,
-      last_context_id: conversation.last_context_id || null,
+  if (!options.skipConversationEmit) {
+    emitToConversation(conversation.id, CHAT_SOCKET_EVENT.RECEIVE_MESSAGE, payload);
+    emitToConversation(conversation.id, CHAT_SOCKET_EVENT.MESSAGE_NEW, payload);
+  }
+
+  const conversationUpdatedBody = {
+    conversation_id: conversation.id,
+    last_message: message,
+    last_message_at: message.created_at,
+    last_message_sender_id: message.sender_id,
+    last_context_type: conversation.last_context_type || null,
+    last_context_id: conversation.last_context_id || null,
+  };
+
+  if (onlyUserIds && onlyUserIds.length) {
+    onlyUserIds.forEach((uid) => {
+      if (exclude.has(uid)) return;
+      // Personal delivery so the creator is not notified for their own RFQ/inquiry seed
+      emitToUser(uid, CHAT_SOCKET_EVENT.RECEIVE_MESSAGE, payload);
+      emitToUser(uid, CHAT_SOCKET_EVENT.MESSAGE_NEW, payload);
+      emitToUser(uid, CHAT_SOCKET_EVENT.CONVERSATION_UPDATED, conversationUpdatedBody);
     });
-  });
+  } else {
+    const recipients = [conversation.buyer_id, conversation.seller_id].filter(
+      (uid) => uid && !exclude.has(Number(uid)),
+    );
+    recipients.forEach((uid) => {
+      emitToUser(uid, CHAT_SOCKET_EVENT.CONVERSATION_UPDATED, conversationUpdatedBody);
+    });
+  }
+
+  const skipPush =
+    options.skipPush === true ||
+    message?.metadata?.skip_push === true ||
+    message?.metadata?.skip_push === 'true';
+
+  if (skipPush) return;
 
   // FCM to all registered platforms for the other participant(s)
   setImmediate(() => {

@@ -592,6 +592,16 @@ const validateMessagePayload = async (conversation, data) => {
   throw new AppError('Invalid message type', 400);
 };
 
+/** Other participant in a buyer↔seller thread (excludes the actor). */
+const otherParticipantId = (conversation, actorId) => {
+  const actor = Number(actorId);
+  const buyerId = Number(conversation.buyer_id);
+  const sellerId = Number(conversation.seller_id);
+  if (actor && actor === buyerId) return sellerId || null;
+  if (actor && actor === sellerId) return buyerId || null;
+  return null;
+};
+
 /**
  * Insert message, update conversation preview / context / unread.
  */
@@ -817,6 +827,7 @@ const recordSystemEvent = async ({
 
     await db.transaction(async (trx) => {
       // SYSTEM timeline event with full RFQ + quotation metadata
+      // Do not bump unread for both sides — only the non-actor should see unread.
       const systemRaw = await persistMessage(
         conversation,
         null,
@@ -827,6 +838,7 @@ const recordSystemEvent = async ({
         },
         trx,
         {
+          skipSystemUnread: true,
           contextUpdate: {
             last_context_type: CHAT_CONTEXT_TYPE.RFQ,
             last_context_id: rfqId,
@@ -835,6 +847,12 @@ const recordSystemEvent = async ({
         },
       );
       messagesToEmit.push(systemRaw.id);
+
+      const otherId = otherParticipantId(conversation, actorId);
+      if (otherId) {
+        const otherRole = getUserRoleInConversation(conversation, otherId);
+        await chatConversationModel.incrementUnreadForRecipient(conversation.id, otherRole, trx);
+      }
 
       // Quotation card bubble (same role as inquiry quote card) when a quote is involved
       if (quotation && quoteCardEvents.includes(eventType)) {
@@ -860,9 +878,13 @@ const recordSystemEvent = async ({
     });
 
     let lastMessage = null;
+    const actorExclude = actorId ? [actorId] : [];
     for (const mid of messagesToEmit) {
       lastMessage = await chatMessageModel.findById(mid);
-      chatSocketEmitter.emitNewMessage(conversation, lastMessage);
+      chatSocketEmitter.emitNewMessage(conversation, lastMessage, {
+        skipPush: true,
+        excludeUserIds: actorExclude,
+      });
     }
     const lastContext = await resolveContextPayload({
       last_context_type: CHAT_CONTEXT_TYPE.RFQ,
@@ -874,7 +896,8 @@ const recordSystemEvent = async ({
       last_context: lastContext,
       rfq_id: rfqId,
     });
-    pushUnreadSummary([conversation.buyer_id, conversation.seller_id]);
+    const notifyIds = otherParticipantId(conversation, actorId);
+    pushUnreadSummary(notifyIds ? [notifyIds] : [conversation.buyer_id, conversation.seller_id]);
     return lastMessage;
   } catch (error) {
     logger.error('[Chat] Failed to record system event', {
@@ -1041,17 +1064,26 @@ const seedRfqContextMessage = async ({
   });
 
   const message = await chatMessageModel.findById(raw.id);
-  chatSocketEmitter.emitNewMessage(conversation, message);
+  // Notify invited seller only — RFQ creator must not get chat/push for their own publish
+  chatSocketEmitter.emitNewMessage(conversation, message, {
+    skipPush: true,
+    skipConversationEmit: true,
+    onlyUserIds: [conversation.seller_id],
+    excludeUserIds: [conversation.buyer_id],
+  });
   const lastContext = await resolveContextPayload({
     last_context_type: CHAT_CONTEXT_TYPE.RFQ,
     last_context_id: rfq.id,
   });
-  chatSocketEmitter.emitConversationUpdated(conversation.id, actorId, {
+  chatSocketEmitter.emitToUser(conversation.seller_id, CHAT_SOCKET_EVENT.CONVERSATION_UPDATED, {
+    conversation_id: conversation.id,
+    actor_id: actorId,
     last_context_type: CHAT_CONTEXT_TYPE.RFQ,
     last_context_id: rfq.id,
     last_context: lastContext,
     rfq_id: rfq.id,
   });
+  pushUnreadSummary(conversation.seller_id);
   return message;
 };
 
@@ -1065,6 +1097,8 @@ const ensureRfqChatWithSeller = async ({ rfqId, sellerId, actorId = null }) => {
 
   const rfqRaw = await rfqModel.findRfqById(rfqId, { raw: true });
   if (!rfqRaw) return null;
+  // Buyer must never be treated as an invited seller on their own RFQ
+  if (Number(sellerId) === Number(rfqRaw.buyer_id)) return null;
 
   const conversation = await chatConversationModel.findOrCreateBuyerSellerConversation({
     buyerId: rfqRaw.buyer_id,
@@ -1097,6 +1131,8 @@ const initializeRfqChatsForInvitedSellers = async (rfqId, actorId = null) => {
   for (const seller of sellers) {
     const sellerId = seller.seller_id || seller.id;
     if (!sellerId) continue;
+    // Never open a chat / notify the RFQ buyer as if they were an invited seller
+    if (actorId && Number(sellerId) === Number(actorId)) continue;
     try {
       const conversation = await ensureRfqChatWithSeller({
         rfqId,
@@ -1248,6 +1284,7 @@ const recordInquirySystemEvent = async ({
         },
         trx,
         {
+          skipSystemUnread: true,
           contextUpdate: {
             last_context_type: inquiry.product_id
               ? CHAT_CONTEXT_TYPE.PRODUCT
@@ -1258,6 +1295,12 @@ const recordInquirySystemEvent = async ({
         },
       );
       messagesToEmit.push(systemRaw.id);
+
+      const otherId = otherParticipantId(conversation, actorId);
+      if (otherId) {
+        const otherRole = getUserRoleInConversation(conversation, otherId);
+        await chatConversationModel.incrementUnreadForRecipient(conversation.id, otherRole, trx);
+      }
 
       if (quotation && quoteCardEvents.includes(eventType)) {
         const quoteRaw = await persistMessage(
@@ -1284,12 +1327,17 @@ const recordInquirySystemEvent = async ({
     });
 
     let lastMessage = null;
+    const actorExclude = actorId ? [actorId] : [];
     for (const mid of messagesToEmit) {
       lastMessage = await chatMessageModel.findById(mid);
-      chatSocketEmitter.emitNewMessage(conversation, lastMessage);
+      chatSocketEmitter.emitNewMessage(conversation, lastMessage, {
+        skipPush: true,
+        excludeUserIds: actorExclude,
+      });
     }
     chatSocketEmitter.emitConversationUpdated(conversation.id, actorId);
-    pushUnreadSummary([conversation.buyer_id, conversation.seller_id]);
+    const notifyIds = otherParticipantId(conversation, actorId);
+    pushUnreadSummary(notifyIds ? [notifyIds] : [conversation.buyer_id, conversation.seller_id]);
     return lastMessage;
   } catch (error) {
     logger.error('[Chat] Failed to record inquiry system event', {
