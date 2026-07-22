@@ -641,13 +641,16 @@ const persistMessage = async (conversation, senderId, messageData, trx = null, o
   // Keep in-memory conversation in sync so socket payloads / callers see latest RFQ/product context
   Object.assign(conversation, conversationUpdate);
 
-  if (senderId) {
-    const role = getUserRoleInConversation(conversation, senderId);
-    const recipientRole = role === 'buyer' ? 'seller' : 'buyer';
-    await chatConversationModel.incrementUnreadForRecipient(conversation.id, recipientRole, trx);
-  } else if (!options.skipSystemUnread) {
-    await chatConversationModel.incrementUnreadForRecipient(conversation.id, 'buyer', trx);
-    await chatConversationModel.incrementUnreadForRecipient(conversation.id, 'seller', trx);
+  // skipUnread: workflow seeds that already bumped unread via another message
+  if (!options.skipUnread) {
+    if (senderId) {
+      const role = getUserRoleInConversation(conversation, senderId);
+      const recipientRole = role === 'buyer' ? 'seller' : 'buyer';
+      await chatConversationModel.incrementUnreadForRecipient(conversation.id, recipientRole, trx);
+    } else if (!options.skipSystemUnread) {
+      await chatConversationModel.incrementUnreadForRecipient(conversation.id, 'buyer', trx);
+      await chatConversationModel.incrementUnreadForRecipient(conversation.id, 'seller', trx);
+    }
   }
 
   return message;
@@ -826,11 +829,11 @@ const recordSystemEvent = async ({
     const messagesToEmit = [];
 
     await db.transaction(async (trx) => {
-      // SYSTEM timeline event with full RFQ + quotation metadata
-      // Do not bump unread for both sides — only the non-actor should see unread.
+      // SYSTEM timeline event — store actor as sender_id for client display
+      const systemSenderId = actorId || sellerId || null;
       const systemRaw = await persistMessage(
         conversation,
-        null,
+        systemSenderId,
         {
           message_type: CHAT_MESSAGE_TYPE.SYSTEM,
           content: label,
@@ -838,7 +841,9 @@ const recordSystemEvent = async ({
         },
         trx,
         {
-          skipSystemUnread: true,
+          // Unread for the other party is applied below when we have an actor;
+          // if sender is set, persistMessage would also bump — use skipUnread + manual once.
+          skipUnread: true,
           contextUpdate: {
             last_context_type: CHAT_CONTEXT_TYPE.RFQ,
             last_context_id: rfqId,
@@ -848,7 +853,7 @@ const recordSystemEvent = async ({
       );
       messagesToEmit.push(systemRaw.id);
 
-      const otherId = otherParticipantId(conversation, actorId);
+      const otherId = otherParticipantId(conversation, systemSenderId);
       if (otherId) {
         const otherRole = getUserRoleInConversation(conversation, otherId);
         await chatConversationModel.incrementUnreadForRecipient(conversation.id, otherRole, trx);
@@ -991,9 +996,10 @@ const seedRfqContextMessage = async ({
     : rfqMeta;
 
   const raw = await db.transaction(async (trx) => {
+    const systemSenderId = actorId || conversation.buyer_id || null;
     const systemRaw = await persistMessage(
       conversation,
-      null,
+      systemSenderId,
       {
         message_type: CHAT_MESSAGE_TYPE.SYSTEM,
         content: `RFQ: ${rfq.title || rfq.rfq_number}`,
@@ -1006,7 +1012,8 @@ const seedRfqContextMessage = async ({
           last_context_id: rfq.id,
           rfq_id: rfq.id,
         },
-        skipSystemUnread: true,
+        // TEXT seed below bumps seller unread; don't double-count on SYSTEM card
+        skipUnread: true,
       },
     );
 
@@ -1203,7 +1210,7 @@ const persistInquirySeedMessages = async ({
 
   await persistMessage(
     conversation,
-    null,
+    buyerId,
     {
       message_type: CHAT_MESSAGE_TYPE.SYSTEM,
       content: CHAT_SYSTEM_EVENT_LABELS[CHAT_SYSTEM_EVENT.INQUIRY_CREATED],
@@ -1211,11 +1218,13 @@ const persistInquirySeedMessages = async ({
         event_type: CHAT_SYSTEM_EVENT.INQUIRY_CREATED,
         inquiry_id: inquiryId || conversation.inquiry_id,
         product_id: product.id,
+        actor_id: buyerId,
         skip_push: true,
       },
     },
     trx,
-    { skipSystemUnread: true },
+    // PRODUCT + TEXT already bump seller unread
+    { skipUnread: true },
   );
 };
 
@@ -1274,9 +1283,10 @@ const recordInquirySystemEvent = async ({
     const messagesToEmit = [];
 
     await db.transaction(async (trx) => {
+      const systemSenderId = actorId || inquiry.seller_id || inquiry.buyer_id || null;
       const systemRaw = await persistMessage(
         conversation,
-        null,
+        systemSenderId,
         {
           message_type: CHAT_MESSAGE_TYPE.SYSTEM,
           content: label,
@@ -1284,7 +1294,7 @@ const recordInquirySystemEvent = async ({
         },
         trx,
         {
-          skipSystemUnread: true,
+          skipUnread: true,
           contextUpdate: {
             last_context_type: inquiry.product_id
               ? CHAT_CONTEXT_TYPE.PRODUCT
@@ -1296,7 +1306,7 @@ const recordInquirySystemEvent = async ({
       );
       messagesToEmit.push(systemRaw.id);
 
-      const otherId = otherParticipantId(conversation, actorId);
+      const otherId = otherParticipantId(conversation, systemSenderId);
       if (otherId) {
         const otherRole = getUserRoleInConversation(conversation, otherId);
         await chatConversationModel.incrementUnreadForRecipient(conversation.id, otherRole, trx);
