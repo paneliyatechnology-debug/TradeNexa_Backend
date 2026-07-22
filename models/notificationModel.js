@@ -1,0 +1,210 @@
+/**
+ * In-app notification inbox data access (RFQ + inquiry related only).
+ */
+const db = require('../database/knex');
+const { paginate } = require('../utils/pagination');
+
+// ==========================================
+// Helpers
+// ==========================================
+
+const parseJson = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const serializeJson = (value) => {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  return JSON.stringify(value);
+};
+
+const formatRow = (row) => {
+  if (!row) return null;
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    reference_id: row.reference_id ?? null,
+    sender_id: row.sender_id ?? null,
+    click_action: row.click_action ?? null,
+    data: parseJson(row.data),
+    is_read: Boolean(row.is_read),
+    read_at: row.read_at ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+};
+
+// ==========================================
+// Writes
+// ==========================================
+
+/**
+ * Insert a notification for a user.
+ * @param {Object} payload
+ * @returns {Promise<Object>}
+ */
+const create = async ({
+  userId,
+  type,
+  title,
+  body,
+  referenceId = null,
+  senderId = null,
+  clickAction = null,
+  data = null,
+}) => {
+  const [id] = await db('notifications').insert({
+    user_id: userId,
+    type,
+    title,
+    body,
+    reference_id: referenceId,
+    sender_id: senderId,
+    click_action: clickAction,
+    data: serializeJson(data),
+    is_read: false,
+    read_at: null,
+  });
+
+  return findByIdForUser(id, userId);
+};
+
+/**
+ * @param {number} id
+ * @param {number} userId
+ * @returns {Promise<Object|null>}
+ */
+const findByIdForUser = async (id, userId) => {
+  const row = await db('notifications').where({ id, user_id: userId }).first();
+  return formatRow(row);
+};
+
+// ==========================================
+// Reads
+// ==========================================
+
+/**
+ * Paginated inbox for a user (newest first).
+ * @param {number} userId
+ * @param {Object} [filters]
+ * @returns {Promise<{ results: Array, pagination: Object }>}
+ */
+const listForUser = async (userId, filters = {}) => {
+  const q = db('notifications').where({ user_id: userId }).select('*');
+
+  if (filters.is_read === true || filters.is_read === false) {
+    q.andWhere('is_read', filters.is_read);
+  } else if (filters.is_read === 'true' || filters.is_read === 'false') {
+    q.andWhere('is_read', filters.is_read === 'true');
+  }
+
+  if (filters.type) {
+    q.andWhere('type', filters.type);
+  }
+
+  q.orderBy('created_at', 'desc').orderBy('id', 'desc');
+
+  const { results, pagination } = await paginate(q, filters.page, filters.limit);
+  return {
+    results: results.map(formatRow),
+    pagination,
+  };
+};
+
+/**
+ * @param {number} userId
+ * @returns {Promise<number>}
+ */
+const countUnread = async (userId) => {
+  const row = await db('notifications')
+    .where({ user_id: userId, is_read: false })
+    .count({ total: '*' })
+    .first();
+  return parseInt(row?.total || 0, 10);
+};
+
+// ==========================================
+// Read status
+// ==========================================
+
+/**
+ * Mark one notification as read for the owning user.
+ * @param {number} id
+ * @param {number} userId
+ * @returns {Promise<Object|null>} updated row, or null if not found / already read
+ */
+const markRead = async (id, userId) => {
+  const existing = await db('notifications').where({ id, user_id: userId }).first();
+  if (!existing) return null;
+
+  if (existing.is_read) {
+    return formatRow(existing);
+  }
+
+  const now = db.fn.now();
+  await db('notifications').where({ id, user_id: userId }).update({
+    is_read: true,
+    read_at: now,
+    updated_at: now,
+  });
+
+  return findByIdForUser(id, userId);
+};
+
+/**
+ * Mark many notifications as read.
+ * @param {number} userId
+ * @param {number[]} ids
+ * @returns {Promise<number>} rows updated
+ */
+const markManyRead = async (userId, ids = []) => {
+  const uniqueIds = [...new Set(ids.map(Number).filter(Boolean))];
+  if (!uniqueIds.length) return 0;
+
+  const now = db.fn.now();
+  return db('notifications')
+    .where({ user_id: userId, is_read: false })
+    .whereIn('id', uniqueIds)
+    .update({
+      is_read: true,
+      read_at: now,
+      updated_at: now,
+    });
+};
+
+/**
+ * Mark all unread notifications as read for a user.
+ * @param {number} userId
+ * @returns {Promise<number>}
+ */
+const markAllRead = async (userId) => {
+  const now = db.fn.now();
+  return db('notifications').where({ user_id: userId, is_read: false }).update({
+    is_read: true,
+    read_at: now,
+    updated_at: now,
+  });
+};
+
+module.exports = {
+  create,
+  findByIdForUser,
+  listForUser,
+  countUnread,
+  markRead,
+  markManyRead,
+  markAllRead,
+  formatRow,
+};

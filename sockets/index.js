@@ -14,8 +14,10 @@ const userModel = require('../models/userModel');
 const userPresenceModel = require('../models/userPresenceModel');
 const chatService = require('../services/chatService');
 const chatSocketEmitter = require('../services/chatSocketEmitter');
+const notificationService = require('../services/notificationService');
 const pushNotificationService = require('../services/pushNotificationService');
 const { CHAT_PRESENCE_STATUS, CHAT_SOCKET_EVENT, CHAT_MESSAGE_TYPE } = require('../constants/chat');
+const { NOTIFICATION_SOCKET_EVENT } = require('../constants/notification');
 const config = require('../config');
 const logger = require('../utils/logger');
 
@@ -145,6 +147,8 @@ const initSocket = (httpServer) => {
 
     // Push unread inbox snapshot on connect (total + per-conversation, last_message_at DESC)
     chatService.pushUnreadSummary(userId);
+    // Push RFQ/inquiry in-app notification unread count on connect
+    notificationService.pushUnreadCount(userId);
 
     // ==========================================
     // Conversation rooms
@@ -177,6 +181,47 @@ const initSocket = (httpServer) => {
         socket.emit(CHAT_SOCKET_EVENT.UNREAD_SUMMARY, data);
       } catch (error) {
         socket.emit(CHAT_SOCKET_EVENT.ERROR, { message: error.message });
+      }
+    });
+
+    // ==========================================
+    // In-app notifications (RFQ + inquiry)
+    // ==========================================
+
+    socket.on(NOTIFICATION_SOCKET_EVENT.GET_UNREAD_COUNT, async () => {
+      try {
+        const data = await notificationService.getUnreadCount(userId);
+        socket.emit(NOTIFICATION_SOCKET_EVENT.UNREAD_COUNT, data);
+      } catch (error) {
+        socket.emit(NOTIFICATION_SOCKET_EVENT.ERROR, { message: error.message });
+      }
+    });
+
+    socket.on(NOTIFICATION_SOCKET_EVENT.MARK_READ, async (payload = {}) => {
+      try {
+        const notificationId = payload.notification_id || payload.id;
+        if (!notificationId) {
+          socket.emit(NOTIFICATION_SOCKET_EVENT.ERROR, {
+            message: 'notification_id is required',
+          });
+          return;
+        }
+        const notification = await notificationService.markNotificationRead(
+          userId,
+          Number(notificationId),
+        );
+        socket.emit(NOTIFICATION_SOCKET_EVENT.UPDATED, { notification });
+      } catch (error) {
+        socket.emit(NOTIFICATION_SOCKET_EVENT.ERROR, { message: error.message });
+      }
+    });
+
+    socket.on(NOTIFICATION_SOCKET_EVENT.MARK_ALL_READ, async () => {
+      try {
+        const data = await notificationService.markAllNotificationsRead(userId);
+        socket.emit(NOTIFICATION_SOCKET_EVENT.UPDATED, { ...data, all: true });
+      } catch (error) {
+        socket.emit(NOTIFICATION_SOCKET_EVENT.ERROR, { message: error.message });
       }
     });
 

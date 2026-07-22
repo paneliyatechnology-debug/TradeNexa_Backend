@@ -1113,6 +1113,31 @@ const wishlistListQuery = [
 ];
 
 // ==========================================
+// Notification validations (/notifications)
+// ==========================================
+
+const { IN_APP_NOTIFICATION_TYPES } = require('../constants/notification');
+
+const notificationListQuery = [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('is_read')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_read must be true or false'),
+  query('type')
+    .optional()
+    .trim()
+    .isIn(IN_APP_NOTIFICATION_TYPES)
+    .withMessage(`type must be one of: ${IN_APP_NOTIFICATION_TYPES.join(', ')}`),
+];
+
+const notificationMarkManyReadRules = [
+  body('ids').isArray({ min: 1, max: 100 }).withMessage('ids must be an array of 1 to 100 IDs'),
+  body('ids.*').isInt({ min: 1 }).withMessage('Each id must be a positive integer'),
+];
+
+// ==========================================
 // Location validations
 // ==========================================
 
@@ -1215,6 +1240,8 @@ module.exports = {
   wishlistToggleRules,
   wishlistListQuery,
   wishlistProductIdParam,
+  notificationListQuery,
+  notificationMarkManyReadRules,
   locationCountriesQuery,
   locationStatesQuery,
   locationCitiesQuery,

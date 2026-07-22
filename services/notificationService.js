@@ -1,5 +1,5 @@
 /**
- * Reusable FCM push notification service.
+ * Reusable FCM + in-app notification service.
  *
  * All modules (chat, inquiry, quotation, product, RFQ) should call:
  *
@@ -14,21 +14,28 @@
  *   });
  *
  * Behaviour:
+ * - For RFQ / inquiry types: persist an inbox row, emit socket realtime updates
+ * - Chat / product-moderation types: FCM only (not stored in inbox)
  * - Loads every registered device for the user (android / ios / web — max 3)
- * - Skips send when no valid FCM token exists
+ * - Skips FCM when no valid token exists (inbox row still created when applicable)
  * - Never throws to callers (failures are logged only)
  * - Removes permanently invalid registration tokens from `devices`
  *
  * Low-level FCM transport lives in utils/firebase.js.
  */
 const userModel = require('../models/userModel');
+const notificationModel = require('../models/notificationModel');
+const chatSocketEmitter = require('./chatSocketEmitter');
 const firebase = require('../utils/firebase');
 const logger = require('../utils/logger');
-const { DEVICE_TYPES, DEVICE_TYPE_VALUES } = require('../constants');
+const { AppError } = require('../utils/response');
+const { HTTP_STATUS, DEVICE_TYPES, DEVICE_TYPE_VALUES } = require('../constants');
 const {
   NOTIFICATION_TYPE,
   NOTIFICATION_TYPE_VALUES,
+  IN_APP_NOTIFICATION_TYPE_SET,
   NOTIFICATION_CLICK_ACTION,
+  NOTIFICATION_SOCKET_EVENT,
 } = require('../constants/notification');
 
 // ==========================================
@@ -36,7 +43,7 @@ const {
 // ==========================================
 
 /**
- * Strip control characters and truncate text for FCM display limits.
+ * Strip control characters and truncate text for FCM / inbox display limits.
  * @param {*} value
  * @param {number} [maxLen=250]
  * @returns {string}
@@ -156,12 +163,74 @@ const buildPlatformPushPayload = (deviceType, { title, body, data, channelId, ba
   return { notification, data: commonData };
 };
 
+/**
+ * Push current unread inbox count to the user's personal socket room.
+ * @param {number|number[]} userIds
+ */
+const pushUnreadCount = (userIds) => {
+  const ids = Array.isArray(userIds) ? userIds : [userIds];
+  ids.filter(Boolean).forEach((uid) => {
+    notificationModel
+      .countUnread(uid)
+      .then((unreadCount) => {
+        chatSocketEmitter.emitToUser(uid, NOTIFICATION_SOCKET_EVENT.UNREAD_COUNT, {
+          unread_count: unreadCount,
+        });
+      })
+      .catch((err) => {
+        logger.warn('[Notification] Failed to push unread_count', {
+          userId: uid,
+          error: err.message,
+        });
+      });
+  });
+};
+
+/**
+ * Persist an RFQ/inquiry notification and emit realtime events.
+ * @returns {Promise<Object|null>}
+ */
+const persistInboxNotification = async ({
+  userId,
+  type,
+  title,
+  body,
+  referenceId,
+  senderId,
+  clickAction,
+  data,
+}) => {
+  if (!IN_APP_NOTIFICATION_TYPE_SET.has(type)) return null;
+
+  const safeTitle = sanitizeText(title, 100) || 'TradeNexa';
+  const safeBody = sanitizeText(body, 500) || 'You have a new notification';
+
+  const notification = await notificationModel.create({
+    userId,
+    type,
+    title: safeTitle,
+    body: safeBody,
+    referenceId: referenceId != null ? Number(referenceId) || null : null,
+    senderId: senderId != null ? Number(senderId) || null : null,
+    clickAction: clickAction || null,
+    data: data && typeof data === 'object' ? data : null,
+  });
+
+  if (notification) {
+    chatSocketEmitter.emitToUser(userId, NOTIFICATION_SOCKET_EVENT.NEW, { notification });
+    pushUnreadCount(userId);
+  }
+
+  return notification;
+};
+
 // ==========================================
-// Public API
+// Public API — send (FCM + optional inbox)
 // ==========================================
 
 /**
  * Send an FCM push to one user (all of their registered platforms).
+ * For RFQ/inquiry types, also stores an in-app inbox row and emits sockets.
  * Never throws — safe to await after DB commits without try/catch.
  *
  * @param {Object} params
@@ -175,7 +244,7 @@ const buildPlatformPushPayload = (deviceType, { title, body, data, channelId, ba
  * @param {string|null} [params.clickAction]
  * @param {string|null} [params.channelId] - Android notification channel (default trade_nexa_notifications)
  * @param {number|null} [params.badge] - iOS badge count
- * @returns {Promise<{ sent: number, skipped: boolean, reason?: string }>}
+ * @returns {Promise<{ sent: number, skipped: boolean, reason?: string, notification?: Object|null }>}
  */
 const send = async ({
   receiverId,
@@ -206,10 +275,31 @@ const send = async ({
       return { sent: 0, skipped: true, reason: 'self_recipient' };
     }
 
+    // Persist RFQ/inquiry inbox row even when the user has no FCM device
+    let stored = null;
+    try {
+      stored = await persistInboxNotification({
+        userId: uid,
+        type,
+        title,
+        body,
+        referenceId,
+        senderId,
+        clickAction,
+        data,
+      });
+    } catch (persistError) {
+      logger.warn('In-app notification persist failed', {
+        receiverId: uid,
+        type,
+        error: persistError.message,
+      });
+    }
+
     const devices = await userModel.findDevicesByUserId(uid);
     if (!devices.length) {
       logger.info('Push skipped: no device token', { receiverId: uid, type });
-      return { sent: 0, skipped: true, reason: 'no_device' };
+      return { sent: 0, skipped: true, reason: 'no_device', notification: stored };
     }
 
     const baseData = stringifyData({
@@ -276,7 +366,7 @@ const send = async ({
       }),
     );
 
-    return { sent, skipped: sent === 0 };
+    return { sent, skipped: sent === 0, notification: stored };
   } catch (error) {
     logger.warn('Push notification failed', {
       receiverId,
@@ -297,13 +387,71 @@ const sendToMany = async (receiverIds, payload) => {
   await Promise.all(ids.map((receiverId) => send({ ...payload, receiverId })));
 };
 
+// ==========================================
+// Public API — inbox (REST / sockets)
+// ==========================================
+
+/**
+ * Paginated notification list for the authenticated user.
+ */
+const listNotifications = async (userId, filters = {}) =>
+  notificationModel.listForUser(userId, filters);
+
+/**
+ * Unread inbox count for the authenticated user.
+ */
+const getUnreadCount = async (userId) => {
+  const unreadCount = await notificationModel.countUnread(userId);
+  return { unread_count: unreadCount };
+};
+
+/**
+ * Mark one notification as read and push updated unread count.
+ */
+const markNotificationRead = async (userId, notificationId) => {
+  const notification = await notificationModel.markRead(notificationId, userId);
+  if (!notification) {
+    throw new AppError('Notification not found', HTTP_STATUS.NOT_FOUND);
+  }
+
+  pushUnreadCount(userId);
+  chatSocketEmitter.emitToUser(userId, NOTIFICATION_SOCKET_EVENT.UPDATED, { notification });
+
+  return notification;
+};
+
+/**
+ * Mark specific notifications as read.
+ */
+const markNotificationsRead = async (userId, ids = []) => {
+  const updated = await notificationModel.markManyRead(userId, ids);
+  pushUnreadCount(userId);
+  return { updated };
+};
+
+/**
+ * Mark all unread notifications as read.
+ */
+const markAllNotificationsRead = async (userId) => {
+  const updated = await notificationModel.markAllRead(userId);
+  pushUnreadCount(userId);
+  return { updated };
+};
+
 module.exports = {
   send,
   sendToMany,
+  listNotifications,
+  getUnreadCount,
+  markNotificationRead,
+  markNotificationsRead,
+  markAllNotificationsRead,
+  pushUnreadCount,
   buildPlatformPushPayload,
   looksLikeValidFcmToken,
   sanitizeText,
   stringifyData,
   NOTIFICATION_TYPE,
   NOTIFICATION_CLICK_ACTION,
+  NOTIFICATION_SOCKET_EVENT,
 };

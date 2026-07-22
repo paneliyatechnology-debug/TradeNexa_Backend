@@ -22,6 +22,7 @@ const businessTypeRouter = require('./businessTypeRouter');
 const roleRouter = require('./roleRouter');
 const adminAuthRouter = require('./adminAuthRouter');
 const dashboardRouter = require('./dashboardRouter');
+const notificationRouter = require('./notificationRouter');
 
 const router = express.Router();
 
@@ -44,6 +45,7 @@ router.use('/offers', offerRouter);
 router.use('/rfqs', rfqRouter);
 router.use('/inquiries', inquiryRouter); // product inquiry → seller (chat/quote/reject)
 router.use('/chats', chatRouter);
+router.use('/notifications', notificationRouter);
 router.use('/wishlist', wishlistRouter);
 router.use('/locations', locationRouter);
 router.use('/services', serviceRouter);
