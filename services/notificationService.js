@@ -36,11 +36,18 @@ const {
   IN_APP_NOTIFICATION_TYPE_SET,
   NOTIFICATION_CLICK_ACTION,
   NOTIFICATION_SOCKET_EVENT,
+  FCM_DATA_ACTION,
 } = require('../constants/notification');
 
 // ==========================================
 // Helpers
 // ==========================================
+
+/** Stable OS notification tag so clients can cancel the same item on every device. */
+const notificationTagForId = (notificationId) => {
+  const id = Number(notificationId);
+  return id ? `tn_notif_${id}` : null;
+};
 
 /**
  * Strip control characters and truncate text for FCM / inbox display limits.
@@ -107,17 +114,23 @@ const looksLikeValidFcmToken = (token) => {
 /**
  * Build platform-specific FCM payload (parity across android / ios / web).
  * @param {string|null} deviceType
- * @param {{ title: string, body: string, data: Object, channelId?: string, badge?: number }} opts
+ * @param {{ title: string, body: string, data: Object, channelId?: string, badge?: number, notificationId?: number|null }} opts
  */
-const buildPlatformPushPayload = (deviceType, { title, body, data, channelId, badge }) => {
+const buildPlatformPushPayload = (
+  deviceType,
+  { title, body, data, channelId, badge, notificationId = null },
+) => {
   const type = normalizeDeviceType(deviceType);
   const safeTitle = sanitizeText(title, 100) || 'TradeNexa';
   const safeBody = sanitizeText(body, 250) || 'You have a new notification';
+  const tag = notificationTagForId(notificationId);
   const commonData = stringifyData({
     ...data,
     title: safeTitle,
     body: safeBody,
     platform: type || 'unknown',
+    ...(notificationId ? { notification_id: notificationId } : {}),
+    ...(tag ? { notification_tag: tag } : {}),
   });
   const notification = { title: safeTitle, body: safeBody };
   const androidChannel = channelId || 'trade_nexa_notifications';
@@ -135,6 +148,8 @@ const buildPlatformPushPayload = (deviceType, { title, body, data, channelId, ba
           sound: 'default',
           clickAction: commonData.click_action || NOTIFICATION_CLICK_ACTION.OPEN_CHAT,
           defaultSound: true,
+          // Same tag on every device → client can cancel this exact tray item later
+          ...(tag ? { tag } : {}),
         },
       },
     };
@@ -154,6 +169,7 @@ const buildPlatformPushPayload = (deviceType, { title, body, data, channelId, ba
             alert: { title: safeTitle, body: safeBody },
             sound: 'default',
             badge: Number.isFinite(badge) ? badge : 1,
+            ...(tag ? { 'thread-id': tag } : {}),
           },
         },
       },
@@ -161,6 +177,127 @@ const buildPlatformPushPayload = (deviceType, { title, body, data, channelId, ba
   }
 
   return { notification, data: commonData };
+};
+
+/**
+ * Send the same FCM payload to every registered device for a user.
+ * @returns {Promise<number>} devices successfully sent
+ */
+const sendFcmToAllUserDevices = async (userId, buildPayloadForDevice) => {
+  const devices = await userModel.findDevicesByUserId(userId);
+  if (!devices.length) return 0;
+
+  let sent = 0;
+  await Promise.all(
+    devices.map(async (device) => {
+      if (!looksLikeValidFcmToken(device.device_token)) {
+        logger.warn('Push skipped: invalid FCM token shape', {
+          receiverId: userId,
+          deviceType: device.device_type,
+          tokenLen: String(device.device_token || '').length,
+        });
+        return;
+      }
+
+      const payload = buildPayloadForDevice(device);
+      if (!payload) return;
+
+      const result = await firebase.sendPushToToken(device.device_token, payload);
+      if (result.success) {
+        sent += 1;
+        return;
+      }
+
+      logger.warn('Push failed', {
+        receiverId: userId,
+        deviceType: device.device_type,
+        errorCode: result.errorCode,
+        errorMessage: result.errorMessage,
+      });
+
+      if (firebase.isInvalidFcmTokenError(result.errorCode)) {
+        await userModel.deleteDeviceByToken(device.device_token);
+        logger.info('Removed invalid FCM device token', {
+          receiverId: userId,
+          deviceType: device.device_type,
+          errorCode: result.errorCode,
+        });
+      }
+    }),
+  );
+
+  return sent;
+};
+
+/**
+ * After read on any device: socket + silent FCM so other devices clear the same tray item(s).
+ * @param {number} userId
+ * @param {{ notificationIds?: number[], all?: boolean }} opts
+ */
+const syncDismissAcrossDevices = (userId, { notificationIds = [], all = false } = {}) => {
+  const uid = Number(userId);
+  if (!uid) return;
+
+  const ids = [...new Set((notificationIds || []).map(Number).filter(Boolean))];
+  const socketPayload = all
+    ? { all: true, notification_ids: [] }
+    : { all: false, notification_ids: ids };
+
+  chatSocketEmitter.emitToUser(uid, NOTIFICATION_SOCKET_EVENT.DISMISS, socketPayload);
+
+  // Fire-and-forget data-only FCM to every device_token
+  void (async () => {
+    try {
+      const data = all
+        ? {
+            action: FCM_DATA_ACTION.DISMISS_ALL_NOTIFICATIONS,
+          }
+        : {
+            action: FCM_DATA_ACTION.DISMISS_NOTIFICATION,
+            notification_ids: ids.join(','),
+            notification_id: ids[0] || undefined,
+            notification_tag: ids[0] ? notificationTagForId(ids[0]) : undefined,
+          };
+
+      const sent = await sendFcmToAllUserDevices(uid, (device) => {
+        const type = normalizeDeviceType(device.device_type);
+        const commonData = stringifyData(data);
+        if (type === DEVICE_TYPES.IOS) {
+          return {
+            data: commonData,
+            apns: {
+              headers: {
+                'apns-priority': '5',
+                'apns-push-type': 'background',
+              },
+              payload: {
+                aps: {
+                  'content-available': 1,
+                },
+              },
+            },
+          };
+        }
+        if (type === DEVICE_TYPES.ANDROID) {
+          return {
+            data: commonData,
+            android: { priority: 'high' },
+          };
+        }
+        // web — data-only for service worker
+        return { data: commonData };
+      });
+
+      logger.info('Dismiss sync pushed to devices', {
+        userId: uid,
+        all,
+        notificationIds: ids,
+        sent,
+      });
+    } catch (error) {
+      logger.warn('Dismiss sync failed', { userId: uid, error: error.message });
+    }
+  })();
 };
 
 /**
@@ -302,69 +439,35 @@ const send = async ({
       return { sent: 0, skipped: true, reason: 'no_device', notification: stored };
     }
 
-    const baseData = stringifyData({
+    const notificationId = stored?.id || null;
+    const baseData = {
       type,
       reference_id: referenceId,
       sender_id: senderId,
       click_action: clickAction || undefined,
       ...data,
-    });
+    };
 
-    let sent = 0;
-
-    await Promise.all(
-      devices.map(async (device) => {
-        if (!looksLikeValidFcmToken(device.device_token)) {
-          logger.warn('Push skipped: invalid FCM token shape', {
-            receiverId: uid,
-            deviceType: device.device_type,
-            type,
-            tokenLen: String(device.device_token || '').length,
-          });
-          return;
-        }
-
-        const payload = buildPlatformPushPayload(device.device_type, {
-          title,
-          body,
-          data: baseData,
-          channelId,
-          badge,
-        });
-
-        const result = await firebase.sendPushToToken(device.device_token, payload);
-
-        if (result.success) {
-          sent += 1;
-          logger.info('Push sent', {
-            receiverId: uid,
-            deviceType: device.device_type,
-            type,
-            referenceId,
-            messageIdFcm: result.messageId,
-          });
-          return;
-        }
-
-        logger.warn('Push failed', {
-          receiverId: uid,
-          deviceType: device.device_type,
-          type,
-          referenceId,
-          errorCode: result.errorCode,
-          errorMessage: result.errorMessage,
-        });
-
-        if (firebase.isInvalidFcmTokenError(result.errorCode)) {
-          await userModel.deleteDeviceByToken(device.device_token);
-          logger.info('Removed invalid FCM device token', {
-            receiverId: uid,
-            deviceType: device.device_type,
-            errorCode: result.errorCode,
-          });
-        }
+    // Fan-out to EVERY registered device_token for this user
+    const sent = await sendFcmToAllUserDevices(uid, (device) =>
+      buildPlatformPushPayload(device.device_type, {
+        title,
+        body,
+        data: baseData,
+        channelId,
+        badge,
+        notificationId,
       }),
     );
+
+    logger.info('Push fan-out complete', {
+      receiverId: uid,
+      type,
+      referenceId,
+      notificationId,
+      deviceCount: devices.length,
+      sent,
+    });
 
     return { sent, skipped: sent === 0, notification: stored };
   } catch (error) {
@@ -413,7 +516,7 @@ const getUnreadCount = async (userId) => {
 };
 
 /**
- * Mark one notification as read and push updated unread count.
+ * Mark one notification as read and sync dismiss across all devices / sessions.
  */
 const markNotificationRead = async (userId, notificationId) => {
   const notification = await notificationModel.markRead(notificationId, userId);
@@ -423,6 +526,8 @@ const markNotificationRead = async (userId, notificationId) => {
 
   pushUnreadCount(userId);
   chatSocketEmitter.emitToUser(userId, NOTIFICATION_SOCKET_EVENT.UPDATED, { notification });
+  // Clear tray item on every other device that received the same push
+  syncDismissAcrossDevices(userId, { notificationIds: [notification.id] });
 
   return notification;
 };
@@ -431,8 +536,16 @@ const markNotificationRead = async (userId, notificationId) => {
  * Mark specific notifications as read.
  */
 const markNotificationsRead = async (userId, ids = []) => {
-  const updated = await notificationModel.markManyRead(userId, ids);
+  const uniqueIds = [...new Set((ids || []).map(Number).filter(Boolean))];
+  const updated = await notificationModel.markManyRead(userId, uniqueIds);
   pushUnreadCount(userId);
+  chatSocketEmitter.emitToUser(userId, NOTIFICATION_SOCKET_EVENT.UPDATED, {
+    updated,
+    notification_ids: uniqueIds,
+  });
+  if (uniqueIds.length) {
+    syncDismissAcrossDevices(userId, { notificationIds: uniqueIds });
+  }
   return { updated };
 };
 
@@ -442,6 +555,11 @@ const markNotificationsRead = async (userId, ids = []) => {
 const markAllNotificationsRead = async (userId) => {
   const updated = await notificationModel.markAllRead(userId);
   pushUnreadCount(userId);
+  chatSocketEmitter.emitToUser(userId, NOTIFICATION_SOCKET_EVENT.UPDATED, {
+    updated,
+    all: true,
+  });
+  syncDismissAcrossDevices(userId, { all: true });
   return { updated };
 };
 
@@ -454,6 +572,7 @@ module.exports = {
   markNotificationsRead,
   markAllNotificationsRead,
   pushUnreadCount,
+  syncDismissAcrossDevices,
   buildPlatformPushPayload,
   looksLikeValidFcmToken,
   sanitizeText,
@@ -461,4 +580,5 @@ module.exports = {
   NOTIFICATION_TYPE,
   NOTIFICATION_CLICK_ACTION,
   NOTIFICATION_SOCKET_EVENT,
+  FCM_DATA_ACTION,
 };

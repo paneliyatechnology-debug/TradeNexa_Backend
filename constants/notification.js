@@ -83,7 +83,18 @@ const NOTIFICATION_SOCKET_EVENT = {
   NEW: 'notification:new',
   UNREAD_COUNT: 'notification:unread_count',
   UPDATED: 'notification:updated',
+  /** Clear tray / inbox item on all open sessions after read on any device */
+  DISMISS: 'notification:dismiss',
   ERROR: 'notification:error',
+};
+
+/**
+ * FCM data-only `action` values — clients clear OS notifications on other devices.
+ * Sent to every registered device_token for the user.
+ */
+const FCM_DATA_ACTION = {
+  DISMISS_NOTIFICATION: 'DISMISS_NOTIFICATION',
+  DISMISS_ALL_NOTIFICATIONS: 'DISMISS_ALL_NOTIFICATIONS',
 };
 
 module.exports = {
@@ -93,4 +104,5 @@ module.exports = {
   IN_APP_NOTIFICATION_TYPE_SET,
   NOTIFICATION_CLICK_ACTION,
   NOTIFICATION_SOCKET_EVENT,
+  FCM_DATA_ACTION,
 };
