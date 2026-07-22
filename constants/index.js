@@ -89,7 +89,8 @@ const OTP_STATUS = {
 
 /**
  * Client platforms that may register an FCM token.
- * Each user stores at most one token per type (android | ios | web).
+ * A user may register multiple devices (e.g. two Androids + one web).
+ * Each distinct `device_token` is stored; push is sent to all of them.
  */
 const DEVICE_TYPES = {
   ANDROID: 'android',
@@ -99,6 +100,9 @@ const DEVICE_TYPES = {
 
 /** Allowed device_type values for auth / devices table. */
 const DEVICE_TYPE_VALUES = Object.values(DEVICE_TYPES);
+
+/** Soft cap so unbounded logins cannot grow the devices table forever. */
+const MAX_DEVICES_PER_USER = 10;
 
 module.exports = {
   HTTP_STATUS,
@@ -110,4 +114,5 @@ module.exports = {
   OTP_STATUS,
   DEVICE_TYPES,
   DEVICE_TYPE_VALUES,
+  MAX_DEVICES_PER_USER,
 };

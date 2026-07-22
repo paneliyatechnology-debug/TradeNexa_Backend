@@ -485,7 +485,8 @@ const softDeleteUser = async (userId) => {
 const deleteUserDevice = (userId) => db('devices').where({ user_id: userId }).del();
 
 /**
- * Delete one platform token for a user (android | ios | web).
+ * Delete one platform's tokens for a user (android | ios | web).
+ * Prefer deleteDeviceByToken when logging out a single install.
  * @param {number} userId
  * @param {string} deviceType
  * @returns {Promise<number>}
@@ -499,12 +500,13 @@ const deleteUserDeviceByType = (userId, deviceType) => {
 };
 
 /**
- * Save or replace the user's FCM token for one platform only.
+ * Save / refresh an FCM registration token for a user.
  *
  * Rules:
- * - Max 3 tokens per user: one for android, one for ios, one for web
- * - Same device_type login → replace that platform's token
- * - Other device_types are left unchanged
+ * - Each distinct token is kept (same user can have multiple Androids, etc.)
+ * - Re-login with the same token → refresh last_active / device_type
+ * - Token already on another user → moved to this user (one install = one owner)
+ * - Soft cap: MAX_DEVICES_PER_USER (oldest by last_active dropped)
  *
  * @param {number} userId
  * @param {string} deviceType - android | ios | web (required)
@@ -512,7 +514,7 @@ const deleteUserDeviceByType = (userId, deviceType) => {
  * @returns {Promise<{ device_type: string, replaced: boolean }>}
  */
 const saveUserDevice = async (userId, deviceType, deviceToken) => {
-  const { DEVICE_TYPE_VALUES } = require('../constants');
+  const { DEVICE_TYPE_VALUES, MAX_DEVICES_PER_USER } = require('../constants');
   const { AppError } = require('../utils/response');
 
   const token = String(deviceToken || '').trim();
@@ -528,25 +530,18 @@ const saveUserDevice = async (userId, deviceType, deviceToken) => {
   let replaced = false;
 
   await db.transaction(async (trx) => {
-    const existing = await trx('devices')
-      .where({ user_id: userId, device_type: normalizedType })
-      .orderBy('updated_at', 'desc')
-      .orderBy('id', 'desc')
-      .first();
+    // One physical install / browser should belong to one account
+    await trx('devices').where({ device_token: token }).whereNot({ user_id: userId }).del();
+
+    const existing = await trx('devices').where({ user_id: userId, device_token: token }).first();
 
     if (existing) {
       await trx('devices').where({ id: existing.id }).update({
-        device_token: token,
+        device_type: normalizedType,
         last_active: trx.fn.now(),
         updated_at: trx.fn.now(),
       });
       replaced = true;
-
-      // Keep only one row for this user + device_type
-      await trx('devices')
-        .where({ user_id: userId, device_type: normalizedType })
-        .whereNot('id', existing.id)
-        .del();
     } else {
       await trx('devices').insert({
         user_id: userId,
@@ -554,6 +549,20 @@ const saveUserDevice = async (userId, deviceType, deviceToken) => {
         device_token: token,
         last_active: trx.fn.now(),
       });
+    }
+
+    // Soft cap — keep most recently active devices
+    const rows = await trx('devices')
+      .where({ user_id: userId })
+      .orderBy('last_active', 'desc')
+      .orderBy('updated_at', 'desc')
+      .orderBy('id', 'desc')
+      .select('id');
+
+    const max = Number(MAX_DEVICES_PER_USER) || 10;
+    if (rows.length > max) {
+      const keepIds = rows.slice(0, max).map((r) => r.id);
+      await trx('devices').where({ user_id: userId }).whereNotIn('id', keepIds).del();
     }
 
     // Drop legacy rows without a platform
@@ -564,7 +573,7 @@ const saveUserDevice = async (userId, deviceType, deviceToken) => {
 };
 
 /**
- * Get all registered devices for a user (up to 3: android / ios / web).
+ * Get all registered FCM devices for a user (all platforms / phones).
  * @param {number} userId
  * @returns {Promise<Array<{ id: number, device_type: string|null, device_token: string }>>}
  */
@@ -575,20 +584,24 @@ const findDevicesByUserId = async (userId) => {
     .where({ user_id: userId })
     .whereNotNull('device_token')
     .whereIn('device_type', DEVICE_TYPE_VALUES)
+    .orderBy('last_active', 'desc')
     .orderBy('updated_at', 'desc');
 
-  // One row per device_type (latest wins if duplicates somehow exist)
-  const byType = new Map();
+  // Dedupe by token if duplicate rows somehow exist
+  const seen = new Set();
+  const devices = [];
   for (const row of rows) {
-    if (!row.device_token || byType.has(row.device_type)) continue;
-    byType.set(row.device_type, {
+    const token = String(row.device_token || '').trim();
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    devices.push({
       id: row.id,
       device_type: row.device_type,
-      device_token: row.device_token,
+      device_token: token,
     });
   }
 
-  return Array.from(byType.values());
+  return devices;
 };
 
 /**

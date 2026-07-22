@@ -13,7 +13,6 @@ const {
   registerRules,
   refreshRules,
   logoutRules,
-  registerDeviceRules,
   authenticate,
   verifyRegistration,
 } = require('../middleware/auth');
@@ -38,7 +37,6 @@ router.post('/register', registerRules, validate, verifyRegistration, authContro
 
 router.post('/refresh-token', refreshRules, validate, authController.refreshToken);
 router.post('/logout', authenticate, logoutRules, validate, authController.logout);
-router.post('/device', authenticate, registerDeviceRules, validate, authController.registerDevice);
 
 // ==========================================
 // Profile (authenticated)

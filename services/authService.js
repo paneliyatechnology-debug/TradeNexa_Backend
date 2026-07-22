@@ -116,7 +116,7 @@ const issueTokens = async (user, req) => {
   });
 
   // Persist FCM token from verify-otp / register.
-  // One token per device_type (android | ios | web); other platforms are kept.
+  // Each distinct device_token is kept (multi-device); push goes to all of them.
   // Clients must send a real FCM token — placeholders like "dev_token_…" are skipped at send time.
   const device = getDeviceFromBody(req.body);
   if (device?.device_token) {
@@ -312,8 +312,9 @@ const refreshToken = async (token) => {
 };
 
 /**
- * Revoke refresh tokens and unregister only the logging-out platform/device.
- * Other device_types (android / ios / web) stay registered for push.
+ * Revoke refresh tokens and unregister only the logging-out device.
+ * Other device tokens stay registered so remaining phones/browsers still get push.
+ * Prefer sending `device_token` on logout so only that install is removed.
  * @param {number} userId
  * @param {string} [token] - refresh token
  * @param {{ deviceToken?: string|null, deviceType?: string|null }} [device]
@@ -330,20 +331,7 @@ const logout = async (userId, token, device = {}) => {
   } else if (deviceType) {
     await userModel.deleteUserDeviceByType(userId, deviceType);
   }
-  // If neither token nor type is sent, keep all platform tokens so other devices still get push
-};
-
-/**
- * Register or refresh the FCM device token for one platform.
- * Same device_type replaces that token; other platforms are unchanged (max 3 total).
- */
-const registerDevice = async (userId, deviceType, deviceToken) => {
-  const result = await userModel.saveUserDevice(userId, deviceType, deviceToken);
-  return {
-    device_type: result.device_type,
-    replaced: result.replaced,
-    registered: true,
-  };
+  // If neither token nor type is sent, keep all device tokens so other devices still get push
 };
 
 // ==========================================
@@ -387,7 +375,6 @@ module.exports = {
   register,
   refreshToken,
   logout,
-  registerDevice,
   getProfile,
   updateProfile,
   deleteProfile,

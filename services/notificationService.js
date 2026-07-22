@@ -16,10 +16,10 @@
  * Behaviour:
  * - For RFQ / inquiry types: persist an inbox row, emit socket realtime updates
  * - Chat / product-moderation types: FCM only (not stored in inbox)
- * - Loads every registered device for the user (android / ios / web — max 3)
+ * - Loads every registered device for the user (all phones / platforms)
  * - Skips FCM when no valid token exists (inbox row still created when applicable)
  * - Never throws to callers (failures are logged only)
- * - Removes permanently invalid registration tokens from `devices`
+ * - Removes permanently invalid registration tokens from `devices` after FCM rejects them
  *
  * Low-level FCM transport lives in utils/firebase.js.
  */
