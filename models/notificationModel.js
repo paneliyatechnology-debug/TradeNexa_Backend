@@ -1,8 +1,8 @@
 /**
  * In-app notification inbox data access (RFQ + inquiry related only).
  *
- * Each row may carry `role_id` (FK → roles) so dual-role users can filter
- * buyer vs seller inbox via `?role_id=` on list / unread-count APIs.
+ * Each row may carry `role` = `buyer` | `seller` so dual-role (buyer_seller)
+ * users can filter their inbox with `?role=buyer` or `?role=seller`.
  */
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
@@ -32,7 +32,6 @@ const serializeJson = (value) => {
 
 /**
  * Normalize a notification row for API / socket payloads.
- * `role` is the roles.code convenience field; filter APIs use `role_id`.
  * @param {Object|null} row
  * @returns {Object|null}
  */
@@ -42,8 +41,7 @@ const formatRow = (row) => {
     id: row.id,
     user_id: row.user_id,
     type: row.type,
-    role_id: row.role_id != null ? Number(row.role_id) : null,
-    role: row.role_code || null,
+    role: row.role || null,
     title: row.title,
     body: row.body,
     reference_id: row.reference_id ?? null,
@@ -57,12 +55,6 @@ const formatRow = (row) => {
   };
 };
 
-/** Base select with roles.code joined for `role` on formatted rows. */
-const baseNotificationQuery = () =>
-  db('notifications')
-    .leftJoin('roles', 'roles.id', 'notifications.role_id')
-    .select('notifications.*', 'roles.code as role_code');
-
 // ==========================================
 // Writes
 // ==========================================
@@ -70,13 +62,13 @@ const baseNotificationQuery = () =>
 /**
  * Insert a notification for a user.
  * @param {Object} payload
- * @param {number|null} [payload.roleId] - Audience roles.id (buyer or seller)
+ * @param {'buyer'|'seller'|null} [payload.role] - Audience marketplace side
  * @returns {Promise<Object>}
  */
 const create = async ({
   userId,
   type,
-  roleId = null,
+  role = null,
   title,
   body,
   referenceId = null,
@@ -87,7 +79,7 @@ const create = async ({
   const [id] = await db('notifications').insert({
     user_id: userId,
     type,
-    role_id: roleId != null ? Number(roleId) || null : null,
+    role: role || null,
     title,
     body,
     reference_id: referenceId,
@@ -107,9 +99,7 @@ const create = async ({
  * @returns {Promise<Object|null>}
  */
 const findByIdForUser = async (id, userId) => {
-  const row = await baseNotificationQuery()
-    .where({ 'notifications.id': id, 'notifications.user_id': userId })
-    .first();
+  const row = await db('notifications').where({ id, user_id: userId }).first();
   return formatRow(row);
 };
 
@@ -123,27 +113,27 @@ const findByIdForUser = async (id, userId) => {
  * @param {Object} [filters]
  * @param {boolean|string} [filters.is_read]
  * @param {string} [filters.type]
- * @param {number|string} [filters.role_id] - Filter by audience role (buyer/seller id)
+ * @param {'buyer'|'seller'} [filters.role]
  * @returns {Promise<{ results: Array, pagination: Object }>}
  */
 const listForUser = async (userId, filters = {}) => {
-  const q = baseNotificationQuery().where({ 'notifications.user_id': userId });
+  const q = db('notifications').where({ user_id: userId }).select('*');
 
   if (filters.is_read === true || filters.is_read === false) {
-    q.andWhere('notifications.is_read', filters.is_read);
+    q.andWhere('is_read', filters.is_read);
   } else if (filters.is_read === 'true' || filters.is_read === 'false') {
-    q.andWhere('notifications.is_read', filters.is_read === 'true');
+    q.andWhere('is_read', filters.is_read === 'true');
   }
 
   if (filters.type) {
-    q.andWhere('notifications.type', filters.type);
+    q.andWhere('type', filters.type);
   }
 
-  if (filters.role_id) {
-    q.andWhere('notifications.role_id', Number(filters.role_id));
+  if (filters.role) {
+    q.andWhere('role', filters.role);
   }
 
-  q.orderBy('notifications.created_at', 'desc').orderBy('notifications.id', 'desc');
+  q.orderBy('created_at', 'desc').orderBy('id', 'desc');
 
   const { results, pagination } = await paginate(q, filters.page, filters.limit);
   return {
@@ -153,37 +143,31 @@ const listForUser = async (userId, filters = {}) => {
 };
 
 /**
- * Unread count for a user; optional `role_id` scopes to one marketplace side.
+ * Unread count for a user; optional `role` scopes to buyer or seller inbox.
  * @param {number} userId
  * @param {Object} [filters]
- * @param {number|string} [filters.role_id]
+ * @param {'buyer'|'seller'} [filters.role]
  * @returns {Promise<number>}
  */
 const countUnread = async (userId, filters = {}) => {
   const q = db('notifications').where({ user_id: userId, is_read: false });
-  if (filters.role_id) {
-    q.andWhere('role_id', Number(filters.role_id));
+  if (filters.role) {
+    q.andWhere('role', filters.role);
   }
   const row = await q.count({ total: '*' }).first();
   return parseInt(row?.total || 0, 10);
 };
 
 /**
- * Unread inbox counts split by audience role code (for profile badges).
- * Used by GET /auth/profile → counts.notifications_unread.
+ * Unread inbox counts split by audience role (for profile badges).
  * @param {number} userId
  * @returns {Promise<{ total: number, buyer: number, seller: number }>}
  */
 const countUnreadByRole = async (userId) => {
   const rows = await db('notifications')
-    .leftJoin('roles', 'roles.id', 'notifications.role_id')
-    .where({ 'notifications.user_id': userId, 'notifications.is_read': false })
-    .groupBy('notifications.role_id', 'roles.code')
-    .select(
-      'notifications.role_id',
-      'roles.code as role_code',
-      db.raw('COUNT(*) as count'),
-    );
+    .where({ user_id: userId, is_read: false })
+    .groupBy('role')
+    .select('role', db.raw('COUNT(*) as count'));
 
   let total = 0;
   let buyer = 0;
@@ -192,8 +176,8 @@ const countUnreadByRole = async (userId) => {
   rows.forEach((row) => {
     const count = parseInt(row.count || 0, 10);
     total += count;
-    if (row.role_code === 'buyer') buyer = count;
-    if (row.role_code === 'seller') seller = count;
+    if (row.role === 'buyer') buyer = count;
+    if (row.role === 'seller') seller = count;
   });
 
   return { total, buyer, seller };
@@ -214,7 +198,7 @@ const markRead = async (id, userId) => {
   if (!existing) return null;
 
   if (existing.is_read) {
-    return findByIdForUser(id, userId);
+    return formatRow(existing);
   }
 
   const now = db.fn.now();
@@ -252,14 +236,14 @@ const markManyRead = async (userId, ids = []) => {
  * Mark all unread notifications as read for a user.
  * @param {number} userId
  * @param {Object} [filters]
- * @param {number|string} [filters.role_id]
+ * @param {'buyer'|'seller'} [filters.role]
  * @returns {Promise<number>}
  */
 const markAllRead = async (userId, filters = {}) => {
   const now = db.fn.now();
   const q = db('notifications').where({ user_id: userId, is_read: false });
-  if (filters.role_id) {
-    q.andWhere('role_id', Number(filters.role_id));
+  if (filters.role) {
+    q.andWhere('role', filters.role);
   }
   return q.update({
     is_read: true,

@@ -44,8 +44,9 @@ const NOTIFICATION_TYPE = {
 const NOTIFICATION_TYPE_VALUES = Object.values(NOTIFICATION_TYPE);
 
 /**
- * Audience role *codes* for dual-role inbox (maps to roles.id at send time).
- * Prefer filtering APIs by role_id (buyer / seller row ids from GET /roles).
+ * Audience role codes for dual-role inbox filtering.
+ * Stored on each notification as `role` = buyer | seller (never buyer_seller).
+ * Filter APIs with `?role=buyer` or `?role=seller`.
  */
 const NOTIFICATION_ROLE = {
   BUYER: ROLE_CODES.BUYER,
@@ -55,8 +56,8 @@ const NOTIFICATION_ROLE = {
 const NOTIFICATION_ROLE_VALUES = Object.values(NOTIFICATION_ROLE);
 
 /**
- * Default inbox audience role code by type.
- * Override via `role` / `roleId` on send() when a type can go to either side
+ * Default inbox audience role by type.
+ * Override via `role` on send() when a type can go to either side
  * (e.g. RFQ_STATUS_UPDATED).
  */
 const NOTIFICATION_TYPE_DEFAULT_ROLE = {
@@ -72,19 +73,19 @@ const NOTIFICATION_TYPE_DEFAULT_ROLE = {
   [NOTIFICATION_TYPE.RFQ_QUOTATION_UPDATED]: NOTIFICATION_ROLE.BUYER,
   [NOTIFICATION_TYPE.RFQ_QUOTATION_ACCEPTED]: NOTIFICATION_ROLE.SELLER,
   [NOTIFICATION_TYPE.RFQ_QUOTATION_REJECTED]: NOTIFICATION_ROLE.SELLER,
-  // Ambiguous — callers should pass role / roleId explicitly
+  // Ambiguous — callers should pass role explicitly
   [NOTIFICATION_TYPE.RFQ_STATUS_UPDATED]: NOTIFICATION_ROLE.SELLER,
 };
 
 /**
- * Resolve audience role *code* for an inbox notification.
+ * Resolve audience role for an inbox notification (buyer | seller only).
  * @param {string} type
- * @param {string|null|undefined} explicitRoleCode
+ * @param {string|null|undefined} explicitRole
  * @returns {'buyer'|'seller'|null}
  */
-const resolveNotificationRoleCode = (type, explicitRoleCode = null) => {
-  if (explicitRoleCode && NOTIFICATION_ROLE_VALUES.includes(explicitRoleCode)) {
-    return explicitRoleCode;
+const resolveNotificationRoleCode = (type, explicitRole = null) => {
+  if (explicitRole && NOTIFICATION_ROLE_VALUES.includes(explicitRole)) {
+    return explicitRole;
   }
   return NOTIFICATION_TYPE_DEFAULT_ROLE[type] || null;
 };

@@ -1117,7 +1117,7 @@ const wishlistListQuery = [
 // Notification validations (/notifications)
 // ==========================================
 
-const { IN_APP_NOTIFICATION_TYPES } = require('../constants/notification');
+const { IN_APP_NOTIFICATION_TYPES, NOTIFICATION_ROLE_VALUES } = require('../constants/notification');
 
 const notificationListQuery = [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
@@ -1131,17 +1131,19 @@ const notificationListQuery = [
     .trim()
     .isIn(IN_APP_NOTIFICATION_TYPES)
     .withMessage(`type must be one of: ${IN_APP_NOTIFICATION_TYPES.join(', ')}`),
-  query('role_id')
+  query('role')
     .optional()
-    .isInt({ min: 1 })
-    .withMessage('role_id must be a positive integer (buyer or seller role id from GET /roles)'),
+    .trim()
+    .isIn(NOTIFICATION_ROLE_VALUES)
+    .withMessage(`role must be one of: ${NOTIFICATION_ROLE_VALUES.join(', ')}`),
 ];
 
 const notificationUnreadCountQuery = [
-  query('role_id')
+  query('role')
     .optional()
-    .isInt({ min: 1 })
-    .withMessage('role_id must be a positive integer (buyer or seller role id from GET /roles)'),
+    .trim()
+    .isIn(NOTIFICATION_ROLE_VALUES)
+    .withMessage(`role must be one of: ${NOTIFICATION_ROLE_VALUES.join(', ')}`),
 ];
 
 const notificationMarkManyReadRules = [
@@ -1150,14 +1152,16 @@ const notificationMarkManyReadRules = [
 ];
 
 const notificationMarkAllReadRules = [
-  query('role_id')
+  query('role')
     .optional()
-    .isInt({ min: 1 })
-    .withMessage('role_id must be a positive integer (buyer or seller role id from GET /roles)'),
-  body('role_id')
+    .trim()
+    .isIn(NOTIFICATION_ROLE_VALUES)
+    .withMessage(`role must be one of: ${NOTIFICATION_ROLE_VALUES.join(', ')}`),
+  body('role')
     .optional()
-    .isInt({ min: 1 })
-    .withMessage('role_id must be a positive integer (buyer or seller role id from GET /roles)'),
+    .trim()
+    .isIn(NOTIFICATION_ROLE_VALUES)
+    .withMessage(`role must be one of: ${NOTIFICATION_ROLE_VALUES.join(', ')}`),
 ];
 
 // ==========================================

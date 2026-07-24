@@ -4,7 +4,7 @@ const { success } = require('../utils/response');
 /**
  * GET /notifications
  * Paginated in-app notification inbox (RFQ + inquiry related).
- * Optional `role_id` (buyer/seller role id from GET /roles) for dual-role users.
+ * Optional `role=buyer|seller` for dual-role (buyer_seller) users.
  */
 const listNotifications = async (req, res, next) => {
   try {
@@ -13,7 +13,7 @@ const listNotifications = async (req, res, next) => {
       limit: req.query.limit,
       is_read: req.query.is_read,
       type: req.query.type,
-      role_id: req.query.role_id,
+      role: req.query.role,
     });
     return success(res, 'Notifications fetched successfully.', data);
   } catch (err) {
@@ -23,12 +23,12 @@ const listNotifications = async (req, res, next) => {
 
 /**
  * GET /notifications/unread-count
- * Optional `role_id` scopes the count.
+ * Optional `role=buyer|seller` scopes the count.
  */
 const getUnreadCount = async (req, res, next) => {
   try {
     const data = await notificationService.getUnreadCount(req.user.id, {
-      role_id: req.query.role_id,
+      role: req.query.role,
     });
     return success(res, 'Unread notification count fetched successfully.', data);
   } catch (err) {
@@ -64,14 +64,12 @@ const markManyRead = async (req, res, next) => {
 
 /**
  * POST /notifications/read-all
- * Optional query/body `role_id` to clear one inbox only.
+ * Optional query/body `role=buyer|seller` to clear one inbox only.
  */
 const markAllRead = async (req, res, next) => {
   try {
-    const roleId = req.query.role_id || req.body?.role_id || null;
-    const data = await notificationService.markAllNotificationsRead(req.user.id, {
-      role_id: roleId,
-    });
+    const role = req.query.role || req.body?.role || null;
+    const data = await notificationService.markAllNotificationsRead(req.user.id, { role });
     return success(res, 'All notifications marked as read.', data);
   } catch (err) {
     next(err);

@@ -30,7 +30,6 @@ const firebase = require('../utils/firebase');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/response');
 const { HTTP_STATUS, DEVICE_TYPES, DEVICE_TYPE_VALUES } = require('../constants');
-const db = require('../database/knex');
 const {
   NOTIFICATION_TYPE,
   NOTIFICATION_TYPE_VALUES,
@@ -45,46 +44,6 @@ const {
 // ==========================================
 // Helpers
 // ==========================================
-
-/** Cache roles.code → roles.id for notification audience resolution. */
-const roleIdByCodeCache = new Map();
-
-/**
- * Resolve marketplace role id by code (buyer | seller).
- * @param {string} code
- * @returns {Promise<number|null>}
- */
-const getRoleIdByCode = async (code) => {
-  if (!code) return null;
-  if (roleIdByCodeCache.has(code)) return roleIdByCodeCache.get(code);
-
-  const row = await db('roles').where({ code, is_active: true }).select('id').first();
-  const id = row?.id != null ? Number(row.id) : null;
-  if (id) roleIdByCodeCache.set(code, id);
-  return id;
-};
-
-/**
- * Resolve audience role_id for an inbox notification.
- * Prefers explicit roleId; else maps role code / type default → roles.id.
- * @param {string} type
- * @param {{ roleId?: number|null, role?: string|null }} [opts]
- * @returns {Promise<{ roleId: number|null, roleCode: string|null }>}
- */
-const resolveAudienceRole = async (type, { roleId = null, role = null } = {}) => {
-  if (roleId != null && Number(roleId)) {
-    const id = Number(roleId);
-    const row = await db('roles').where({ id, is_active: true }).select('id', 'code').first();
-    if (row) {
-      roleIdByCodeCache.set(row.code, Number(row.id));
-      return { roleId: Number(row.id), roleCode: row.code };
-    }
-  }
-
-  const roleCode = resolveNotificationRoleCode(type, role);
-  const resolvedId = await getRoleIdByCode(roleCode);
-  return { roleId: resolvedId, roleCode };
-};
 
 /** Stable OS notification tag so clients can cancel the same item on every device. */
 const notificationTagForId = (notificationId) => {
@@ -373,7 +332,6 @@ const pushUnreadCount = (userIds) => {
 const persistInboxNotification = async ({
   userId,
   type,
-  roleId = null,
   role = null,
   title,
   body,
@@ -386,12 +344,13 @@ const persistInboxNotification = async ({
 
   const safeTitle = sanitizeText(title, 100) || 'TradeNexa';
   const safeBody = sanitizeText(body, 500) || 'You have a new notification';
-  const audience = await resolveAudienceRole(type, { roleId, role });
+  // Store marketplace side only (buyer | seller) — never buyer_seller
+  const audienceRole = resolveNotificationRoleCode(type, role);
 
   const notification = await notificationModel.create({
     userId,
     type,
-    roleId: audience.roleId,
+    role: audienceRole,
     title: safeTitle,
     body: safeBody,
     referenceId: referenceId != null ? Number(referenceId) || null : null,
@@ -426,8 +385,7 @@ const persistInboxNotification = async ({
  * @param {Object} [params.data] - Extra stringifiable metadata for the client
  * @param {number|null} [params.senderId]
  * @param {string|null} [params.clickAction]
- * @param {'buyer'|'seller'|null} [params.role] - Audience role code (resolved to roles.id)
- * @param {number|null} [params.roleId] - Audience role id (preferred over role code)
+ * @param {'buyer'|'seller'|null} [params.role] - Audience side for dual-role inbox
  * @param {string|null} [params.channelId] - Android notification channel (default trade_nexa_notifications)
  * @param {number|null} [params.badge] - iOS badge count
  * @returns {Promise<{ sent: number, skipped: boolean, reason?: string, notification?: Object|null }>}
@@ -442,7 +400,6 @@ const send = async ({
   senderId = null,
   clickAction = null,
   role = null,
-  roleId = null,
   channelId = null,
   badge = null,
 }) => {
@@ -468,7 +425,7 @@ const send = async ({
       return { sent: 0, skipped: true, reason: 'self_recipient' };
     }
 
-    const audience = await resolveAudienceRole(type, { roleId, role });
+    const audienceRole = resolveNotificationRoleCode(type, role);
 
     // Persist RFQ/inquiry inbox row even when the user has no FCM device
     let stored = null;
@@ -476,8 +433,7 @@ const send = async ({
       stored = await persistInboxNotification({
         userId: uid,
         type,
-        roleId: audience.roleId,
-        role: audience.roleCode,
+        role: audienceRole,
         title,
         body,
         referenceId,
@@ -502,8 +458,7 @@ const send = async ({
     const notificationId = stored?.id || null;
     const baseData = {
       type,
-      role_id: audience.roleId || undefined,
-      role: audience.roleCode || undefined,
+      role: audienceRole || undefined,
       reference_id: referenceId,
       sender_id: senderId,
       click_action: clickAction || undefined,
@@ -525,8 +480,7 @@ const send = async ({
     logger.info('Push fan-out complete', {
       receiverId: uid,
       type,
-      role_id: audience.roleId,
-      role: audience.roleCode,
+      role: audienceRole,
       referenceId,
       notificationId,
       deviceCount: devices.length,
@@ -573,13 +527,13 @@ const listNotifications = async (userId, filters = {}) =>
 
 /**
  * Unread inbox count for the authenticated user.
- * Optional `role_id` scopes to buyer or seller inbox.
+ * Optional `role=buyer|seller` scopes to one marketplace side.
  */
 const getUnreadCount = async (userId, filters = {}) => {
   const unreadCount = await notificationModel.countUnread(userId, filters);
   return {
     unread_count: unreadCount,
-    role_id: filters.role_id != null ? Number(filters.role_id) : null,
+    role: filters.role || null,
   };
 };
 
@@ -619,7 +573,7 @@ const markNotificationsRead = async (userId, ids = []) => {
 
 /**
  * Mark all unread notifications as read.
- * Optional `role_id` scopes to buyer or seller inbox only.
+ * Optional `role=buyer|seller` scopes to one marketplace side only.
  */
 const markAllNotificationsRead = async (userId, filters = {}) => {
   const updated = await notificationModel.markAllRead(userId, filters);
@@ -627,12 +581,12 @@ const markAllNotificationsRead = async (userId, filters = {}) => {
   chatSocketEmitter.emitToUser(userId, NOTIFICATION_SOCKET_EVENT.UPDATED, {
     updated,
     all: true,
-    role_id: filters.role_id != null ? Number(filters.role_id) : null,
+    role: filters.role || null,
   });
   syncDismissAcrossDevices(userId, { all: true });
   return {
     updated,
-    role_id: filters.role_id != null ? Number(filters.role_id) : null,
+    role: filters.role || null,
   };
 };
 
