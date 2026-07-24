@@ -13,7 +13,7 @@ const db = require('../database/knex');
 const { AppError } = require('../utils/response');
 const { ROLE_CODES } = require('../constants');
 const { INQUIRY_STATUS, INQUIRY_STATUS_VALUES } = require('../constants/inquiry');
-const { RFQ_STATUS, RFQ_SELLER_STATUS } = require('../constants/rfq');
+const { RFQ_STATUS } = require('../constants/rfq');
 const { USER_IMAGE_FIELDS, COMPANY_IMAGE_FIELDS } = require('../constants/profileFields');
 const { uploadPaths } = require('../constants/uploadPaths');
 const { processUploadedFiles } = require('../services/uploadService');
@@ -93,29 +93,19 @@ const countBuyerRfqsByStatus = async (userId) => {
 };
 
 /**
- * Seller RFQ involvement: RFQ status + invite (rfq_sellers) status.
+ * Seller RFQ involvement grouped by RFQ lifecycle status.
  * @param {number} userId
  */
 const countSellerRfqsByStatus = async (userId) => {
-  const [rfqRows, inviteRows] = await Promise.all([
-    db('rfq_sellers')
-      .innerJoin('rfqs', 'rfqs.id', 'rfq_sellers.rfq_id')
-      .where({ 'rfq_sellers.seller_id': userId })
-      .whereNull('rfqs.deleted_at')
-      .select('rfqs.status')
-      .countDistinct('rfqs.id as count')
-      .groupBy('rfqs.status'),
-    db('rfq_sellers')
-      .innerJoin('rfqs', 'rfqs.id', 'rfq_sellers.rfq_id')
-      .where({ 'rfq_sellers.seller_id': userId })
-      .whereNull('rfqs.deleted_at')
-      .select('rfq_sellers.status')
-      .countDistinct('rfqs.id as count')
-      .groupBy('rfq_sellers.status'),
-  ]);
+  const rfqRows = await db('rfq_sellers')
+    .innerJoin('rfqs', 'rfqs.id', 'rfq_sellers.rfq_id')
+    .where({ 'rfq_sellers.seller_id': userId })
+    .whereNull('rfqs.deleted_at')
+    .select('rfqs.status')
+    .countDistinct('rfqs.id as count')
+    .groupBy('rfqs.status');
 
   const rfqStatusMap = withZeroFilled(toStatusMap(rfqRows), Object.values(RFQ_STATUS));
-  const inviteStatusMap = withZeroFilled(toStatusMap(inviteRows), Object.values(RFQ_SELLER_STATUS));
 
   return {
     total: sumMap(rfqStatusMap),
@@ -129,14 +119,6 @@ const countSellerRfqsByStatus = async (userId) => {
     expired: rfqStatusMap[RFQ_STATUS.EXPIRED],
     cancelled: rfqStatusMap[RFQ_STATUS.CANCELLED],
     closed: rfqStatusMap[RFQ_STATUS.CLOSED],
-    by_invite_status: {
-      total: sumMap(inviteStatusMap),
-      invited: inviteStatusMap[RFQ_SELLER_STATUS.INVITED],
-      viewed: inviteStatusMap[RFQ_SELLER_STATUS.VIEWED],
-      responded: inviteStatusMap[RFQ_SELLER_STATUS.RESPONDED],
-      awarded: inviteStatusMap[RFQ_SELLER_STATUS.AWARDED],
-      rejected: inviteStatusMap[RFQ_SELLER_STATUS.REJECTED],
-    },
   };
 };
 
@@ -174,7 +156,7 @@ const countInquiriesAndRfqs = async (userId) => {
  * - notifications_unread: { total, buyer, seller }
  * - chat_unread: { total, as_buyer, as_seller }
  * - inquiries: { total, as_buyer, as_seller } — each side has flat status fields
- * - rfqs: { total, as_buyer, as_seller } — flat RFQ status fields; seller also by_invite_status
+ * - rfqs: { total, as_buyer, as_seller } — flat RFQ status fields
  *
  * @param {number} userId
  * @returns {Promise<Object>}
