@@ -234,22 +234,32 @@ const markManyRead = async (userId, ids = []) => {
 
 /**
  * Mark all unread notifications as read for a user.
+ * Optional `role=buyer|seller` limits to that marketplace side only.
  * @param {number} userId
  * @param {Object} [filters]
- * @param {'buyer'|'seller'} [filters.role]
- * @returns {Promise<number>}
+ * @param {'buyer'|'seller'|null} [filters.role]
+ * @returns {Promise<{ updated: number, ids: number[] }>}
  */
 const markAllRead = async (userId, filters = {}) => {
-  const now = db.fn.now();
   const q = db('notifications').where({ user_id: userId, is_read: false });
   if (filters.role) {
     q.andWhere('role', filters.role);
   }
-  return q.update({
+
+  const rows = await q.clone().select('id');
+  const ids = rows.map((row) => Number(row.id)).filter(Boolean);
+  if (!ids.length) {
+    return { updated: 0, ids: [] };
+  }
+
+  const now = db.fn.now();
+  const updated = await db('notifications').whereIn('id', ids).update({
     is_read: true,
     read_at: now,
     updated_at: now,
   });
+
+  return { updated, ids };
 };
 
 module.exports = {

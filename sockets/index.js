@@ -218,10 +218,12 @@ const initSocket = (httpServer) => {
       }
     });
 
-    socket.on(NOTIFICATION_SOCKET_EVENT.MARK_ALL_READ, async () => {
+    socket.on(NOTIFICATION_SOCKET_EVENT.MARK_ALL_READ, async (payload = {}) => {
       try {
-        const data = await notificationService.markAllNotificationsRead(userId);
-        socket.emit(NOTIFICATION_SOCKET_EVENT.UPDATED, { ...data, all: true });
+        const data = await notificationService.markAllNotificationsRead(userId, {
+          role: payload.role || null,
+        });
+        socket.emit(NOTIFICATION_SOCKET_EVENT.UPDATED, { ...data, all: !data.role });
       } catch (error) {
         socket.emit(NOTIFICATION_SOCKET_EVENT.ERROR, { message: error.message });
       }

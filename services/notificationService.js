@@ -587,21 +587,66 @@ const markNotificationsRead = async (userId, ids = []) => {
 };
 
 /**
+ * Normalize audience role for dual-role inbox filters.
+ * @param {unknown} value
+ * @returns {'buyer'|'seller'|null}
+ */
+const resolveAudienceRole = (value) => {
+  if (value == null || value === '') return null;
+  const role = String(value).trim().toLowerCase();
+  return NOTIFICATION_ROLE_VALUES.includes(role) ? role : null;
+};
+
+/**
  * Mark all unread notifications as read.
- * Optional `role=buyer|seller` scopes to one marketplace side only.
+ * Optional `role=buyer|seller` scopes to one marketplace side only
+ * (for buyer_seller users — other side stays unread).
+ *
+ * @param {number} userId
+ * @param {Object} [filters]
+ * @param {'buyer'|'seller'|null} [filters.role]
+ * @returns {Promise<{ updated: number, role: string|null, unread: Object }>}
  */
 const markAllNotificationsRead = async (userId, filters = {}) => {
-  const updated = await notificationModel.markAllRead(userId, filters);
+  const role = resolveAudienceRole(filters.role);
+  if (filters.role != null && filters.role !== '' && !role) {
+    throw new AppError(
+      `role must be one of: ${NOTIFICATION_ROLE_VALUES.join(', ')}`,
+      HTTP_STATUS.BAD_REQUEST,
+    );
+  }
+
+  const { updated, ids } = await notificationModel.markAllRead(userId, { role });
+
+  // Role-scoped dismiss: only clear those tray items; full clear when no role
+  if (role) {
+    if (ids.length) {
+      syncDismissAcrossDevices(userId, { notificationIds: ids });
+    }
+  } else {
+    syncDismissAcrossDevices(userId, { all: true });
+  }
+
   pushUnreadCount(userId);
+  const unreadCounts = await notificationModel.countUnreadByRole(userId);
+  const unread = {
+    total: unreadCounts.total,
+    buyer: unreadCounts.buyer,
+    seller: unreadCounts.seller,
+    unread_count: unreadCounts.total,
+  };
+
   chatSocketEmitter.emitToUser(userId, NOTIFICATION_SOCKET_EVENT.UPDATED, {
     updated,
-    all: true,
-    role: filters.role || null,
+    all: !role,
+    role,
+    unread,
   });
-  syncDismissAcrossDevices(userId, { all: true });
+
   return {
     updated,
-    role: filters.role || null,
+    role,
+    unread,
   };
 };
 

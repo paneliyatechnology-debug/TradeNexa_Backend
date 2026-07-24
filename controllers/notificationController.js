@@ -64,7 +64,10 @@ const markManyRead = async (req, res, next) => {
 
 /**
  * POST /notifications/read-all
- * Optional query/body `role=buyer|seller` to clear one inbox only.
+ * Mark unread notifications as read.
+ * Optional query/body `role=buyer|seller` — for buyer_seller users, clears
+ * only that marketplace side (other side stays unread).
+ * Omitting role marks all unread notifications.
  */
 const markAllRead = async (req, res, next) => {
   try {
