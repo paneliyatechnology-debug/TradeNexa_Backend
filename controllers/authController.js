@@ -111,8 +111,7 @@ const logout = async (req, res, next) => {
 /**
  * GET /auth/profile
  * Authenticated user profile plus badge `counts`
- * (wishlist, notifications_unread, chat_unread, inquiries, rfqs,
- *  pending_inquiries, pending_rfqs).
+ * (wishlist, notifications_unread, chat_unread, inquiries, rfqs).
  */
 const getProfile = async (req, res, next) => {
   try {

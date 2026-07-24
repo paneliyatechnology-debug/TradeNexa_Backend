@@ -13,11 +13,7 @@ const db = require('../database/knex');
 const { AppError } = require('../utils/response');
 const { ROLE_CODES } = require('../constants');
 const { INQUIRY_STATUS, INQUIRY_STATUS_VALUES } = require('../constants/inquiry');
-const {
-  RFQ_STATUS,
-  RFQ_SELLER_VISIBLE_STATUSES,
-  RFQ_SELLER_STATUS,
-} = require('../constants/rfq');
+const { RFQ_STATUS, RFQ_SELLER_STATUS } = require('../constants/rfq');
 const { USER_IMAGE_FIELDS, COMPANY_IMAGE_FIELDS } = require('../constants/profileFields');
 const { uploadPaths } = require('../constants/uploadPaths');
 const { processUploadedFiles } = require('../services/uploadService');
@@ -26,20 +22,6 @@ const { processUploadedFiles } = require('../services/uploadService');
 // Profile badge counts — helpers
 // ==========================================
 
-/** Buyer-owned RFQs still in progress (awaiting quotes / negotiation). */
-const BUYER_PENDING_RFQ_STATUSES = [
-  RFQ_STATUS.OPEN,
-  RFQ_STATUS.PUBLISHED,
-  RFQ_STATUS.QUOTATION_RECEIVED,
-  RFQ_STATUS.NEGOTIATION,
-];
-
-/** Seller invite rows not yet quoted / rejected (still actionable). */
-const SELLER_PENDING_RFQ_INVITE_STATUSES = [
-  RFQ_SELLER_STATUS.INVITED,
-  RFQ_SELLER_STATUS.VIEWED,
-];
-
 const toStatusMap = (rows) =>
   rows.reduce((acc, row) => {
     acc[row.status] = parseInt(row.count, 10) || 0;
@@ -47,8 +29,6 @@ const toStatusMap = (rows) =>
   }, {});
 
 const sumMap = (map) => Object.values(map).reduce((a, b) => a + b, 0);
-
-const sumKeys = (map, keys) => keys.reduce((total, key) => total + (map[key] || 0), 0);
 
 /** Zero-fill known status keys so clients always get a stable shape. */
 const withZeroFilled = (byStatus, statusValues) => {
@@ -72,16 +52,15 @@ const countInquiriesByRole = async (userId, roleColumn) => {
     .count('* as count')
     .groupBy('status');
 
-  const by_status = withZeroFilled(toStatusMap(rows), INQUIRY_STATUS_VALUES);
+  const statusMap = withZeroFilled(toStatusMap(rows), INQUIRY_STATUS_VALUES);
   return {
-    total: sumMap(by_status),
-    pending: by_status[INQUIRY_STATUS.PENDING],
-    quoted: by_status[INQUIRY_STATUS.QUOTED],
-    accepted: by_status[INQUIRY_STATUS.ACCEPTED],
-    rejected: by_status[INQUIRY_STATUS.REJECTED],
-    cancelled: by_status[INQUIRY_STATUS.CANCELLED],
-    closed: by_status[INQUIRY_STATUS.CLOSED],
-    by_status,
+    total: sumMap(statusMap),
+    pending: statusMap[INQUIRY_STATUS.PENDING],
+    quoted: statusMap[INQUIRY_STATUS.QUOTED],
+    accepted: statusMap[INQUIRY_STATUS.ACCEPTED],
+    rejected: statusMap[INQUIRY_STATUS.REJECTED],
+    cancelled: statusMap[INQUIRY_STATUS.CANCELLED],
+    closed: statusMap[INQUIRY_STATUS.CLOSED],
   };
 };
 
@@ -97,20 +76,19 @@ const countBuyerRfqsByStatus = async (userId) => {
     .count('* as count')
     .groupBy('status');
 
-  const by_status = withZeroFilled(toStatusMap(rows), Object.values(RFQ_STATUS));
+  const statusMap = withZeroFilled(toStatusMap(rows), Object.values(RFQ_STATUS));
   return {
-    total: sumMap(by_status),
-    draft: by_status[RFQ_STATUS.DRAFT],
-    open: by_status[RFQ_STATUS.OPEN],
-    published: by_status[RFQ_STATUS.PUBLISHED],
-    quotation_received: by_status[RFQ_STATUS.QUOTATION_RECEIVED],
-    negotiation: by_status[RFQ_STATUS.NEGOTIATION],
-    awarded: by_status[RFQ_STATUS.AWARDED],
-    completed: by_status[RFQ_STATUS.COMPLETED],
-    expired: by_status[RFQ_STATUS.EXPIRED],
-    cancelled: by_status[RFQ_STATUS.CANCELLED],
-    closed: by_status[RFQ_STATUS.CLOSED],
-    by_status,
+    total: sumMap(statusMap),
+    draft: statusMap[RFQ_STATUS.DRAFT],
+    open: statusMap[RFQ_STATUS.OPEN],
+    published: statusMap[RFQ_STATUS.PUBLISHED],
+    quotation_received: statusMap[RFQ_STATUS.QUOTATION_RECEIVED],
+    negotiation: statusMap[RFQ_STATUS.NEGOTIATION],
+    awarded: statusMap[RFQ_STATUS.AWARDED],
+    completed: statusMap[RFQ_STATUS.COMPLETED],
+    expired: statusMap[RFQ_STATUS.EXPIRED],
+    cancelled: statusMap[RFQ_STATUS.CANCELLED],
+    closed: statusMap[RFQ_STATUS.CLOSED],
   };
 };
 
@@ -136,77 +114,43 @@ const countSellerRfqsByStatus = async (userId) => {
       .groupBy('rfq_sellers.status'),
   ]);
 
-  const by_rfq_status = withZeroFilled(toStatusMap(rfqRows), Object.values(RFQ_STATUS));
-  const inviteMap = toStatusMap(inviteRows);
-  const by_invite_status = withZeroFilled(inviteMap, Object.values(RFQ_SELLER_STATUS));
+  const rfqStatusMap = withZeroFilled(toStatusMap(rfqRows), Object.values(RFQ_STATUS));
+  const inviteStatusMap = withZeroFilled(toStatusMap(inviteRows), Object.values(RFQ_SELLER_STATUS));
 
   return {
-    total: sumMap(by_rfq_status),
-    draft: by_rfq_status[RFQ_STATUS.DRAFT],
-    open: by_rfq_status[RFQ_STATUS.OPEN],
-    published: by_rfq_status[RFQ_STATUS.PUBLISHED],
-    quotation_received: by_rfq_status[RFQ_STATUS.QUOTATION_RECEIVED],
-    negotiation: by_rfq_status[RFQ_STATUS.NEGOTIATION],
-    awarded: by_rfq_status[RFQ_STATUS.AWARDED],
-    completed: by_rfq_status[RFQ_STATUS.COMPLETED],
-    expired: by_rfq_status[RFQ_STATUS.EXPIRED],
-    cancelled: by_rfq_status[RFQ_STATUS.CANCELLED],
-    closed: by_rfq_status[RFQ_STATUS.CLOSED],
-    by_rfq_status,
+    total: sumMap(rfqStatusMap),
+    draft: rfqStatusMap[RFQ_STATUS.DRAFT],
+    open: rfqStatusMap[RFQ_STATUS.OPEN],
+    published: rfqStatusMap[RFQ_STATUS.PUBLISHED],
+    quotation_received: rfqStatusMap[RFQ_STATUS.QUOTATION_RECEIVED],
+    negotiation: rfqStatusMap[RFQ_STATUS.NEGOTIATION],
+    awarded: rfqStatusMap[RFQ_STATUS.AWARDED],
+    completed: rfqStatusMap[RFQ_STATUS.COMPLETED],
+    expired: rfqStatusMap[RFQ_STATUS.EXPIRED],
+    cancelled: rfqStatusMap[RFQ_STATUS.CANCELLED],
+    closed: rfqStatusMap[RFQ_STATUS.CLOSED],
     by_invite_status: {
-      total: sumMap(by_invite_status),
-      invited: by_invite_status[RFQ_SELLER_STATUS.INVITED],
-      viewed: by_invite_status[RFQ_SELLER_STATUS.VIEWED],
-      responded: by_invite_status[RFQ_SELLER_STATUS.RESPONDED],
-      awarded: by_invite_status[RFQ_SELLER_STATUS.AWARDED],
-      rejected: by_invite_status[RFQ_SELLER_STATUS.REJECTED],
-      by_status: by_invite_status,
+      total: sumMap(inviteStatusMap),
+      invited: inviteStatusMap[RFQ_SELLER_STATUS.INVITED],
+      viewed: inviteStatusMap[RFQ_SELLER_STATUS.VIEWED],
+      responded: inviteStatusMap[RFQ_SELLER_STATUS.RESPONDED],
+      awarded: inviteStatusMap[RFQ_SELLER_STATUS.AWARDED],
+      rejected: inviteStatusMap[RFQ_SELLER_STATUS.REJECTED],
     },
   };
 };
 
 /**
- * Seller pending RFQ invites (INVITED/VIEWED on still-active RFQs).
- * @param {number} userId
- */
-const countSellerPendingRfqInvites = async (userId) => {
-  const row = await db('rfq_sellers')
-    .innerJoin('rfqs', 'rfqs.id', 'rfq_sellers.rfq_id')
-    .where({ 'rfq_sellers.seller_id': userId })
-    .whereIn('rfq_sellers.status', SELLER_PENDING_RFQ_INVITE_STATUSES)
-    .whereIn('rfqs.status', RFQ_SELLER_VISIBLE_STATUSES)
-    .whereNull('rfqs.deleted_at')
-    .countDistinct('rfqs.id as total')
-    .first();
-  return parseInt(row?.total || 0, 10);
-};
-
-/**
- * Role + status breakdowns for inquiries and RFQs (plus pending shortcuts).
+ * Role + status breakdowns for inquiries and RFQs.
  * @param {number} userId
  */
 const countInquiriesAndRfqs = async (userId) => {
-  const [asBuyerInquiries, asSellerInquiries, asBuyerRfqs, asSellerRfqs, pendingSellerRfqs] =
-    await Promise.all([
-      countInquiriesByRole(userId, 'buyer_id'),
-      countInquiriesByRole(userId, 'seller_id'),
-      countBuyerRfqsByStatus(userId),
-      countSellerRfqsByStatus(userId),
-      countSellerPendingRfqInvites(userId),
-    ]);
-
-  const pending_inquiries = {
-    as_buyer: asBuyerInquiries.pending,
-    as_seller: asSellerInquiries.pending,
-    total: asBuyerInquiries.pending + asSellerInquiries.pending,
-  };
-
-  const pendingBuyerRfqs = sumKeys(asBuyerRfqs.by_status, BUYER_PENDING_RFQ_STATUSES);
-  const pending_rfqs = {
-    as_buyer: pendingBuyerRfqs,
-    as_seller: pendingSellerRfqs,
-    total: pendingBuyerRfqs + pendingSellerRfqs,
-  };
+  const [asBuyerInquiries, asSellerInquiries, asBuyerRfqs, asSellerRfqs] = await Promise.all([
+    countInquiriesByRole(userId, 'buyer_id'),
+    countInquiriesByRole(userId, 'seller_id'),
+    countBuyerRfqsByStatus(userId),
+    countSellerRfqsByStatus(userId),
+  ]);
 
   return {
     inquiries: {
@@ -219,8 +163,6 @@ const countInquiriesAndRfqs = async (userId) => {
       as_seller: asSellerRfqs,
       total: asBuyerRfqs.total + asSellerRfqs.total,
     },
-    pending_inquiries,
-    pending_rfqs,
   };
 };
 
@@ -231,9 +173,8 @@ const countInquiriesAndRfqs = async (userId) => {
  * - wishlist: number
  * - notifications_unread: { total, buyer, seller }
  * - chat_unread: { total, as_buyer, as_seller }
- * - inquiries: { total, as_buyer, as_seller } — each side has status fields + by_status
- * - rfqs: { total, as_buyer, as_seller } — buyer by RFQ status; seller also by_invite_status
- * - pending_inquiries / pending_rfqs: badge shortcuts { total, as_buyer, as_seller }
+ * - inquiries: { total, as_buyer, as_seller } — each side has flat status fields
+ * - rfqs: { total, as_buyer, as_seller } — flat RFQ status fields; seller also by_invite_status
  *
  * @param {number} userId
  * @returns {Promise<Object>}
