@@ -303,17 +303,22 @@ const syncDismissAcrossDevices = (userId, { notificationIds = [], all = false } 
 };
 
 /**
- * Push current unread inbox count to the user's personal socket room.
+ * Push current unread inbox counts (total + buyer/seller) to the user's socket room.
+ * Payload matches profile `counts.notifications_unread` for dual-role users.
  * @param {number|number[]} userIds
  */
 const pushUnreadCount = (userIds) => {
   const ids = Array.isArray(userIds) ? userIds : [userIds];
   ids.filter(Boolean).forEach((uid) => {
     notificationModel
-      .countUnread(uid)
-      .then((unreadCount) => {
+      .countUnreadByRole(uid)
+      .then((counts) => {
         chatSocketEmitter.emitToUser(uid, NOTIFICATION_SOCKET_EVENT.UNREAD_COUNT, {
-          unread_count: unreadCount,
+          total: counts.total,
+          buyer: counts.buyer,
+          seller: counts.seller,
+          // Legacy alias — same as total (older clients)
+          unread_count: counts.total,
         });
       })
       .catch((err) => {
@@ -526,14 +531,24 @@ const listNotifications = async (userId, filters = {}) =>
   notificationModel.listForUser(userId, filters);
 
 /**
- * Unread inbox count for the authenticated user.
- * Optional `role=buyer|seller` scopes to one marketplace side.
+ * Unread inbox counts for the authenticated user.
+ * Always returns dual-role breakdown `{ total, buyer, seller }` (profile shape).
+ * Optional `role=buyer|seller` also sets scoped `unread_count` + `role`.
  */
 const getUnreadCount = async (userId, filters = {}) => {
-  const unreadCount = await notificationModel.countUnread(userId, filters);
+  const counts = await notificationModel.countUnreadByRole(userId);
+  const role = filters.role || null;
+
+  let unread_count = counts.total;
+  if (role === 'buyer') unread_count = counts.buyer;
+  if (role === 'seller') unread_count = counts.seller;
+
   return {
-    unread_count: unreadCount,
-    role: filters.role || null,
+    total: counts.total,
+    buyer: counts.buyer,
+    seller: counts.seller,
+    unread_count,
+    role,
   };
 };
 

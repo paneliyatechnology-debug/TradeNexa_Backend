@@ -1,10 +1,11 @@
 /**
  * Socket.IO server — JWT auth, chat rooms, typing, presence, send_message, read receipts.
  *
- * Canonical client events: send_message, typing_start, typing_stop, mark_messages_read,
- * get_unread_summary
- * Server pushes unread_summary (total + per-conversation unread, last_message_at DESC)
- * on connect and after message / read changes.
+ * On connect (and after relevant changes) pushes dual-role badge snapshots:
+ * - unread_summary → { total, as_buyer, as_seller, conversations[] }
+ * - notification:unread_count → { total, buyer, seller, unread_count }
+ *
+ * Client can also request: get_unread_summary, notification:get_unread_count
  * Legacy aliases still supported for older clients.
  */
 const { Server } = require('socket.io');
@@ -145,9 +146,10 @@ const initSocket = (httpServer) => {
       });
     }
 
-    // Push unread inbox snapshot on connect (total + per-conversation, last_message_at DESC)
+    // Push dual-role badge snapshots on connect (buyer + seller together):
+    // - unread_summary → { total, as_buyer, as_seller, conversations[] }
+    // - notification:unread_count → { total, buyer, seller, unread_count }
     chatService.pushUnreadSummary(userId);
-    // Push RFQ/inquiry in-app notification unread count on connect
     notificationService.pushUnreadCount(userId);
 
     // ==========================================
