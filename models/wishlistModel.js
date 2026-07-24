@@ -1,3 +1,6 @@
+/**
+ * Wishlist data access — buyer product saves.
+ */
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl } = require('../utils/media');
@@ -167,6 +170,22 @@ const addToWishlist = async (userId, productId) => {
 const removeFromWishlist = async (userId, productId) =>
   db('wishlist').where({ user_id: userId, product_id: productId }).del();
 
+/**
+ * Total wishlist items for a user.
+ * Joins products and excludes soft-deleted listings so badge counts stay accurate.
+ * @param {number} userId
+ * @returns {Promise<number>}
+ */
+const countForUser = async (userId) => {
+  const row = await db('wishlist')
+    .innerJoin('products', 'wishlist.product_id', '=', 'products.id')
+    .where('wishlist.user_id', userId)
+    .whereNull('products.deleted_at')
+    .count({ total: '*' })
+    .first();
+  return parseInt(row?.total || 0, 10);
+};
+
 module.exports = {
   findWishlistedProductIds,
   isProductWishlisted,
@@ -174,4 +193,5 @@ module.exports = {
   findUserWishlist,
   addToWishlist,
   removeFromWishlist,
+  countForUser,
 };

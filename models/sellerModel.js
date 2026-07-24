@@ -1,3 +1,10 @@
+/**
+ * Seller directory data access (public list / detail / nearby).
+ *
+ * List responses include:
+ * - industry (company_details)
+ * - product_count (approved, non-deleted products — buyer-visible)
+ */
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl } = require('../utils/media');
@@ -14,7 +21,7 @@ const SELLER_SORT_FIELDS = {
   product_count: 'product_count',
 };
 
-/** Buyer-visible product count: approved + not deleted. */
+/** Correlated subquery: approved products only (matches public product listing). */
 const PRODUCT_COUNT_SQL = `(
   SELECT COUNT(*)
   FROM products
@@ -42,7 +49,7 @@ const getSellerQuery = () =>
 
 /**
  * Format a seller row for API responses.
- * Resolves logo URL and normalizes boolean/numeric fields.
+ * Resolves logo URL and normalizes boolean/numeric fields (industry, product_count, distance).
  * @param {Object} row - Raw seller query row
  * @returns {Object}
  */
@@ -67,7 +74,7 @@ const formatSellerRow = (row) => ({
 // ==========================================
 
 /**
- * Find a single seller by user ID.
+ * Find a single seller by user ID (includes industry, product_count, profile_views_count).
  * @param {number} id - Seller (user) ID
  * @returns {Promise<Object|null>}
  */
@@ -98,6 +105,7 @@ const findSellerById = async (id) => {
 
 /**
  * Paginated list of sellers with optional search and status filters.
+ * Each row includes industry and product_count.
  * @param {Object} [filters] - Query filters (search, is_verified, is_active, page, limit)
  * @returns {Promise<Object>}
  */
@@ -139,6 +147,7 @@ const findSellers = async (filters = {}) => {
 
 /**
  * Paginated list of sellers within a geographic radius (Haversine formula).
+ * Each row includes industry, product_count, and distance (km).
  * @param {number|string} latitude - Reference latitude
  * @param {number|string} longitude - Reference longitude
  * @param {number} [maxDistance=50] - Maximum distance in km

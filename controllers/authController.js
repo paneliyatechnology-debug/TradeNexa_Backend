@@ -110,7 +110,8 @@ const logout = async (req, res, next) => {
 
 /**
  * GET /auth/profile
- * Retrieve the authenticated user's profile.
+ * Authenticated user profile plus badge `counts`
+ * (wishlist, notifications_unread, chat_unread, pending_inquiries, pending_rfqs).
  */
 const getProfile = async (req, res, next) => {
   try {

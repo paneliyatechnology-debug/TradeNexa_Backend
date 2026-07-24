@@ -87,7 +87,7 @@ const getVerifiedSellers = async (req, res, next) => {
     };
     const data = await sellerModel.findSellers(filters);
 
-    // Format output as per spec: id, company_name, logo, verified, rating, response_rate, years_in_business, city, state
+    // Format for buyer home: keep card fields lean (includes industry + product_count)
     const formatted = data.results.map((s) => ({
       id: s.id,
       company_name: s.company_name,
@@ -125,7 +125,7 @@ const getNearbySellers = async (req, res, next) => {
 
     const data = await sellerModel.findNearbySellers(latitude, longitude, maxDist, filters);
 
-    // Format output as per spec: id, company_name, distance, city, state, rating
+    // Format for buyer home nearby cards (includes industry + product_count)
     const formatted = data.results.map((s) => ({
       id: s.id,
       company_name: s.company_name,
