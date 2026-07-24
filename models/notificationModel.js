@@ -33,6 +33,8 @@ const formatRow = (row) => {
     id: row.id,
     user_id: row.user_id,
     type: row.type,
+    role_id: row.role_id != null ? Number(row.role_id) : null,
+    role: row.role_code || null,
     title: row.title,
     body: row.body,
     reference_id: row.reference_id ?? null,
@@ -46,6 +48,11 @@ const formatRow = (row) => {
   };
 };
 
+const baseNotificationQuery = () =>
+  db('notifications')
+    .leftJoin('roles', 'roles.id', 'notifications.role_id')
+    .select('notifications.*', 'roles.code as role_code');
+
 // ==========================================
 // Writes
 // ==========================================
@@ -58,6 +65,7 @@ const formatRow = (row) => {
 const create = async ({
   userId,
   type,
+  roleId = null,
   title,
   body,
   referenceId = null,
@@ -68,6 +76,7 @@ const create = async ({
   const [id] = await db('notifications').insert({
     user_id: userId,
     type,
+    role_id: roleId != null ? Number(roleId) || null : null,
     title,
     body,
     reference_id: referenceId,
@@ -87,7 +96,7 @@ const create = async ({
  * @returns {Promise<Object|null>}
  */
 const findByIdForUser = async (id, userId) => {
-  const row = await db('notifications').where({ id, user_id: userId }).first();
+  const row = await baseNotificationQuery().where({ 'notifications.id': id, 'notifications.user_id': userId }).first();
   return formatRow(row);
 };
 
@@ -102,19 +111,23 @@ const findByIdForUser = async (id, userId) => {
  * @returns {Promise<{ results: Array, pagination: Object }>}
  */
 const listForUser = async (userId, filters = {}) => {
-  const q = db('notifications').where({ user_id: userId }).select('*');
+  const q = baseNotificationQuery().where({ 'notifications.user_id': userId });
 
   if (filters.is_read === true || filters.is_read === false) {
-    q.andWhere('is_read', filters.is_read);
+    q.andWhere('notifications.is_read', filters.is_read);
   } else if (filters.is_read === 'true' || filters.is_read === 'false') {
-    q.andWhere('is_read', filters.is_read === 'true');
+    q.andWhere('notifications.is_read', filters.is_read === 'true');
   }
 
   if (filters.type) {
-    q.andWhere('type', filters.type);
+    q.andWhere('notifications.type', filters.type);
   }
 
-  q.orderBy('created_at', 'desc').orderBy('id', 'desc');
+  if (filters.role_id) {
+    q.andWhere('notifications.role_id', Number(filters.role_id));
+  }
+
+  q.orderBy('notifications.created_at', 'desc').orderBy('notifications.id', 'desc');
 
   const { results, pagination } = await paginate(q, filters.page, filters.limit);
   return {
@@ -125,13 +138,16 @@ const listForUser = async (userId, filters = {}) => {
 
 /**
  * @param {number} userId
+ * @param {Object} [filters]
+ * @param {number|string} [filters.role_id]
  * @returns {Promise<number>}
  */
-const countUnread = async (userId) => {
-  const row = await db('notifications')
-    .where({ user_id: userId, is_read: false })
-    .count({ total: '*' })
-    .first();
+const countUnread = async (userId, filters = {}) => {
+  const q = db('notifications').where({ user_id: userId, is_read: false });
+  if (filters.role_id) {
+    q.andWhere('role_id', Number(filters.role_id));
+  }
+  const row = await q.count({ total: '*' }).first();
   return parseInt(row?.total || 0, 10);
 };
 
@@ -150,7 +166,7 @@ const markRead = async (id, userId) => {
   if (!existing) return null;
 
   if (existing.is_read) {
-    return formatRow(existing);
+    return findByIdForUser(id, userId);
   }
 
   const now = db.fn.now();
@@ -187,11 +203,17 @@ const markManyRead = async (userId, ids = []) => {
 /**
  * Mark all unread notifications as read for a user.
  * @param {number} userId
+ * @param {Object} [filters]
+ * @param {number|string} [filters.role_id]
  * @returns {Promise<number>}
  */
-const markAllRead = async (userId) => {
+const markAllRead = async (userId, filters = {}) => {
   const now = db.fn.now();
-  return db('notifications').where({ user_id: userId, is_read: false }).update({
+  const q = db('notifications').where({ user_id: userId, is_read: false });
+  if (filters.role_id) {
+    q.andWhere('role_id', Number(filters.role_id));
+  }
+  return q.update({
     is_read: true,
     read_at: now,
     updated_at: now,

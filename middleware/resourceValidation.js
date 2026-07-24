@@ -1130,11 +1130,33 @@ const notificationListQuery = [
     .trim()
     .isIn(IN_APP_NOTIFICATION_TYPES)
     .withMessage(`type must be one of: ${IN_APP_NOTIFICATION_TYPES.join(', ')}`),
+  query('role_id')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('role_id must be a positive integer (buyer or seller role id from GET /roles)'),
+];
+
+const notificationUnreadCountQuery = [
+  query('role_id')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('role_id must be a positive integer (buyer or seller role id from GET /roles)'),
 ];
 
 const notificationMarkManyReadRules = [
   body('ids').isArray({ min: 1, max: 100 }).withMessage('ids must be an array of 1 to 100 IDs'),
   body('ids.*').isInt({ min: 1 }).withMessage('Each id must be a positive integer'),
+];
+
+const notificationMarkAllReadRules = [
+  query('role_id')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('role_id must be a positive integer (buyer or seller role id from GET /roles)'),
+  body('role_id')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('role_id must be a positive integer (buyer or seller role id from GET /roles)'),
 ];
 
 // ==========================================
@@ -1241,7 +1263,9 @@ module.exports = {
   wishlistListQuery,
   wishlistProductIdParam,
   notificationListQuery,
+  notificationUnreadCountQuery,
   notificationMarkManyReadRules,
+  notificationMarkAllReadRules,
   locationCountriesQuery,
   locationStatesQuery,
   locationCitiesQuery,

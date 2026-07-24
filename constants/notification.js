@@ -6,6 +6,8 @@
  * switch on `type` in the FCM data payload and in-app inbox rows.
  */
 
+const { ROLE_CODES } = require('./index');
+
 // ==========================================
 // Notification types
 // ==========================================
@@ -40,6 +42,55 @@ const NOTIFICATION_TYPE = {
 };
 
 const NOTIFICATION_TYPE_VALUES = Object.values(NOTIFICATION_TYPE);
+
+/**
+ * Audience role *codes* for dual-role inbox (maps to roles.id at send time).
+ * Prefer filtering APIs by role_id (buyer / seller row ids from GET /roles).
+ */
+const NOTIFICATION_ROLE = {
+  BUYER: ROLE_CODES.BUYER,
+  SELLER: ROLE_CODES.SELLER,
+};
+
+const NOTIFICATION_ROLE_VALUES = Object.values(NOTIFICATION_ROLE);
+
+/**
+ * Default inbox audience role code by type.
+ * Override via `role` / `roleId` on send() when a type can go to either side
+ * (e.g. RFQ_STATUS_UPDATED).
+ */
+const NOTIFICATION_TYPE_DEFAULT_ROLE = {
+  [NOTIFICATION_TYPE.INQUIRY_RECEIVED]: NOTIFICATION_ROLE.SELLER,
+  [NOTIFICATION_TYPE.INQUIRY_REPLY]: NOTIFICATION_ROLE.BUYER,
+  [NOTIFICATION_TYPE.INQUIRY_REJECTED]: NOTIFICATION_ROLE.BUYER,
+  [NOTIFICATION_TYPE.QUOTATION_RECEIVED]: NOTIFICATION_ROLE.BUYER,
+  [NOTIFICATION_TYPE.QUOTATION_UPDATED]: NOTIFICATION_ROLE.BUYER,
+  [NOTIFICATION_TYPE.QUOTATION_ACCEPTED]: NOTIFICATION_ROLE.SELLER,
+  [NOTIFICATION_TYPE.QUOTATION_REJECTED]: NOTIFICATION_ROLE.SELLER,
+  [NOTIFICATION_TYPE.RFQ_RECEIVED]: NOTIFICATION_ROLE.SELLER,
+  [NOTIFICATION_TYPE.RFQ_NEW_QUOTATION]: NOTIFICATION_ROLE.BUYER,
+  [NOTIFICATION_TYPE.RFQ_QUOTATION_UPDATED]: NOTIFICATION_ROLE.BUYER,
+  [NOTIFICATION_TYPE.RFQ_QUOTATION_ACCEPTED]: NOTIFICATION_ROLE.SELLER,
+  [NOTIFICATION_TYPE.RFQ_QUOTATION_REJECTED]: NOTIFICATION_ROLE.SELLER,
+  // Ambiguous — callers should pass role / roleId explicitly
+  [NOTIFICATION_TYPE.RFQ_STATUS_UPDATED]: NOTIFICATION_ROLE.SELLER,
+};
+
+/**
+ * Resolve audience role *code* for an inbox notification.
+ * @param {string} type
+ * @param {string|null|undefined} explicitRoleCode
+ * @returns {'buyer'|'seller'|null}
+ */
+const resolveNotificationRoleCode = (type, explicitRoleCode = null) => {
+  if (explicitRoleCode && NOTIFICATION_ROLE_VALUES.includes(explicitRoleCode)) {
+    return explicitRoleCode;
+  }
+  return NOTIFICATION_TYPE_DEFAULT_ROLE[type] || null;
+};
+
+/** @deprecated Use resolveNotificationRoleCode */
+const resolveNotificationRole = resolveNotificationRoleCode;
 
 /**
  * Types persisted in the in-app notification list.
@@ -100,6 +151,11 @@ const FCM_DATA_ACTION = {
 module.exports = {
   NOTIFICATION_TYPE,
   NOTIFICATION_TYPE_VALUES,
+  NOTIFICATION_ROLE,
+  NOTIFICATION_ROLE_VALUES,
+  NOTIFICATION_TYPE_DEFAULT_ROLE,
+  resolveNotificationRoleCode,
+  resolveNotificationRole,
   IN_APP_NOTIFICATION_TYPES,
   IN_APP_NOTIFICATION_TYPE_SET,
   NOTIFICATION_CLICK_ACTION,

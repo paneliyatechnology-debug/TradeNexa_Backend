@@ -28,6 +28,7 @@ const notificationService = require('./notificationService');
 const {
   NOTIFICATION_TYPE,
   NOTIFICATION_CLICK_ACTION,
+  NOTIFICATION_ROLE,
 } = require('../constants/notification');
 const notificationCopy = require('../utils/notificationCopy');
 const userModel = require('../models/userModel');
@@ -488,6 +489,7 @@ const cancelRfq = async (id, buyerId, isAdmin = false) => {
   const copy = notificationCopy.rfqCancelled(rfq);
   notifyUsers(sellerIds, {
     type: NOTIFICATION_TYPE.RFQ_STATUS_UPDATED,
+    role: NOTIFICATION_ROLE.SELLER,
     title: copy.title,
     body: copy.body,
     referenceId: id,
@@ -512,6 +514,7 @@ const closeRfq = async (id, buyerId, isAdmin = false) => {
   const copy = notificationCopy.rfqClosed(rfq);
   notifyUsers(sellerIds, {
     type: NOTIFICATION_TYPE.RFQ_STATUS_UPDATED,
+    role: NOTIFICATION_ROLE.SELLER,
     title: copy.title,
     body: copy.body,
     referenceId: id,
@@ -622,6 +625,7 @@ const adminUpdateStatus = async (id, status, adminId) => {
   const copy = notificationCopy.rfqStatusUpdated(rfq, status);
   notifyUser(rfq.buyer_id, {
     type: NOTIFICATION_TYPE.RFQ_STATUS_UPDATED,
+    role: NOTIFICATION_ROLE.BUYER,
     title: copy.title,
     body: copy.body,
     referenceId: id,
@@ -1005,6 +1009,7 @@ const requestRevision = async (quotationId, buyerId, remarks) => {
   });
   notifyUser(quotation.seller_id, {
     type: NOTIFICATION_TYPE.RFQ_STATUS_UPDATED,
+    role: NOTIFICATION_ROLE.SELLER,
     title: revisionCopy.title,
     body: revisionCopy.body,
     referenceId: quotationId,
