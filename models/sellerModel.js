@@ -2,6 +2,7 @@ const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
 const { resolveMediaUrl } = require('../utils/media');
 const { applyListSort } = require('../utils/listQuery');
+const { PRODUCT_APPROVAL_STATUS } = require('../constants/product');
 
 const SELLER_SORT_FIELDS = {
   id: 'users.id',
@@ -10,7 +11,17 @@ const SELLER_SORT_FIELDS = {
   response_rate: 'company_details.response_rate',
   years_in_business: 'company_details.years_in_business',
   created_at: 'users.created_at',
+  product_count: 'product_count',
 };
+
+/** Buyer-visible product count: approved + not deleted. */
+const PRODUCT_COUNT_SQL = `(
+  SELECT COUNT(*)
+  FROM products
+  WHERE products.seller_id = users.id
+    AND products.deleted_at IS NULL
+    AND products.approval_status = '${PRODUCT_APPROVAL_STATUS.APPROVED}'
+)`;
 
 // ==========================================
 // Query helpers
@@ -39,12 +50,15 @@ const formatSellerRow = (row) => ({
   ...row,
   user_id: row.id ?? null,
   logo: resolveMediaUrl(row.logo),
+  industry: row.industry || null,
   verified: !!row.verified,
   is_active: row.is_active !== undefined ? !!row.is_active : undefined,
   rating: parseFloat(row.rating || 0),
   response_rate: parseFloat(row.response_rate || 0),
   profile_views_count:
     row.profile_views_count !== undefined ? parseInt(row.profile_views_count || 0, 10) : undefined,
+  product_count:
+    row.product_count !== undefined ? parseInt(row.product_count || 0, 10) : undefined,
   distance: row.distance !== undefined ? parseFloat(row.distance || 0) : undefined,
 });
 
@@ -63,12 +77,14 @@ const findSellerById = async (id) => {
     .select(
       'users.id',
       'company_details.company_name',
+      'company_details.industry',
       db.raw('COALESCE(company_details.company_logo, users.profile_image) as logo'),
       'users.is_verified as verified',
       'company_details.rating',
       'company_details.response_rate',
       'company_details.years_in_business',
       'company_details.profile_views_count',
+      db.raw(`${PRODUCT_COUNT_SQL} as product_count`),
       'addresses.latitude',
       'addresses.longitude',
       'cities.name as city',
@@ -90,6 +106,7 @@ const findSellers = async (filters = {}) => {
     .select(
       'users.id',
       'company_details.company_name',
+      'company_details.industry',
       db.raw('COALESCE(company_details.company_logo, users.profile_image) as logo'),
       'users.is_verified as verified',
       'company_details.rating',
@@ -97,6 +114,7 @@ const findSellers = async (filters = {}) => {
       'company_details.years_in_business',
       'cities.name as city',
       'states.name as state',
+      db.raw(`${PRODUCT_COUNT_SQL} as product_count`),
     );
 
   if (filters.search) {
@@ -138,6 +156,7 @@ const findNearbySellers = async (latitude, longitude, maxDistance = 50, filters 
     .select(
       'users.id',
       'company_details.company_name',
+      'company_details.industry',
       db.raw('COALESCE(company_details.company_logo, users.profile_image) as logo'),
       'users.is_verified as verified',
       'company_details.rating',
@@ -145,6 +164,7 @@ const findNearbySellers = async (latitude, longitude, maxDistance = 50, filters 
       'company_details.years_in_business',
       'cities.name as city',
       'states.name as state',
+      db.raw(`${PRODUCT_COUNT_SQL} as product_count`),
       db.raw(`round(${distanceSql}, 2) as distance`),
     )
     .orderBy('distance', 'asc')

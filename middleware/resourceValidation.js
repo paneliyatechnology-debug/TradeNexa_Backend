@@ -316,6 +316,7 @@ const SELLER_SORT_BY_VALUES = [
   'response_rate',
   'years_in_business',
   'created_at',
+  'product_count',
 ];
 
 const sellerListQuery = [

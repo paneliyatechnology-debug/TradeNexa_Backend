@@ -91,11 +91,13 @@ const getVerifiedSellers = async (req, res, next) => {
     const formatted = data.results.map((s) => ({
       id: s.id,
       company_name: s.company_name,
+      industry: s.industry || null,
       logo: s.logo,
       verified: s.verified,
       rating: s.rating,
       response_rate: s.response_rate,
       years_in_business: s.years_in_business,
+      product_count: s.product_count ?? 0,
       city: s.city,
       state: s.state,
     }));
@@ -127,10 +129,12 @@ const getNearbySellers = async (req, res, next) => {
     const formatted = data.results.map((s) => ({
       id: s.id,
       company_name: s.company_name,
+      industry: s.industry || null,
       distance: s.distance,
       city: s.city,
       state: s.state,
       rating: s.rating,
+      product_count: s.product_count ?? 0,
     }));
 
     return success(res, 'Nearby sellers retrieved successfully', formatted);
