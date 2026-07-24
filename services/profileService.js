@@ -2,8 +2,8 @@
  * Profile read/update + badge counts for GET /auth/profile.
  *
  * `counts` on the profile payload supports dual-role (buyer_seller) apps:
- * notification / chat unread and pending inquiry / RFQ totals are split
- * by marketplace side (as_buyer vs as_seller, or buyer vs seller).
+ * notification / chat unread and inquiry / RFQ totals are split by marketplace
+ * side (as_buyer vs as_seller) with full status breakdowns.
  */
 const userModel = require('../models/userModel');
 const wishlistModel = require('../models/wishlistModel');
@@ -12,7 +12,7 @@ const chatConversationModel = require('../models/chatConversationModel');
 const db = require('../database/knex');
 const { AppError } = require('../utils/response');
 const { ROLE_CODES } = require('../constants');
-const { INQUIRY_STATUS } = require('../constants/inquiry');
+const { INQUIRY_STATUS, INQUIRY_STATUS_VALUES } = require('../constants/inquiry');
 const {
   RFQ_STATUS,
   RFQ_SELLER_VISIBLE_STATUSES,
@@ -23,7 +23,7 @@ const { uploadPaths } = require('../constants/uploadPaths');
 const { processUploadedFiles } = require('../services/uploadService');
 
 // ==========================================
-// Profile badge counts
+// Profile badge counts — helpers
 // ==========================================
 
 /** Buyer-owned RFQs still in progress (awaiting quotes / negotiation). */
@@ -40,59 +40,188 @@ const SELLER_PENDING_RFQ_INVITE_STATUSES = [
   RFQ_SELLER_STATUS.VIEWED,
 ];
 
-/**
- * Pending product inquiries for this user as buyer and as seller.
- * Status = `pending` only (not quoted / accepted / closed).
- * @param {number} userId
- * @returns {Promise<{ as_buyer: number, as_seller: number, total: number }>}
- */
-const countPendingInquiries = async (userId) => {
-  const [asBuyer, asSeller] = await Promise.all([
-    db('inquiries')
-      .where({ buyer_id: userId, status: INQUIRY_STATUS.PENDING })
-      .whereNull('deleted_at')
-      .count({ total: '*' })
-      .first(),
-    db('inquiries')
-      .where({ seller_id: userId, status: INQUIRY_STATUS.PENDING })
-      .whereNull('deleted_at')
-      .count({ total: '*' })
-      .first(),
-  ]);
+const toStatusMap = (rows) =>
+  rows.reduce((acc, row) => {
+    acc[row.status] = parseInt(row.count, 10) || 0;
+    return acc;
+  }, {});
 
-  const as_buyer = parseInt(asBuyer?.total || 0, 10);
-  const as_seller = parseInt(asSeller?.total || 0, 10);
-  return { as_buyer, as_seller, total: as_buyer + as_seller };
+const sumMap = (map) => Object.values(map).reduce((a, b) => a + b, 0);
+
+const sumKeys = (map, keys) => keys.reduce((total, key) => total + (map[key] || 0), 0);
+
+/** Zero-fill known status keys so clients always get a stable shape. */
+const withZeroFilled = (byStatus, statusValues) => {
+  const filled = {};
+  for (const status of statusValues) {
+    filled[status] = byStatus[status] || 0;
+  }
+  return filled;
 };
 
 /**
- * Pending RFQs for this user:
- * - as_buyer: own RFQs in open / published / quotation / negotiation
- * - as_seller: private invites still INVITED or VIEWED on active RFQs
+ * Inquiry counts for one marketplace side (buyer_id or seller_id).
  * @param {number} userId
- * @returns {Promise<{ as_buyer: number, as_seller: number, total: number }>}
+ * @param {'buyer_id'|'seller_id'} roleColumn
  */
-const countPendingRfqs = async (userId) => {
-  const [asBuyer, asSeller] = await Promise.all([
-    db('rfqs')
-      .where({ buyer_id: userId })
-      .whereIn('status', BUYER_PENDING_RFQ_STATUSES)
-      .whereNull('deleted_at')
-      .count({ total: '*' })
-      .first(),
+const countInquiriesByRole = async (userId, roleColumn) => {
+  const rows = await db('inquiries')
+    .where(roleColumn, userId)
+    .whereNull('deleted_at')
+    .select('status')
+    .count('* as count')
+    .groupBy('status');
+
+  const by_status = withZeroFilled(toStatusMap(rows), INQUIRY_STATUS_VALUES);
+  return {
+    total: sumMap(by_status),
+    pending: by_status[INQUIRY_STATUS.PENDING],
+    quoted: by_status[INQUIRY_STATUS.QUOTED],
+    accepted: by_status[INQUIRY_STATUS.ACCEPTED],
+    rejected: by_status[INQUIRY_STATUS.REJECTED],
+    cancelled: by_status[INQUIRY_STATUS.CANCELLED],
+    closed: by_status[INQUIRY_STATUS.CLOSED],
+    by_status,
+  };
+};
+
+/**
+ * Buyer-owned RFQs grouped by RFQ lifecycle status.
+ * @param {number} userId
+ */
+const countBuyerRfqsByStatus = async (userId) => {
+  const rows = await db('rfqs')
+    .where({ buyer_id: userId })
+    .whereNull('deleted_at')
+    .select('status')
+    .count('* as count')
+    .groupBy('status');
+
+  const by_status = withZeroFilled(toStatusMap(rows), Object.values(RFQ_STATUS));
+  return {
+    total: sumMap(by_status),
+    draft: by_status[RFQ_STATUS.DRAFT],
+    open: by_status[RFQ_STATUS.OPEN],
+    published: by_status[RFQ_STATUS.PUBLISHED],
+    quotation_received: by_status[RFQ_STATUS.QUOTATION_RECEIVED],
+    negotiation: by_status[RFQ_STATUS.NEGOTIATION],
+    awarded: by_status[RFQ_STATUS.AWARDED],
+    completed: by_status[RFQ_STATUS.COMPLETED],
+    expired: by_status[RFQ_STATUS.EXPIRED],
+    cancelled: by_status[RFQ_STATUS.CANCELLED],
+    closed: by_status[RFQ_STATUS.CLOSED],
+    by_status,
+  };
+};
+
+/**
+ * Seller RFQ involvement: RFQ status + invite (rfq_sellers) status.
+ * @param {number} userId
+ */
+const countSellerRfqsByStatus = async (userId) => {
+  const [rfqRows, inviteRows] = await Promise.all([
     db('rfq_sellers')
       .innerJoin('rfqs', 'rfqs.id', 'rfq_sellers.rfq_id')
       .where({ 'rfq_sellers.seller_id': userId })
-      .whereIn('rfq_sellers.status', SELLER_PENDING_RFQ_INVITE_STATUSES)
-      .whereIn('rfqs.status', RFQ_SELLER_VISIBLE_STATUSES)
       .whereNull('rfqs.deleted_at')
-      .countDistinct('rfqs.id as total')
-      .first(),
+      .select('rfqs.status')
+      .countDistinct('rfqs.id as count')
+      .groupBy('rfqs.status'),
+    db('rfq_sellers')
+      .innerJoin('rfqs', 'rfqs.id', 'rfq_sellers.rfq_id')
+      .where({ 'rfq_sellers.seller_id': userId })
+      .whereNull('rfqs.deleted_at')
+      .select('rfq_sellers.status')
+      .countDistinct('rfqs.id as count')
+      .groupBy('rfq_sellers.status'),
   ]);
 
-  const as_buyer = parseInt(asBuyer?.total || 0, 10);
-  const as_seller = parseInt(asSeller?.total || 0, 10);
-  return { as_buyer, as_seller, total: as_buyer + as_seller };
+  const by_rfq_status = withZeroFilled(toStatusMap(rfqRows), Object.values(RFQ_STATUS));
+  const inviteMap = toStatusMap(inviteRows);
+  const by_invite_status = withZeroFilled(inviteMap, Object.values(RFQ_SELLER_STATUS));
+
+  return {
+    total: sumMap(by_rfq_status),
+    draft: by_rfq_status[RFQ_STATUS.DRAFT],
+    open: by_rfq_status[RFQ_STATUS.OPEN],
+    published: by_rfq_status[RFQ_STATUS.PUBLISHED],
+    quotation_received: by_rfq_status[RFQ_STATUS.QUOTATION_RECEIVED],
+    negotiation: by_rfq_status[RFQ_STATUS.NEGOTIATION],
+    awarded: by_rfq_status[RFQ_STATUS.AWARDED],
+    completed: by_rfq_status[RFQ_STATUS.COMPLETED],
+    expired: by_rfq_status[RFQ_STATUS.EXPIRED],
+    cancelled: by_rfq_status[RFQ_STATUS.CANCELLED],
+    closed: by_rfq_status[RFQ_STATUS.CLOSED],
+    by_rfq_status,
+    by_invite_status: {
+      total: sumMap(by_invite_status),
+      invited: by_invite_status[RFQ_SELLER_STATUS.INVITED],
+      viewed: by_invite_status[RFQ_SELLER_STATUS.VIEWED],
+      responded: by_invite_status[RFQ_SELLER_STATUS.RESPONDED],
+      awarded: by_invite_status[RFQ_SELLER_STATUS.AWARDED],
+      rejected: by_invite_status[RFQ_SELLER_STATUS.REJECTED],
+      by_status: by_invite_status,
+    },
+  };
+};
+
+/**
+ * Seller pending RFQ invites (INVITED/VIEWED on still-active RFQs).
+ * @param {number} userId
+ */
+const countSellerPendingRfqInvites = async (userId) => {
+  const row = await db('rfq_sellers')
+    .innerJoin('rfqs', 'rfqs.id', 'rfq_sellers.rfq_id')
+    .where({ 'rfq_sellers.seller_id': userId })
+    .whereIn('rfq_sellers.status', SELLER_PENDING_RFQ_INVITE_STATUSES)
+    .whereIn('rfqs.status', RFQ_SELLER_VISIBLE_STATUSES)
+    .whereNull('rfqs.deleted_at')
+    .countDistinct('rfqs.id as total')
+    .first();
+  return parseInt(row?.total || 0, 10);
+};
+
+/**
+ * Role + status breakdowns for inquiries and RFQs (plus pending shortcuts).
+ * @param {number} userId
+ */
+const countInquiriesAndRfqs = async (userId) => {
+  const [asBuyerInquiries, asSellerInquiries, asBuyerRfqs, asSellerRfqs, pendingSellerRfqs] =
+    await Promise.all([
+      countInquiriesByRole(userId, 'buyer_id'),
+      countInquiriesByRole(userId, 'seller_id'),
+      countBuyerRfqsByStatus(userId),
+      countSellerRfqsByStatus(userId),
+      countSellerPendingRfqInvites(userId),
+    ]);
+
+  const pending_inquiries = {
+    as_buyer: asBuyerInquiries.pending,
+    as_seller: asSellerInquiries.pending,
+    total: asBuyerInquiries.pending + asSellerInquiries.pending,
+  };
+
+  const pendingBuyerRfqs = sumKeys(asBuyerRfqs.by_status, BUYER_PENDING_RFQ_STATUSES);
+  const pending_rfqs = {
+    as_buyer: pendingBuyerRfqs,
+    as_seller: pendingSellerRfqs,
+    total: pendingBuyerRfqs + pendingSellerRfqs,
+  };
+
+  return {
+    inquiries: {
+      as_buyer: asBuyerInquiries,
+      as_seller: asSellerInquiries,
+      total: asBuyerInquiries.total + asSellerInquiries.total,
+    },
+    rfqs: {
+      as_buyer: asBuyerRfqs,
+      as_seller: asSellerRfqs,
+      total: asBuyerRfqs.total + asSellerRfqs.total,
+    },
+    pending_inquiries,
+    pending_rfqs,
+  };
 };
 
 /**
@@ -102,27 +231,26 @@ const countPendingRfqs = async (userId) => {
  * - wishlist: number
  * - notifications_unread: { total, buyer, seller }
  * - chat_unread: { total, as_buyer, as_seller }
- * - pending_inquiries / pending_rfqs: { total, as_buyer, as_seller }
+ * - inquiries: { total, as_buyer, as_seller } — each side has status fields + by_status
+ * - rfqs: { total, as_buyer, as_seller } — buyer by RFQ status; seller also by_invite_status
+ * - pending_inquiries / pending_rfqs: badge shortcuts { total, as_buyer, as_seller }
  *
  * @param {number} userId
  * @returns {Promise<Object>}
  */
 const getProfileCounts = async (userId) => {
-  const [wishlist, notifications_unread, chat_unread, pending_inquiries, pending_rfqs] =
-    await Promise.all([
-      wishlistModel.countForUser(userId),
-      notificationModel.countUnreadByRole(userId),
-      chatConversationModel.getTotalUnreadCount(userId),
-      countPendingInquiries(userId),
-      countPendingRfqs(userId),
-    ]);
+  const [wishlist, notifications_unread, chat_unread, inquiryRfqCounts] = await Promise.all([
+    wishlistModel.countForUser(userId),
+    notificationModel.countUnreadByRole(userId),
+    chatConversationModel.getTotalUnreadCount(userId),
+    countInquiriesAndRfqs(userId),
+  ]);
 
   return {
     wishlist,
     notifications_unread,
     chat_unread,
-    pending_inquiries,
-    pending_rfqs,
+    ...inquiryRfqCounts,
   };
 };
 
