@@ -6,7 +6,12 @@
 const express = require('express');
 const sellerController = require('../controllers/sellerController');
 const { optionalAuthenticate, validate } = require('../middleware/auth');
-const { idParam, sellerNearbyRules, sellerListQuery } = require('../middleware/resourceValidation');
+const {
+  idParam,
+  sellerNearbyRules,
+  sellerListQuery,
+  sellerProductsQuery,
+} = require('../middleware/resourceValidation');
 
 const router = express.Router();
 
@@ -17,6 +22,14 @@ const router = express.Router();
 router.get('/', optionalAuthenticate, sellerListQuery, validate, sellerController.getSellers);
 router.get('/verified', optionalAuthenticate, sellerController.getVerifiedSellers);
 router.get('/nearby', optionalAuthenticate, sellerNearbyRules, validate, sellerController.getNearbySellers);
+router.get(
+  '/:id/products',
+  optionalAuthenticate,
+  idParam,
+  sellerProductsQuery,
+  validate,
+  sellerController.getSellerProducts,
+);
 router.get('/:id', optionalAuthenticate, idParam, validate, sellerController.getSeller);
 
 module.exports = router;

@@ -1,5 +1,8 @@
 const sellerModel = require('../models/sellerModel');
+const productModel = require('../models/productModel');
 const userModel = require('../models/userModel');
+const wishlistService = require('../services/wishlistService');
+const inquiryModel = require('../models/inquiryModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
@@ -14,6 +17,71 @@ const resolveExcludeSellerId = async (req) => {
   const roleCode = roles?.[0]?.code;
   if (!SELLER_ROLES.has(roleCode)) return undefined;
   return req.user.id;
+};
+
+/** Merge is_wishlist filter when query param is present (requires authenticated user). */
+const withWishlistFilter = (req, filters) => {
+  if (req.query.is_wishlist === undefined) return filters;
+
+  if (!req.user?.id) {
+    throw new AppError(
+      'Authentication required to filter by is_wishlist',
+      HTTP_STATUS.UNAUTHORIZED,
+    );
+  }
+
+  return {
+    ...filters,
+    is_wishlist: req.query.is_wishlist === 'true',
+    user_id: req.user.id,
+  };
+};
+
+/**
+ * Attach token-user inquiry flags on product list cards:
+ * `is_inquiry_sent` + `conversation_id` (null when no inquiry).
+ */
+const attachInquiryStateToProductList = async (data, userId) => {
+  if (!data?.results?.length) {
+    return data?.results
+      ? {
+          ...data,
+          results: data.results.map((product) => ({
+            ...product,
+            is_inquiry_sent: false,
+            conversation_id: null,
+          })),
+        }
+      : data;
+  }
+
+  if (!userId) {
+    return {
+      ...data,
+      results: data.results.map((product) => ({
+        ...product,
+        is_inquiry_sent: false,
+        conversation_id: null,
+      })),
+    };
+  }
+
+  const stateMap = await inquiryModel.mapInquiryStateByProducts(
+    userId,
+    data.results.map((p) => p.id).filter(Boolean),
+  );
+
+  return {
+    ...data,
+    results: data.results.map((product) => {
+      const state = stateMap.get(Number(product.id));
+      return {
+        ...product,
+        is_inquiry_sent: !!state?.is_inquiry_sent,
+        conversation_id: state?.conversation_id ?? null,
+      };
+    }),
+  };
 };
 
 // ==========================================
@@ -143,9 +211,54 @@ const getNearbySellers = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /sellers/:id/products
+ * Public catalog of a seller's approved + active products.
+ * Supports the same filters, sort, and pagination as GET /products
+ * (seller is taken from the path — not from ?seller_id).
+ */
+const getSellerProducts = async (req, res, next) => {
+  try {
+    const sellerId = parseInt(req.params.id, 10);
+    const seller = await sellerModel.findSellerById(sellerId);
+    if (!seller) {
+      return next(new AppError('Seller not found', HTTP_STATUS.NOT_FOUND));
+    }
+
+    const filters = withWishlistFilter(req, {
+      seller_id: sellerId,
+      search: req.query.search,
+      category_id: req.query.category_id,
+      subcategory_id: req.query.subcategory_id,
+      city_id: req.query.city_id,
+      brand_id: req.query.brand_id,
+      min_price: req.query.min_price,
+      max_price: req.query.max_price,
+      page: req.query.page,
+      limit: req.query.limit,
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
+      public_only: true,
+      is_active:
+        req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
+      is_trending:
+        req.query.is_trending !== undefined ? req.query.is_trending === 'true' : undefined,
+    });
+
+    const data = await productModel.findProducts(filters);
+    const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
+    const withInquiry = await attachInquiryStateToProductList(withWishlist, req.user?.id);
+
+    return success(res, 'Seller products retrieved successfully', withInquiry);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getSeller,
   getSellers,
   getVerifiedSellers,
   getNearbySellers,
+  getSellerProducts,
 };

@@ -534,6 +534,25 @@ const productListFilterSortQuery = [
     .withMessage('sort_order must be asc or desc'),
 ];
 
+/** Catalog filters/sort without query seller_id (seller is path :id). */
+const productCatalogFilterSortQuery = [
+  query('brand_id').optional().isInt().withMessage('Brand ID must be an integer'),
+  query('min_price').optional().isFloat({ min: 0 }).withMessage('Min price must be positive'),
+  query('max_price').optional().isFloat({ min: 0 }).withMessage('Max price must be positive'),
+  query('is_wishlist')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_wishlist must be true or false'),
+  query('sort_by')
+    .optional()
+    .isIn(PRODUCT_SORT_BY_VALUES)
+    .withMessage(`sort_by must be one of: ${PRODUCT_SORT_BY_VALUES.join(', ')}`),
+  query('sort_order')
+    .optional()
+    .isIn(['asc', 'desc'])
+    .withMessage('sort_order must be asc or desc'),
+];
+
 const productListQuery = [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
   query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
@@ -546,6 +565,25 @@ const productListQuery = [
     .isIn(['true', 'false'])
     .withMessage('is_active must be true or false'),
   ...productListFilterSortQuery,
+];
+
+/** GET /sellers/:id/products — path seller_id + full catalog filters. */
+const sellerProductsQuery = [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('search').optional().trim(),
+  query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
+  query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
+  query('is_active')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_active must be true or false'),
+  query('is_trending')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('is_trending must be true or false'),
+  ...productCatalogFilterSortQuery,
 ];
 
 const productTrendingQuery = [
@@ -1225,6 +1263,7 @@ module.exports = {
   productUpdateRules,
   productDeleteMediaRules,
   productListQuery,
+  sellerProductsQuery,
   productTrendingQuery,
   productRelatedQuery,
   productApproveRules,
