@@ -21,7 +21,7 @@ const assignSellers = async (rfqId, sellerIds = [], trx = null) => {
         .filter((id) => Number.isInteger(id) && id > 0),
     ),
   ];
-  if (!ids.length) return;
+  if (!ids.length) return { added: [], removed: [], kept: [] };
 
   const client = trx || db;
   const rows = ids.map((sellerId) => ({
@@ -30,6 +30,47 @@ const assignSellers = async (rfqId, sellerIds = [], trx = null) => {
     status: RFQ_SELLER_STATUS.INVITED,
   }));
   await client('rfq_sellers').insert(rows).onConflict(['rfq_id', 'seller_id']).ignore();
+  return { added: ids, removed: [], kept: [] };
+};
+
+/**
+ * Replace PRIVATE RFQ seller invites with the given list.
+ * Removes sellers no longer selected; inserts newly selected ones.
+ * @returns {Promise<{ added: number[], removed: number[], kept: number[] }>}
+ */
+const syncSellers = async (rfqId, sellerIds = [], trx = null) => {
+  const ids = [
+    ...new Set(
+      (Array.isArray(sellerIds) ? sellerIds : [])
+        .map((id) => parseInt(id, 10))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
+
+  const client = trx || db;
+  const existingRows = await client('rfq_sellers').where({ rfq_id: rfqId }).select('seller_id');
+  const existingIds = existingRows.map((row) => Number(row.seller_id));
+  const nextSet = new Set(ids);
+  const existingSet = new Set(existingIds);
+
+  const removed = existingIds.filter((id) => !nextSet.has(id));
+  const added = ids.filter((id) => !existingSet.has(id));
+  const kept = ids.filter((id) => existingSet.has(id));
+
+  if (removed.length) {
+    await client('rfq_sellers').where({ rfq_id: rfqId }).whereIn('seller_id', removed).del();
+  }
+
+  if (added.length) {
+    const rows = added.map((sellerId) => ({
+      rfq_id: rfqId,
+      seller_id: sellerId,
+      status: RFQ_SELLER_STATUS.INVITED,
+    }));
+    await client('rfq_sellers').insert(rows).onConflict(['rfq_id', 'seller_id']).ignore();
+  }
+
+  return { added, removed, kept };
 };
 
 const markViewed = async (rfqId, sellerId, trx = null) => {
@@ -113,6 +154,7 @@ module.exports = {
   findByRfqAndSeller,
   countByRfqId,
   assignSellers,
+  syncSellers,
   markViewed,
   markResponded,
   isSellerAllowed,

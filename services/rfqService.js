@@ -423,16 +423,20 @@ const updateRfq = async (id, data, actorId, isAdmin = false) => {
       if (nextVisibility === RFQ_VISIBILITY.PRIVATE && !sellerIds.length) {
         throw new AppError('PRIVATE RFQs require at least one seller_id', 400);
       }
-      await rfqSellerModel.assignSellers(id, sellerIds);
-      notify('SELLER_ASSIGNED', { rfqId: id, sellerIds });
+      // Replace invite list (remove deselected sellers, add newly selected)
+      const { added } = await rfqSellerModel.syncSellers(id, sellerIds);
 
-      // Published PRIVATE RFQ: open chats with newly assigned sellers + notify them
+      if (added.length) {
+        notify('SELLER_ASSIGNED', { rfqId: id, sellerIds: added });
+      }
+
+      // Published PRIVATE RFQ: open chats + notify only newly assigned sellers
       if (
         nextVisibility === RFQ_VISIBILITY.PRIVATE &&
         rfq.status !== RFQ_STATUS.DRAFT &&
-        sellerIds?.length
+        added.length
       ) {
-        for (const sellerId of sellerIds) {
+        for (const sellerId of added) {
           await chatService.ensureRfqChatWithSeller({
             rfqId: id,
             sellerId,
@@ -440,7 +444,7 @@ const updateRfq = async (id, data, actorId, isAdmin = false) => {
           });
         }
         const fresh = await rfqModel.findRfqById(id, { raw: true });
-        await notifySellersOfNewRfq(fresh || rfq, getBuyerId(rfq), sellerIds);
+        await notifySellersOfNewRfq(fresh || rfq, getBuyerId(rfq), added);
       }
     } else if (nextVisibility === RFQ_VISIBILITY.PRIVATE) {
       const invitedCount = await rfqSellerModel.countByRfqId(id);
