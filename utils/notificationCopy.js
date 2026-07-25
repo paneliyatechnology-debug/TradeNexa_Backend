@@ -274,6 +274,40 @@ const rfqRevisionRequested = ({ rfq, remarks }) => {
   };
 };
 
+// ==========================================
+// Product moderation (admin → seller)
+// ==========================================
+
+const productApproved = ({ productName } = {}) => {
+  const product = productLabel(productName);
+  return {
+    title: `Product approved — ${truncate(productName || 'Product', 45)}`,
+    body: `"${product}" has been approved and is now visible to buyers.`,
+  };
+};
+
+const productRevisionRequired = ({ productName, remarks } = {}) => {
+  const product = productLabel(productName);
+  const remarkText = remarks ? truncate(remarks, 100) : null;
+  return {
+    title: `Revision required — ${truncate(productName || 'Product', 45)}`,
+    body: remarkText
+      ? `"${product}" needs changes: ${remarkText}`
+      : `"${product}" needs changes before it can be approved.`,
+  };
+};
+
+const productRejected = ({ productName, remarks } = {}) => {
+  const product = productLabel(productName);
+  const remarkText = remarks ? truncate(remarks, 100) : null;
+  return {
+    title: `Product rejected — ${truncate(productName || 'Product', 45)}`,
+    body: remarkText
+      ? `"${product}" was rejected: ${remarkText}`
+      : `"${product}" was rejected by admin.`,
+  };
+};
+
 module.exports = {
   truncate,
   partyLabel,
@@ -296,4 +330,7 @@ module.exports = {
   rfqQuotationAccepted,
   rfqQuotationRejected,
   rfqRevisionRequested,
+  productApproved,
+  productRevisionRequired,
+  productRejected,
 };

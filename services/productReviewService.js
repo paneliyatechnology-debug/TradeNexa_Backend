@@ -18,17 +18,19 @@ const {
 } = require('../constants/product');
 const logger = require('../utils/logger');
 const notificationService = require('./notificationService');
+const notificationCopy = require('../utils/notificationCopy');
 const {
   NOTIFICATION_TYPE,
   NOTIFICATION_CLICK_ACTION,
+  NOTIFICATION_ROLE,
 } = require('../constants/notification');
 
 // ==========================================
-// Notification hooks (FCM to seller)
+// Notification hooks (admin → seller)
 // ==========================================
 
 /**
- * Push product-approval events to the product owner (seller).
+ * Persist + push product-approval events to the product owner (seller).
  * Never throws — failures are logged inside notificationService.
  */
 const notify = (event, payload = {}) => {
@@ -38,25 +40,21 @@ const notify = (event, payload = {}) => {
   if (!sellerId) return;
 
   const productId = payload.productId;
+  const productName = payload.productName || null;
   const remarks = payload.remarks ? String(payload.remarks).slice(0, 120) : null;
 
   const map = {
     PRODUCT_APPROVED: {
       type: NOTIFICATION_TYPE.PRODUCT_APPROVED,
-      title: 'Product Approved',
-      body: 'Your product has been approved and is now visible to buyers.',
+      ...notificationCopy.productApproved({ productName }),
     },
     PRODUCT_REVISION_REQUIRED: {
       type: NOTIFICATION_TYPE.PRODUCT_REVISION_REQUIRED,
-      title: 'Product Revision Required',
-      body: remarks
-        ? `Revision required: ${remarks}`
-        : 'Your product needs changes before it can be approved.',
+      ...notificationCopy.productRevisionRequired({ productName, remarks }),
     },
     PRODUCT_REJECTED: {
       type: NOTIFICATION_TYPE.PRODUCT_REJECTED,
-      title: 'Product Rejected',
-      body: remarks ? `Product rejected: ${remarks}` : 'Your product was rejected by admin.',
+      ...notificationCopy.productRejected({ productName, remarks }),
     },
   };
 
@@ -71,8 +69,10 @@ const notify = (event, payload = {}) => {
     referenceId: productId,
     senderId: payload.adminId || null,
     clickAction: NOTIFICATION_CLICK_ACTION.OPEN_PRODUCT,
+    role: NOTIFICATION_ROLE.SELLER,
     data: {
       product_id: productId,
+      product_name: productName || undefined,
       remarks: remarks || undefined,
     },
   });
@@ -372,7 +372,12 @@ const approveOne = async (productId, adminId, role, remarks = null) => {
     remarks,
   });
 
-  notify('PRODUCT_APPROVED', { productId, sellerId: product.seller_id, adminId });
+  notify('PRODUCT_APPROVED', {
+    productId,
+    productName: product.name,
+    sellerId: product.seller_id,
+    adminId,
+  });
   return updated;
 };
 
@@ -392,6 +397,7 @@ const requestRevisionOne = async (productId, adminId, role, remarks) => {
 
   notify('PRODUCT_REVISION_REQUIRED', {
     productId,
+    productName: product.name,
     sellerId: product.seller_id,
     adminId,
     remarks: updated.latest_review_remarks,
@@ -415,6 +421,7 @@ const rejectOne = async (productId, adminId, role, remarks) => {
 
   notify('PRODUCT_REJECTED', {
     productId,
+    productName: product.name,
     sellerId: product.seller_id,
     adminId,
     remarks: updated.latest_review_remarks,
