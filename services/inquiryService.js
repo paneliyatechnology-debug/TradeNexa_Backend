@@ -365,7 +365,9 @@ const rejectInquiry = async (inquiryId, sellerId, reason = null) => {
 };
 
 /**
- * Seller submits a quote. Reuses a WITHDRAWN row when re-quoting the same inquiry.
+ * Seller submits a quote.
+ * Reuses a WITHDRAWN or REJECTED row when re-quoting the same inquiry
+ * (e.g. after buyer rejects the previous quote).
  * Inquiry status → quoted; SYSTEM event on shared chat.
  */
 const submitQuotation = async (inquiryId, sellerId, data) => {
@@ -376,7 +378,8 @@ const submitQuotation = async (inquiryId, sellerId, data) => {
   }
 
   const existing = await inquiryQuotationModel.findByInquiryId(inquiryId, { raw: true });
-  if (existing && existing.status !== QUOTATION_STATUS.WITHDRAWN) {
+  const reusableStatuses = [QUOTATION_STATUS.WITHDRAWN, QUOTATION_STATUS.REJECTED];
+  if (existing && !reusableStatuses.includes(existing.status)) {
     throw new AppError('A quotation already exists for this inquiry', 409);
   }
 
@@ -390,8 +393,14 @@ const submitQuotation = async (inquiryId, sellerId, data) => {
     );
 
     let quotationRow;
-    if (existing && existing.status === QUOTATION_STATUS.WITHDRAWN) {
-      quotationRow = await inquiryQuotationModel.updateQuotation(existing.id, payload, trx);
+    if (existing && reusableStatuses.includes(existing.status)) {
+      // Keep original quotation_number when reusing the row after withdraw/reject
+      const { quotation_number: _newNumber, ...reusePayload } = payload;
+      quotationRow = await inquiryQuotationModel.updateQuotation(
+        existing.id,
+        { ...reusePayload, status: QUOTATION_STATUS.SUBMITTED },
+        trx,
+      );
     } else {
       quotationRow = await inquiryQuotationModel.createQuotation(payload, trx);
     }

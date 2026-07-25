@@ -1,7 +1,7 @@
 /**
- * Inquiry quotation data access — at most one active quote row per inquiry.
+ * Inquiry quotation data access — at most one quote row per inquiry.
  *
- * Withdrawn quotes may be overwritten in place when the seller re-submits.
+ * Withdrawn or buyer-rejected quotes may be overwritten in place when the seller re-submits.
  */
 const db = require('../database/knex');
 const { paginate } = require('../utils/pagination');
