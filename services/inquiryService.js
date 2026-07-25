@@ -513,7 +513,10 @@ const updateQuotation = async (quotationId, sellerId, data) => {
   return inquiryQuotationModel.findById(quotationId);
 };
 
-/** Seller withdraws quote; inquiry returns to pending. */
+/**
+ * Seller withdraws quote → inquiry is automatically rejected.
+ * Buyer is notified the same way as a direct inquiry reject.
+ */
 const withdrawQuotation = async (quotationId, sellerId) => {
   const quotation = await inquiryQuotationModel.findById(quotationId, { raw: true });
   if (!quotation) throw new AppError('Quotation not found', 404);
@@ -521,10 +524,18 @@ const withdrawQuotation = async (quotationId, sellerId) => {
   if (quotation.status === QUOTATION_STATUS.ACCEPTED) {
     throw new AppError('Accepted quotation cannot be withdrawn', 400);
   }
+  if (![QUOTATION_STATUS.SUBMITTED, QUOTATION_STATUS.UPDATED].includes(quotation.status)) {
+    throw new AppError('Quotation cannot be withdrawn in its current status', 400);
+  }
+
+  const inquiry = await getInquiryOrFail(quotation.inquiry_id);
+  const rejectReason = 'Quotation withdrawn by seller';
 
   await inquiryQuotationModel.updateQuotation(quotationId, { status: QUOTATION_STATUS.WITHDRAWN });
   await inquiryModel.updateInquiry(quotation.inquiry_id, {
-    status: INQUIRY_STATUS.PENDING,
+    status: INQUIRY_STATUS.REJECTED,
+    reject_reason: rejectReason,
+    responded_at: db.fn.now(),
     updated_by: sellerId,
   });
 
@@ -533,6 +544,40 @@ const withdrawQuotation = async (quotationId, sellerId) => {
     quotationId,
     eventType: CHAT_SYSTEM_EVENT.QUOTATION_WITHDRAWN,
     actorId: sellerId,
+  });
+
+  await chatService.recordInquirySystemEvent({
+    inquiryId: quotation.inquiry_id,
+    eventType: CHAT_SYSTEM_EVENT.INQUIRY_REJECTED,
+    actorId: sellerId,
+    metadata: { reason: rejectReason, skip_push: true },
+  });
+
+  const ctx = inquiryNotifyContext(inquiry);
+  const copy = notificationCopy.inquiryRejected({
+    productName: ctx.productName,
+    sellerCompany: ctx.sellerCompany,
+    sellerName: ctx.sellerName,
+    reason: rejectReason,
+    inquiryNumber: ctx.inquiryNumber,
+  });
+
+  pushInquiryNotify({
+    receiverId: inquiry.buyer_id,
+    type: NOTIFICATION_TYPE.INQUIRY_REJECTED,
+    title: copy.title,
+    body: copy.body,
+    referenceId: inquiry.id,
+    senderId: sellerId,
+    clickAction: NOTIFICATION_CLICK_ACTION.OPEN_INQUIRY,
+    data: {
+      inquiry_id: inquiry.id,
+      product_id: inquiry.product_id,
+      inquiry_number: ctx.inquiryNumber || undefined,
+      product_name: ctx.productName || undefined,
+      quotation_id: quotationId,
+      reason: rejectReason,
+    },
   });
 
   return inquiryQuotationModel.findById(quotationId);

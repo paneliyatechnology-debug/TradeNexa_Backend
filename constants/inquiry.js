@@ -2,6 +2,7 @@
  * Inquiry module constants — lifecycle statuses, quotation reuse, and list sort fields.
  *
  * Flow: pending → quoted | rejected | cancelled → accepted | closed
+ * Seller withdraw quotation → inquiry auto-rejected
  */
 
 // ==========================================

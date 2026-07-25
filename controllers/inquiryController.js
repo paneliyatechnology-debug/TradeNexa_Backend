@@ -171,7 +171,7 @@ const updateQuotation = async (req, res, next) => {
 
 /**
  * POST /inquiries/quotations/:quotationId/withdraw
- * Seller withdraws a quote; inquiry returns to pending.
+ * Seller withdraws a quote; inquiry is automatically rejected.
  */
 const withdrawQuotation = async (req, res, next) => {
   try {
