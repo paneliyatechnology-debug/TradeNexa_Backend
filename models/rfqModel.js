@@ -262,7 +262,19 @@ const findSellerFeed = async (sellerId, filters = {}) => {
       ...BUYER_COMPANY_SELECT,
     );
 
-  applyRfqFilters(q, { ...filters, include_private: true, visibility: undefined });
+  // Category filter + assigned PRIVATE invites together:
+  // (category match) OR (seller invited) — so different-category private RFQs still appear
+  const categoryId = filters.category_id;
+  const feedFilters = { ...filters, include_private: true, visibility: undefined };
+  if (categoryId != null) delete feedFilters.category_id;
+  applyRfqFilters(q, feedFilters);
+
+  if (categoryId != null) {
+    q.where(function () {
+      this.where('rfqs.category_id', categoryId).orWhereNotNull('invite.id');
+    });
+  }
+
   applyListSort(q, filters, RFQ_SORT_FIELDS);
 
   const page = parseInt(filters.page, 10) || 1;
