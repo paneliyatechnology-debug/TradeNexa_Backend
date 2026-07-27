@@ -84,7 +84,7 @@ REST API and realtime backend for the **TradeNexa** B2B marketplace — products
 ├── postman/               # api-specs.js (collection descriptions)
 ├── docs/                  # Push notification guides
 ├── uploads/               # Local media when S3 is off
-└── TradeNexa_Buyer_Home_APIs.postman_collection.json
+└── TradeNexa_APIs.postman_collection.json
 ```
 
 Layering convention: **router → controller → service → model**. Keep business rules in `services/`; keep SQL in `models/`.
@@ -275,7 +275,7 @@ Presence and “active conversation” push suppression are **in-memory**. Run a
 
 ## Postman
 
-1. Import [`TradeNexa_Buyer_Home_APIs.postman_collection.json`](TradeNexa_Buyer_Home_APIs.postman_collection.json)
+1. Import [`TradeNexa_APIs.postman_collection.json`](TradeNexa_APIs.postman_collection.json)
 2. Set collection variable `base_url` to `http://localhost:3000/api/v1`
 3. Use `buyer_token` / `seller_token` / `admin_token` after OTP verify or admin login
 
