@@ -97,10 +97,11 @@ const industryRules = [
     .withMessage('Industry must be between 2 and 200 characters'),
 ];
 
-/** Optional main category (categories.parent_id IS NULL). */
+/** Required main category (categories.parent_id IS NULL). */
 const categoryIdRules = [
   body('category_id')
-    .optional({ values: 'falsy' })
+    .notEmpty()
+    .withMessage('Category is required')
     .isInt({ min: 1 })
     .withMessage('category_id must be a positive integer')
     .custom(async (categoryId) => {
