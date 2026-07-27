@@ -10,12 +10,7 @@
     "migrate:rollback": "knex migrate:rollback",
     "seed": "knex seed:run",
     "lint": "eslint .",
-    "format": "prettier --write \"**/*.js\"",
-    "postman:sync": "node postman/sync-collection.js",
-    "load-test:smoke": "bash load-tests/run-k6.sh smoke",
-    "load-test:500": "bash load-tests/run-k6.sh 500",
-    "load-test:1000": "bash load-tests/run-k6.sh 1000",
-    "load-test": "bash load-tests/run-k6.sh"
+    "format": "prettier --write \"**/*.js\""
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",
