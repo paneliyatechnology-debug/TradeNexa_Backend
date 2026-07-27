@@ -1,6 +1,7 @@
 const { body, validationResult } = require('express-validator');
 const userModel = require('../models/userModel');
 const locationModel = require('../models/locationModel');
+const categoryModel = require('../models/categoryModel');
 const { AppError } = require('../utils/response');
 const { ROLE_CODES } = require('../constants');
 
@@ -96,10 +97,26 @@ const industryRules = [
     .withMessage('Industry must be between 2 and 200 characters'),
 ];
 
+/** Optional main category (categories.parent_id IS NULL). */
+const categoryIdRules = [
+  body('category_id')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 1 })
+    .withMessage('category_id must be a positive integer')
+    .custom(async (categoryId) => {
+      const category = await categoryModel.findCategoryById(Number(categoryId));
+      if (!category) {
+        throw new Error('Invalid category_id — must be an active main category');
+      }
+      return true;
+    }),
+];
+
 const buyerProfileRules = [
   ...blockedRules,
   body('company_name').trim().notEmpty().withMessage('Company name is required').isLength({ min: 2, max: 200 }),
   ...industryRules,
+  ...categoryIdRules,
   body('gst_number')
     .optional({ values: 'falsy' })
     .trim()
@@ -111,6 +128,7 @@ const buyerProfileRules = [
 const sellerProfileRules = [
   ...blockedRules,
   body('company_name').trim().notEmpty().withMessage('Company name is required').isLength({ min: 2, max: 200 }),
+  ...categoryIdRules,
   body('gst_number')
     .trim()
     .notEmpty()
@@ -137,6 +155,7 @@ const buyerSellerProfileRules = [
   ...blockedRules,
   body('company_name').trim().notEmpty().withMessage('Company name is required').isLength({ min: 2, max: 200 }),
   ...industryRules,
+  ...categoryIdRules,
   body('gst_number')
     .trim()
     .notEmpty()

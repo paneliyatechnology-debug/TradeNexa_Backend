@@ -263,6 +263,11 @@ const updateProfile = async (userId, data, files = {}) => {
     companyUpdate.business_description = data.business_description;
   }
 
+  // Optional main category for all marketplace roles
+  if (data.category_id !== undefined) {
+    companyUpdate.category_id = data.category_id ? Number(data.category_id) : null;
+  }
+
   userUpdate.is_completed_profile = true;
   await userModel.updateUser(userId, userUpdate);
   await userModel.upsertProfile(userId, companyUpdate);

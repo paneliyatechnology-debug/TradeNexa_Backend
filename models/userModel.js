@@ -130,6 +130,16 @@ const getFullProfile = async (userId) => {
       .first();
   }
 
+  let category = null;
+  if (profile?.category_id) {
+    category = await db('categories')
+      .where({ id: profile.category_id })
+      .whereNull('parent_id')
+      .whereNull('deleted_at')
+      .select('id', 'name', 'slug', 'icon', 'image')
+      .first();
+  }
+
   let city = null,
     state = null,
     country = null;
@@ -146,6 +156,7 @@ const getFullProfile = async (userId) => {
     roles,
     languages,
     businessType,
+    category,
     address: address ? { ...address, city, state, country } : null,
   };
 };
@@ -157,8 +168,21 @@ const getFullProfile = async (userId) => {
  */
 const formatUser = (data) => {
   if (!data) return null;
-  const { profile, roles, languages, businessType, address, ...user } = data;
+  const { profile, roles, languages, businessType, category, address, ...user } = data;
   const roleCode = roles?.[0]?.code || null;
+
+  const categoryPayload = {
+    category_id: profile?.category_id != null ? Number(profile.category_id) : null,
+    category: category
+      ? {
+          id: category.id,
+          name: category.name,
+          slug: category.slug || null,
+          icon: resolveMediaUrl(category.icon),
+          image: resolveMediaUrl(category.image),
+        }
+      : null,
+  };
 
   const base = {
     user_id: user.id,
@@ -180,6 +204,7 @@ const formatUser = (data) => {
     last_login: user.last_login,
     created_at: user.created_at,
     updated_at: user.updated_at,
+    ...categoryPayload,
   };
 
   const buyerFields = {
