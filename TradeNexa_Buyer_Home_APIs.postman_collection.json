@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "8b51d459-7153-488f-8d2a-a03f8373b9e4",
-    "name": "TradeNexa Buyer Home APIs",
-    "description": "TradeNexa B2B Marketplace — complete API reference.\n\n**Base URL:** `{{base_url}}` (default http://localhost:3000/api/v1)\n\n**Auth:** Bearer `{{buyer_token}}` / `{{seller_token}}` / `{{admin_token}}`\n\n**Modules:** Auth & Profile, Locations, Categories, Products (incl. Search History), Wishlist, Brands, RFQ, Inquiries, Chat, Notifications, Sellers, Offers, Services, News\n\nEach request documents REQUIRED/OPTIONAL fields in the description and body.",
+    "name": "TradeNexa APIs",
+    "description": "# TradeNexa API Collection\n\nComplete REST reference for the TradeNexa B2B marketplace backend.\n\n## Quick start\n\n1. Set collection variable `base_url` → `http://localhost:3000/api/v1`\n2. Set `socket_url` → `http://localhost:3000` (Socket.IO only)\n3. Run **Auth → Send OTP → Verify OTP** (or **Admin Auth → Admin Login**)\n4. Tokens are auto-saved into `access_token` / `buyer_token` / `seller_token` / `admin_token` when test scripts are present\n5. Use the matching Bearer token on protected requests\n\n## Response shape\n\n```json\n{\n  \"success\": true,\n  \"message\": \"…\",\n  \"data\": {},\n  \"errors\": []\n}\n```\n\nList endpoints return `data.results` + `data.pagination` (`page`, `limit`, `total`, `totalPages`). `limit` max is **100**.\n\n## Auth\n\n| Flow | How |\n|------|-----|\n| Buyer / seller phone OTP | `POST /auth/send-otp` → `verify-otp` → tokens or `registration_token` |\n| New user | `POST /auth/register` with Bearer `registration_token` |\n| Profile completion | `PUT /auth/profile` multipart (`category_id` required) |\n| Admin panel | `POST /admin/auth/login` email + password |\n| Refresh | `POST /auth/refresh-token` |\n\n**Roles:** `buyer` · `seller` · `buyer_seller` · `admin` · `super_admin` · `supporter`\n\n## Modules in this collection\n\n| Folder | Prefix | Notes |\n|--------|--------|-------|\n| Auth & Profile | `/auth` | OTP, register, profile CRUD |\n| Locations | `/locations` | Countries → states → cities |\n| Admin Auth | `/admin/auth` | Panel login + create admin users |\n| Roles | `/roles` | Role list for registration |\n| Business Types | `/business-types` | Filtered by `role_id` |\n| Categories & Subcategories | `/categories` | Main + nested subcategories |\n| Banners | `/banners` | Home banners |\n| Products | `/products` | Catalog, seller CRUD, approval, search history |\n| Wishlist | `/wishlist` | Buyer wishlist |\n| Sellers | `/sellers` | Directory + public seller products |\n| Brands / Offers | `/brands` `/offers` | Catalog extras |\n| RFQs | `/rfqs` | Public, buyer, seller feed, quotations, admin |\n| Inquiries | `/inquiries` | Product inquiry → quote flow |\n| Chat | `/chats` | REST inbox + messages (see Socket.IO below) |\n| Notifications | `/notifications` | In-app inbox + FCM-related dismiss sync |\n| Dashboard | `/dashboard` | Seller KPIs + admin platform metrics |\n| Services / News | `/services` `/news` | Content modules |\n\n## Socket.IO (realtime)\n\n- URL: `{{socket_url}}` path `/socket.io`\n- Auth: `handshake.auth.token` = access JWT (or `Authorization: Bearer`)\n- Used for chat messages, typing, presence, unread badges, notification unread\n\n## Conventions\n\n- **REQUIRED / OPTIONAL** tables are in each request description\n- Path params use collection variables (`{{product_id}}`, `{{rfq_id}}`, …)\n- Prefer `role=buyer|seller` on chat / notifications for dual-role accounts\n- Seller RFQ feed defaults to profile `category_id` and always includes assigned PRIVATE RFQs\n- Do not send image URLs as text for multipart file fields — upload the file\n\n## Health (outside collection)\n\n`GET {{socket_url}}/health` → server liveness (not under `/api/v1`).\n",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -321,7 +321,7 @@
                 "profile"
               ]
             },
-            "description": "GET /auth/profile — Authenticated user profile.\n\nRequires Bearer `{{access_token}}`.\n\nResponse varies by role (buyer / seller / buyer_seller). Address includes `country_id`, `state_id`, `city_id` plus names.\n\nAlso returns `counts` badges:\n- `wishlist` — wishlist product count\n- `notifications_unread` — `{ total, buyer, seller }`\n- `chat_unread` — `{ total, as_buyer, as_seller }`\n- `inquiries` — role + status breakdown:\n  - `as_buyer` / `as_seller`: `{ total, pending, quoted, accepted, rejected, cancelled, closed }`\n- `rfqs` — role + status breakdown:\n  - `as_buyer` / `as_seller`: `{ total, draft, open, published, quotation_received, negotiation, awarded, completed, expired, cancelled, closed }`"
+            "description": "GET /auth/profile — Authenticated user profile + badge counts.\n\n**Auth:** Bearer `{{access_token}}`.\n\n**Profile fields (role-dependent):** company, address, `category_id` + nested `category`, GST/PAN, etc.\n\n**`data.counts`:**\n- `wishlist`\n- `notifications_unread` → `{ total, buyer, seller }`\n- `chat_unread` → `{ total, as_buyer, as_seller }`\n- `inquiries` / `rfqs` → `as_buyer` / `as_seller` status breakdowns"
           }
         },
         {
@@ -364,7 +364,7 @@
                   "key": "category_id",
                   "value": "{{category_id}}",
                   "type": "text",
-                  "description": "OPTIONAL — main category from GET /categories"
+                  "description": "REQUIRED — main category from GET /categories"
                 },
                 {
                   "key": "gst_number",
@@ -420,7 +420,7 @@
                 "profile"
               ]
             },
-            "description": "PUT /auth/profile — Role: **buyer**\n\nContent-Type: `multipart/form-data`\n\nSets `is_completed_profile = true` on success.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `company_name` | REQUIRED | text | 2-200 chars |\n| `industry` | REQUIRED | text | 2-200 chars |\n| `category_id` | OPTIONAL | integer | Main category from GET /categories |\n| `gst_number` | OPTIONAL | text | Valid GST format 15 chars |\n| `address_line_1` | REQUIRED | text | 3-255 chars |\n| `address_line_2` | OPTIONAL | text | Max 255 chars |\n| `pincode` | REQUIRED | text | 6-digit Indian pincode |\n| `country_id` | REQUIRED | integer | From GET /locations/countries |\n| `state_id` | REQUIRED | integer | From GET /locations/states?country_id= |\n| `city_id` | REQUIRED | integer | From GET /locations/cities?state_id= |\n| `profile_image` | OPTIONAL | FILE upload only — do not send as URL text | Buyer profile photo |\n\n**BLOCKED:** mobile_number, role_id, country/state/city name strings, profile_image as URL"
+            "description": "PUT /auth/profile — Role: **buyer**\n\nContent-Type: `multipart/form-data`\n\nSets `is_completed_profile = true` on success.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `company_name` | REQUIRED | text | 2-200 chars |\n| `industry` | REQUIRED | text | 2-200 chars |\n| `category_id` | REQUIRED | integer | Main category id from GET /categories |\n| `gst_number` | OPTIONAL | text | Valid GST format 15 chars |\n| `address_line_1` | REQUIRED | text | 3-255 chars |\n| `address_line_2` | OPTIONAL | text | Max 255 chars |\n| `pincode` | REQUIRED | text | 6-digit Indian pincode |\n| `country_id` | REQUIRED | integer | From GET /locations/countries |\n| `state_id` | REQUIRED | integer | From GET /locations/states?country_id= |\n| `city_id` | REQUIRED | integer | From GET /locations/cities?state_id= |\n| `profile_image` | OPTIONAL | FILE upload only — do not send as URL text | Buyer profile photo |\n\n**BLOCKED:** mobile_number, role_id, country/state/city name strings, profile_image as URL"
           }
         },
         {
@@ -463,7 +463,7 @@
                   "key": "category_id",
                   "value": "{{category_id}}",
                   "type": "text",
-                  "description": "OPTIONAL — main category from GET /categories"
+                  "description": "REQUIRED — main category from GET /categories"
                 },
                 {
                   "key": "gst_number",
@@ -507,7 +507,7 @@
                 "profile"
               ]
             },
-            "description": "PUT /auth/profile — Role: **seller**\n\nContent-Type: `multipart/form-data`\n\nNo address fields for seller role.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `company_name` | REQUIRED | text | 2-200 chars |\n| `category_id` | OPTIONAL | integer | Main category from GET /categories |\n| `gst_number` | REQUIRED | text | Valid GST format |\n| `pan_number` | REQUIRED | text | Valid PAN format ABCDE1234F |\n| `business_description` | REQUIRED | text | Min 10 chars |\n| `cin` | OPTIONAL | text | Company Identification Number |\n| `iec` | OPTIONAL | text | Import Export Code |\n| `company_logo` | OPTIONAL | FILE upload only — do not send as URL text | Company logo |\n| `company_banner` | OPTIONAL | FILE upload only — do not send as URL text | Company banner image |"
+            "description": "PUT /auth/profile — Role: **seller**\n\nContent-Type: `multipart/form-data`\n\nNo address fields for seller role.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `company_name` | REQUIRED | text | 2-200 chars |\n| `category_id` | REQUIRED | integer | Main category id from GET /categories |\n| `gst_number` | REQUIRED | text | Valid GST format |\n| `pan_number` | REQUIRED | text | Valid PAN format ABCDE1234F |\n| `business_description` | REQUIRED | text | Min 10 chars |\n| `cin` | OPTIONAL | text | Company Identification Number |\n| `iec` | OPTIONAL | text | Import Export Code |\n| `company_logo` | OPTIONAL | FILE upload only — do not send as URL text | Company logo |\n| `company_banner` | OPTIONAL | FILE upload only — do not send as URL text | Company banner image |"
           }
         },
         {
@@ -562,7 +562,7 @@
                   "key": "category_id",
                   "value": "{{category_id}}",
                   "type": "text",
-                  "description": "OPTIONAL — main category from GET /categories"
+                  "description": "REQUIRED — main category from GET /categories"
                 },
                 {
                   "key": "gst_number",
@@ -642,7 +642,7 @@
                 "profile"
               ]
             },
-            "description": "PUT /auth/profile — Role: **buyer_seller**\n\nCombines buyer + seller fields. Content-Type: `multipart/form-data`.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `company_name` | REQUIRED | text | 2-200 chars |\n| `industry` | REQUIRED | text | 2-200 chars |\n| `category_id` | OPTIONAL | integer | Main category from GET /categories |\n| `gst_number` | REQUIRED | text | Valid GST |\n| `pan_number` | REQUIRED | text | Valid PAN |\n| `business_description` | REQUIRED | text | Min 10 chars |\n| `address_line_1` | REQUIRED | text | 3-255 chars |\n| `address_line_2` | OPTIONAL | text | Max 255 |\n| `pincode` | REQUIRED | text | 6-digit Indian |\n| `country_id` | REQUIRED | integer | From /locations/countries |\n| `state_id` | REQUIRED | integer | From /locations/states |\n| `city_id` | REQUIRED | integer | From /locations/cities |\n| `cin` | OPTIONAL | text | CIN |\n| `iec` | OPTIONAL | text | IEC |\n| `profile_image` | OPTIONAL | FILE upload only — do not send as URL text | Profile photo |\n| `company_logo` | OPTIONAL | FILE upload only — do not send as URL text | Logo |\n| `company_banner` | OPTIONAL | FILE upload only — do not send as URL text | Banner |"
+            "description": "PUT /auth/profile — Role: **buyer_seller**\n\nCombines buyer + seller fields. Content-Type: `multipart/form-data`.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `company_name` | REQUIRED | text | 2-200 chars |\n| `industry` | REQUIRED | text | 2-200 chars |\n| `category_id` | REQUIRED | integer | Main category id from GET /categories |\n| `gst_number` | REQUIRED | text | Valid GST |\n| `pan_number` | REQUIRED | text | Valid PAN |\n| `business_description` | REQUIRED | text | Min 10 chars |\n| `address_line_1` | REQUIRED | text | 3-255 chars |\n| `address_line_2` | OPTIONAL | text | Max 255 |\n| `pincode` | REQUIRED | text | 6-digit Indian |\n| `country_id` | REQUIRED | integer | From /locations/countries |\n| `state_id` | REQUIRED | integer | From /locations/states |\n| `city_id` | REQUIRED | integer | From /locations/cities |\n| `cin` | OPTIONAL | text | CIN |\n| `iec` | OPTIONAL | text | IEC |\n| `profile_image` | OPTIONAL | FILE upload only — do not send as URL text | Profile photo |\n| `company_logo` | OPTIONAL | FILE upload only — do not send as URL text | Logo |\n| `company_banner` | OPTIONAL | FILE upload only — do not send as URL text | Banner |"
           }
         },
         {
@@ -673,11 +673,12 @@
             "description": "DELETE /auth/profile — Soft-delete account and revoke all sessions.\n\n**Auth:** Bearer `{{access_token}}`. **Body:** None."
           }
         }
-      ]
+      ],
+      "description": "Phone OTP login/registration, JWT refresh/logout, and multipart profile completion.\n\n**Typical flow:** Send OTP → Verify OTP → (Register if new) → PUT Profile → use access_token.\n\nProfile requires `category_id` (main category) for buyer / seller / buyer_seller."
     },
     {
       "name": "Locations",
-      "description": "Public location reference APIs for profile address dropdowns.\n\nFlow: List Countries → List States (country_id) → List Cities (state_id) → Update Profile with IDs.\n\nFilters: search, code (countries/states), is_active, page, limit, sort_by, sort_order.",
+      "description": "Location cascading for profile address and filters.\n\n1. `GET /locations/countries`\n2. `GET /locations/states?country_id=`\n3. `GET /locations/cities?state_id=`",
       "item": [
         {
           "name": "1. List Countries",
@@ -909,7 +910,7 @@
     },
     {
       "name": "Admin Auth",
-      "description": "Admin Panel authentication — email/password login. Allowed roles: admin, super_admin, supporter.",
+      "description": "Email/password admin panel auth.\n\n`POST /admin/auth/login` (public, rate-limited).\n`POST /admin/auth/users` — create admin / super_admin / supporter (admin or super_admin only).",
       "item": [
         {
           "name": "Admin Login",
@@ -1114,7 +1115,8 @@
             "description": "GET /roles — List roles (public).\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | Items per page |\n| `search` | OPTIONAL | Search name/code |\n| `is_active` | OPTIONAL | true | false |\n| `sort_by` | OPTIONAL | id | name | code | is_active | created_at |\n| `sort_order` | OPTIONAL | asc | desc |"
           }
         }
-      ]
+      ],
+      "description": "Public role list used during registration (`role_id`)."
     },
     {
       "name": "Business Types",
@@ -1338,11 +1340,12 @@
             "description": "DELETE /business-types/:id — Admin only. Soft-deletes business type."
           }
         }
-      ]
+      ],
+      "description": "Business types filtered by marketplace role.\n\nUse `GET /business-types?role_id={{buyer_role_id}}` (or seller / buyer_seller) before register."
     },
     {
       "name": "Categories & Subcategories",
-      "description": "Main categories (parent_id null) and subcategories (linked via parent_id). Products use subcategory_id.",
+      "description": "Main categories (`parent_id` null) and nested subcategories.\n\nProducts and RFQs use `category_id` + `subcategory_id`. Profile uses main `category_id` only.",
       "item": [
         {
           "name": "Main Categories",
@@ -2055,7 +2058,8 @@
             "description": "DELETE /banners/:id — Admin only."
           }
         }
-      ]
+      ],
+      "description": "Home banners — public list; admin create/update/delete (multipart image)."
     },
     {
       "name": "Products",
@@ -2169,7 +2173,7 @@
                 }
               ]
             },
-            "description": "GET /products — Public product list (**approved + active only**). Optional Bearer for `is_wishlist`, `is_inquiry_sent`, `conversation_id`.\n\n**Search history:** When authenticated and `search` has ≥ 2 non-empty characters, the keyword is saved/updated in product search history (max 20). Guest / short / empty search → no history write. Response shape is unchanged.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | 1-100 |\n| `search` | OPTIONAL | Search name, tags — also records history when auth + length ≥ 2 |\n| `category_id` | OPTIONAL | Filter by category |\n| `subcategory_id` | OPTIONAL | Filter by subcategory |\n| `city_id` | OPTIONAL | Filter by seller primary address city |\n| `seller_id` | OPTIONAL | Exclude products created by this seller |\n| `brand_id` | OPTIONAL | Filter by brand |\n| `min_price` | OPTIONAL | Minimum price |\n| `max_price` | OPTIONAL | Maximum price |\n| `is_active` | OPTIONAL | true | false (default active) |\n| `is_wishlist` | OPTIONAL | true | false — requires auth |\n| `sort_by` | OPTIONAL | id | name | price | rating | moq | created_at | seller_name |\n| `sort_order` | OPTIONAL | asc | desc |"
+            "description": "GET /products — Public product list (**approved + active only**). Optional Bearer for `is_wishlist`, `is_inquiry_sent`, `conversation_id`.\n\n**Search history:** When authenticated and `search` has ≥ 2 non-empty characters, the keyword is saved/updated in product search history (max 20). Guest / short / empty search → no history write. Response shape is unchanged.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | 1-100 |\n| `search` | OPTIONAL | Search name, tags — also records history when auth + length ≥ 2 |\n| `category_id` | OPTIONAL | Filter by category |\n| `subcategory_id` | OPTIONAL | Filter by subcategory |\n| `city_id` | OPTIONAL | Filter by seller primary address city — from GET /locations/cities |\n| `seller_id` | OPTIONAL | Exclude products created by this seller (hide own listings) |\n| `brand_id` | OPTIONAL | Filter by brand |\n| `min_price` | OPTIONAL | Minimum price |\n| `max_price` | OPTIONAL | Maximum price |\n| `is_active` | OPTIONAL | true | false (default active) |\n| `is_wishlist` | OPTIONAL | true | false — requires auth |\n| `sort_by` | OPTIONAL | id | name | price | rating | moq | created_at | seller_name |\n| `sort_order` | OPTIONAL | asc | desc |"
           }
         },
         {
@@ -2202,7 +2206,7 @@
                 }
               ]
             },
-            "description": "GET /products — Public product list (**approved + active only**). Optional Bearer for `is_wishlist` flag.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | 1-100 |\n| `search` | OPTIONAL | Search name, tags |\n| `category_id` | OPTIONAL | Filter by category |\n| `subcategory_id` | OPTIONAL | Filter by subcategory |\n| `city_id` | OPTIONAL | Filter by seller primary address city — from GET /locations/cities |\n| `seller_id` | OPTIONAL | Exclude products created by this seller (hide own listings) |\n| `brand_id` | OPTIONAL | Filter by brand |\n| `min_price` | OPTIONAL | Minimum price |\n| `max_price` | OPTIONAL | Maximum price |\n| `is_active` | OPTIONAL | true | false (default active) |\n| `is_wishlist` | OPTIONAL | true | false — requires auth |\n| `sort_by` | OPTIONAL | id | name | price | rating | moq | created_at | seller_name |\n| `sort_order` | OPTIONAL | asc | desc |"
+            "description": "GET /products — Public product list (**approved + active only**). Optional Bearer for `is_wishlist`, `is_inquiry_sent`, `conversation_id`.\n\n**Search history:** When authenticated and `search` has ≥ 2 non-empty characters, the keyword is saved/updated in product search history (max 20). Guest / short / empty search → no history write. Response shape is unchanged.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | 1-100 |\n| `search` | OPTIONAL | Search name, tags — also records history when auth + length ≥ 2 |\n| `category_id` | OPTIONAL | Filter by category |\n| `subcategory_id` | OPTIONAL | Filter by subcategory |\n| `city_id` | OPTIONAL | Filter by seller primary address city — from GET /locations/cities |\n| `seller_id` | OPTIONAL | Exclude products created by this seller (hide own listings) |\n| `brand_id` | OPTIONAL | Filter by brand |\n| `min_price` | OPTIONAL | Minimum price |\n| `max_price` | OPTIONAL | Maximum price |\n| `is_active` | OPTIONAL | true | false (default active) |\n| `is_wishlist` | OPTIONAL | true | false — requires auth |\n| `sort_by` | OPTIONAL | id | name | price | rating | moq | created_at | seller_name |\n| `sort_order` | OPTIONAL | asc | desc |"
           }
         },
         {
@@ -2235,7 +2239,7 @@
                 }
               ]
             },
-            "description": "GET /products — Public product list (**approved + active only**). Optional Bearer for `is_wishlist` flag.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | 1-100 |\n| `search` | OPTIONAL | Search name, tags |\n| `category_id` | OPTIONAL | Filter by category |\n| `subcategory_id` | OPTIONAL | Filter by subcategory |\n| `city_id` | OPTIONAL | Filter by seller primary address city — from GET /locations/cities |\n| `seller_id` | OPTIONAL | Exclude products created by this seller (hide own listings) |\n| `brand_id` | OPTIONAL | Filter by brand |\n| `min_price` | OPTIONAL | Minimum price |\n| `max_price` | OPTIONAL | Maximum price |\n| `is_active` | OPTIONAL | true | false (default active) |\n| `is_wishlist` | OPTIONAL | true | false — requires auth |\n| `sort_by` | OPTIONAL | id | name | price | rating | moq | created_at | seller_name |\n| `sort_order` | OPTIONAL | asc | desc |"
+            "description": "GET /products — Public product list (**approved + active only**). Optional Bearer for `is_wishlist`, `is_inquiry_sent`, `conversation_id`.\n\n**Search history:** When authenticated and `search` has ≥ 2 non-empty characters, the keyword is saved/updated in product search history (max 20). Guest / short / empty search → no history write. Response shape is unchanged.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | 1-100 |\n| `search` | OPTIONAL | Search name, tags — also records history when auth + length ≥ 2 |\n| `category_id` | OPTIONAL | Filter by category |\n| `subcategory_id` | OPTIONAL | Filter by subcategory |\n| `city_id` | OPTIONAL | Filter by seller primary address city — from GET /locations/cities |\n| `seller_id` | OPTIONAL | Exclude products created by this seller (hide own listings) |\n| `brand_id` | OPTIONAL | Filter by brand |\n| `min_price` | OPTIONAL | Minimum price |\n| `max_price` | OPTIONAL | Maximum price |\n| `is_active` | OPTIONAL | true | false (default active) |\n| `is_wishlist` | OPTIONAL | true | false — requires auth |\n| `sort_by` | OPTIONAL | id | name | price | rating | moq | created_at | seller_name |\n| `sort_order` | OPTIONAL | asc | desc |"
           }
         },
         {
@@ -2538,7 +2542,7 @@
                 "{{product_id}}"
               ]
             },
-            "description": "GET /products/:id — Product detail. Buyers only see **approved** products (404 otherwise). Owner/admin can view any status.\n\nOptional Bearer token adds `is_wishlist`.\n\nIncludes `approval` block (status, remarks, review_version, timestamps)."
+            "description": "GET /products/search-history — Paginated product search keywords for the logged-in user (newest first). Max 20 stored per user.\n\nAuth required. Response `data`: `{ results: [{ id, keyword, searched_at }], pagination }`.\n\nHistory is recorded only from authenticated `GET /products?search=…` (keyword ≥ 2 chars).\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number (default 1) |\n| `limit` | OPTIONAL | Items per page 1–100 (default 10) |"
           }
         },
         {
@@ -3003,7 +3007,7 @@
                     }
                   ]
                 },
-                "description": "GET /products/admin/reviews — Admin moderation queue. Uses standard `sort_by` / `sort_order` (same as product list). Default: `submitted_at` desc.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `approval_status` | OPTIONAL | in_review (default) | revision_required | approved | rejected | all |\n| `search` | OPTIONAL | Product name/id, seller, category, brand |\n| `category_id` | OPTIONAL |  |\n| `brand_id` | OPTIONAL |  |\n| `seller_id` | OPTIONAL |  |\n| `sort_by` | OPTIONAL | id | name | slug | price | moq | rating | is_trending | created_at | updated_at | submitted_at | reviewed_at | seller_name |\n| `sort_order` | OPTIONAL | asc | desc |\n| `is_active` | OPTIONAL | true | false |\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |"
+                "description": "GET /products/:id/reviews — Append-only review history (seller owner or admin).\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |"
               },
               "event": [
                 {
@@ -3060,7 +3064,7 @@
                     "approve"
                   ]
                 },
-                "description": "POST /products/admin/approve — Admin. Always send `product_ids` as an array (one ID or many, max 100). Status → approved.\n\nAlso sends in-app + FCM `PRODUCT_APPROVED` to each product's seller.\n\nResponse: `{ succeeded, failed, total }` (partial success allowed).\n\nExample single: `{ \"product_ids\": [{{product_id}}], \"remarks\": \"...\" }`\nExample many: `{ \"product_ids\": [12, 15, 18], \"remarks\": \"...\" }`.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `product_ids` | REQUIRED | integer[] | e.g. [12] or [12, 15, 18] — use {{product_id}} in Postman |\n| `remarks` | OPTIONAL | string | Optional 10-2000 chars |"
+                "description": "POST /products/admin/approve — Admin. Always send `product_ids` as an array (one ID or many, max 100). Status → approved.\n\nResponse: `{ succeeded, failed, total }` (partial success allowed).\n\nExample single: `{ \"product_ids\": [{{product_id}}], \"remarks\": \"...\" }`\nExample many: `{ \"product_ids\": [12, 15, 18], \"remarks\": \"...\" }`.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `product_ids` | REQUIRED | integer[] | e.g. [12] or [12, 15, 18] — use {{product_id}} in Postman |\n| `remarks` | OPTIONAL | string | Optional 10-2000 chars |"
               }
             },
             {
@@ -3103,7 +3107,7 @@
                     "request-revision"
                   ]
                 },
-                "description": "POST /products/admin/request-revision — Admin. Always send `product_ids` as an array (one or many). Status → revision_required. Remarks required (shared).\n\nAlso sends in-app + FCM `PRODUCT_REVISION_REQUIRED` to each product's seller.\n\nExample: `{ \"product_ids\": [{{product_id}}], \"remarks\": \"Please fix images and MOQ.\" }`.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `product_ids` | REQUIRED | integer[] | e.g. [12] or [12, 15] |\n| `remarks` | REQUIRED | string | Min 10 chars — what seller must fix |"
+                "description": "POST /products/admin/request-revision — Admin. Always send `product_ids` as an array (one or many). Status → revision_required. Remarks required (shared).\n\nExample: `{ \"product_ids\": [{{product_id}}], \"remarks\": \"Please fix images and MOQ.\" }`.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `product_ids` | REQUIRED | integer[] | e.g. [12] or [12, 15] |\n| `remarks` | REQUIRED | string | Min 10 chars — what seller must fix |"
               }
             },
             {
@@ -3146,7 +3150,7 @@
                     "reject"
                   ]
                 },
-                "description": "POST /products/admin/reject — Admin. Always send `product_ids` as an array (one or many). Status → rejected (terminal). Remarks required.\n\nAlso sends in-app + FCM `PRODUCT_REJECTED` to each product's seller.\n\nExample: `{ \"product_ids\": [{{product_id}}], \"remarks\": \"Policy violation.\" }`.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `product_ids` | REQUIRED | integer[] | e.g. [12] or [12, 15] |\n| `remarks` | REQUIRED | string | Min 10 chars |"
+                "description": "POST /products/admin/reject — Admin. Always send `product_ids` as an array (one or many). Status → rejected (terminal). Remarks required.\n\nExample: `{ \"product_ids\": [{{product_id}}], \"remarks\": \"Policy violation.\" }`.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `product_ids` | REQUIRED | integer[] | e.g. [12] or [12, 15] |\n| `remarks` | REQUIRED | string | Min 10 chars |"
               }
             }
           ]
@@ -3206,7 +3210,7 @@
                     }
                   ]
                 },
-                "description": "GET /products/search-history — Paginated product search keywords for the logged-in user (newest first). Max 20 stored per user.\n\nAuth required. Response `data`: `{ results: [{ id, keyword, searched_at }], pagination }`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number (default 1) |\n| `limit` | OPTIONAL | Items per page 1–100 (default 10) |"
+                "description": "GET /products/search-history — Paginated product search keywords for the logged-in user (newest first). Max 20 stored per user.\n\nAuth required. Response `data`: `{ results: [{ id, keyword, searched_at }], pagination }`.\n\nHistory is recorded only from authenticated `GET /products?search=…` (keyword ≥ 2 chars).\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number (default 1) |\n| `limit` | OPTIONAL | Items per page 1–100 (default 10) |"
               }
             },
             {
@@ -3308,7 +3312,7 @@
                 "media"
               ]
             },
-            "description": "DELETE /products/:id/media — Remove product gallery images/videos.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `image_ids` | OPTIONAL | integer[] | Product image IDs to delete |\n| `video_ids` | OPTIONAL | integer[] | Product video IDs to delete |\n\nAt least one of `image_ids` or `video_ids` required."
+            "description": "DELETE /products/search-history/:id — Delete one search-history row owned by the logged-in user.\n\n| Path | Required | Description |\n|-------|----------|-------------|\n| `id` | REQUIRED | Search history row id |"
           }
         },
         {
@@ -3336,15 +3340,15 @@
                 "{{product_id}}"
               ]
             },
-            "description": "DELETE /products/:id — Seller (own) or admin. Soft-deletes product."
+            "description": "DELETE /products/search-history — Delete **all** product search history for the logged-in user only."
           }
         }
       ],
-      "description": "**Approval:** See **Product Approval** subfolder — admin actions use `product_ids[]` (one or many)."
+      "description": "Public catalog (approved + active), seller inventory (`/products/my`), create/update multipart, admin approval queue, and search history.\n\nOptional Bearer adds `is_wishlist` / inquiry flags on list & detail."
     },
     {
       "name": "Wishlist",
-      "description": "Wishlist module — save products for later (IndiaMART-style).\n\n**Setup**\n1. Set `{{buyer_token}}` (run Auth → Verify OTP as buyer)\n2. Set `{{product_id}}` (run Products → List Products or Get Product)\n3. Run **Toggle Wishlist** to add/remove\n4. Run **Get Wishlist** to see saved products\n\n**Product APIs:** Send `Authorization: Bearer {{buyer_token}}` on GET /products, /products/trending, /products/related, /products/:id to get `is_wishlist` per product. Without auth, `is_wishlist` is always `false`.",
+      "description": "Buyer wishlist — prefer `POST /wishlist/toggle`. Auth required.",
       "item": [
         {
           "name": "1. Toggle Wishlist (Recommended)",
@@ -3603,7 +3607,7 @@
                 }
               ]
             },
-            "description": "GET /sellers — Paginated seller list. Optional Bearer: if the caller is a **seller** / **buyer_seller**, their own profile is excluded from results.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | Items per page |\n| `search` | OPTIONAL | Search company name |\n| `is_verified` | OPTIONAL | true | false |\n| `is_active` | OPTIONAL | true | false |\n| `sort_by` | OPTIONAL | id | company_name | rating | response_rate | years_in_business | created_at | product_count |\n| `sort_order` | OPTIONAL | asc | desc |\n\nEach result includes `product_count` (approved, non-deleted products)."
+            "description": "GET /sellers — Paginated seller list. Optional Bearer: if the caller is a **seller** / **buyer_seller**, their own profile is excluded from results.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | Items per page |\n| `search` | OPTIONAL | Search company name |\n| `is_verified` | OPTIONAL | true | false |\n| `is_active` | OPTIONAL | true | false |\n| `sort_by` | OPTIONAL | id | company_name | rating | response_rate | years_in_business | created_at |\n| `sort_order` | OPTIONAL | asc | desc |"
           }
         },
         {
@@ -3621,7 +3625,7 @@
                 "verified"
               ]
             },
-            "description": "GET /sellers/verified — List verified sellers only. Optional Bearer: authenticated sellers do not see themselves."
+            "description": "GET /sellers/:id — Seller public profile with company details and stats."
           }
         },
         {
@@ -3671,7 +3675,7 @@
                 "1"
               ]
             },
-            "description": "GET /sellers/:id — Seller public profile with company details and stats."
+            "description": "GET /sellers/nearby — Sellers near coordinates. Optional Bearer: authenticated sellers do not see themselves.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `latitude` | REQUIRED | Latitude -90 to 90 |\n| `longitude` | REQUIRED | Longitude -180 to 180 |\n| `max_distance` | OPTIONAL | Max distance in km |\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | Items per page |"
           }
         },
         {
@@ -3782,10 +3786,11 @@
                 }
               ]
             },
-            "description": "GET /sellers/:id/products — Public catalog of one seller's approved + active products.\n\nOptional Bearer for wishlist / inquiry flags.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | 1-100 |\n| `search` | OPTIONAL | Product name |\n| `category_id` | OPTIONAL | Category filter |\n| `subcategory_id` | OPTIONAL | Subcategory filter |\n| `city_id` | OPTIONAL | Seller city |\n| `brand_id` | OPTIONAL | Brand filter |\n| `min_price` / `max_price` | OPTIONAL | Price range |\n| `is_active` | OPTIONAL | Default true |\n| `is_trending` | OPTIONAL | true \\| false |\n| `is_wishlist` | OPTIONAL | Requires auth |\n| `sort_by` | OPTIONAL | id \\| name \\| price \\| moq \\| rating \\| is_trending \\| created_at \\| seller_name \\| … |\n| `sort_order` | OPTIONAL | asc \\| desc |\n\nResponse: `{ results, pagination }` — same product card shape as GET /products."
+            "description": "GET /sellers/:id/products — Paginated public catalog for one seller (approved + active).\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `page` | OPTIONAL | integer | Page number |\n| `limit` | OPTIONAL | integer | 1-100 |\n| `search` | OPTIONAL | string | Product name search |\n| `category_id` | OPTIONAL | integer | Filter by category |\n| `subcategory_id` | OPTIONAL | integer | Filter by subcategory |\n| `city_id` | OPTIONAL | integer | Filter by seller city |\n| `brand_id` | OPTIONAL | integer | Filter by brand |\n| `min_price` | OPTIONAL | number | Min price |\n| `max_price` | OPTIONAL | number | Max price |\n| `is_active` | OPTIONAL | boolean | Default true |\n| `is_trending` | OPTIONAL | boolean | Filter trending |\n| `is_wishlist` | OPTIONAL | boolean | Requires Bearer auth |\n| `sort_by` | OPTIONAL | string | id | name | slug | price | moq | rating | is_trending | created_at | updated_at | seller_name | … |\n| `sort_order` | OPTIONAL | string | asc | desc |"
           }
         }
-      ]
+      ],
+      "description": "Public seller directory, verified/nearby helpers, seller detail, and `GET /sellers/:id/products` catalog."
     },
     {
       "name": "Brands",
@@ -4115,7 +4120,8 @@
             "description": "DELETE /brands/:id — Admin only."
           }
         }
-      ]
+      ],
+      "description": "Brand list/detail + admin CRUD (multipart logo)."
     },
     {
       "name": "Offers",
@@ -4347,11 +4353,12 @@
             "description": "DELETE /offers/:id — Admin only."
           }
         }
-      ]
+      ],
+      "description": "Offers list/detail + admin CRUD."
     },
     {
       "name": "RFQs",
-      "description": "IndiaMART-style RFQ module — all endpoints under /rfqs (buyer, seller, quotation, admin).",
+      "description": "Request for Quotation module.\n\n- **Public:** list / latest / detail\n- **Buyer:** create draft → publish, cancel/close, compare quotations\n- **Seller:** `/rfqs/seller/feed` (profile category default + assigned PRIVATE invites), submit/revise quotes\n- **Admin:** list, force status, quotation overview, RFQ summary",
       "item": [
         {
           "name": "Public",
@@ -4530,7 +4537,7 @@
                     "{{rfq_id}}"
                   ]
                 },
-                "description": "GET /rfqs/:id — **Auth required** (buyer or seller). Includes `company`, `buyer.company`, and `assigned_sellers` (invited sellers with basic profile for PRIVATE RFQs).\n\n**Access:** Owner & admin always. **PUBLIC** — any authenticated buyer/seller. **PRIVATE** — owner or sellers listed in `seller_ids` / `rfq_sellers`.\n\nAssigned PRIVATE RFQs also appear in seller feed (`GET /rfqs/seller/feed`)."
+                "description": "GET /rfqs/latest — Latest published RFQs for home page. Optional Bearer hides own RFQs (`buyer_id` from JWT). Includes buyer `company` object.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL | Title, RFQ number, company name, etc |\n| `sort_by` | OPTIONAL | created_at | quotation_deadline | expected_price | title |\n| `sort_order` | OPTIONAL | asc | desc (default created_at desc) |"
               }
             }
           ]
@@ -4653,7 +4660,7 @@
                     }
                   ]
                 },
-                "description": "GET /rfqs/my — Buyer own RFQs (paginated). Includes `company` on each item.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL |  |\n| `category_id` | OPTIONAL |  |\n| `subcategory_id` | OPTIONAL |  |\n| `status` | OPTIONAL | DRAFT | OPEN | PUBLISHED | CLOSED | AWARDED | CANCELLED etc |\n| `sort_by` | OPTIONAL | created_at | quotation_deadline | expected_price | total_quotations | title |\n| `sort_order` | OPTIONAL | asc | desc |"
+                "description": "GET /rfqs/:id — **Auth required** (buyer or seller). Includes `company`, `buyer.company`, and `assigned_sellers` (invited sellers with basic profile for PRIVATE RFQs).\n\n**Access:** Owner & admin always. **PUBLIC** — any authenticated buyer/seller. **PRIVATE** — owner or sellers listed in `seller_ids` / `rfq_sellers`.\n\nAssigned PRIVATE RFQs also appear in seller feed (`GET /rfqs/seller/feed`)."
               }
             },
             {
@@ -4948,7 +4955,7 @@
                     }
                   ]
                 },
-                "description": "GET /rfqs/seller/feed — Seller RFQ feed.\n\nIncludes **PUBLIC** RFQs plus **PRIVATE** RFQs assigned to the authenticated seller (`rfq_sellers`).\n\nHides RFQs created by the authenticated user (`buyer_id` from JWT).\n\nEach item includes `visibility` and `invite_status` (when assigned).\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL | Search title |\n| `category_id` | OPTIONAL |  |\n| `subcategory_id` | OPTIONAL |  |\n| `city` | OPTIONAL |  |\n| `state` | OPTIONAL |  |\n| `country` | OPTIONAL |  |\n| `sort_by` | OPTIONAL | created_at | quotation_deadline | expected_price |\n| `sort_order` | OPTIONAL | asc | desc |"
+                "description": "GET /rfqs/seller/feed — Seller RFQ feed.\n\nIncludes **PUBLIC** RFQs plus **PRIVATE** RFQs assigned to the authenticated seller (`rfq_sellers`).\n\nHides RFQs created by the authenticated user (`buyer_id` from JWT).\n\n**Default category filter:** if the seller profile has `category_id` and query omits `category_id`, public RFQs are limited to that category. **Assigned PRIVATE RFQs always appear** even when their category differs. Pass `category_id` in the query to override the public category filter (invites still included).\n\nEach item includes `visibility` and `invite_status` (when assigned).\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL | Search title |\n| `category_id` | OPTIONAL | Filter public RFQs by category (assigned private RFQs still included) |\n| `subcategory_id` | OPTIONAL |  |\n| `city` | OPTIONAL |  |\n| `state` | OPTIONAL |  |\n| `country` | OPTIONAL |  |\n| `sort_by` | OPTIONAL | created_at | quotation_deadline | expected_price |\n| `sort_order` | OPTIONAL | asc | desc |"
               }
             },
             {
@@ -4977,7 +4984,7 @@
                     "{{rfq_id}}"
                   ]
                 },
-                "description": "GET /rfqs/seller/:id — Seller view of RFQ detail (for quoting)."
+                "description": "GET /rfqs/:id/quotations — Buyer views quotations for their RFQ (paginated). Each item includes seller `company`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL | Seller name, company, quotation number |\n| `status` | OPTIONAL | SUBMITTED | UPDATED | ACCEPTED | REJECTED | WITHDRAWN | EXPIRED |\n| `sort_by` | OPTIONAL | id | price | total_amount | delivery_days | created_at |\n| `sort_order` | OPTIONAL | asc | desc |"
               }
             },
             {
@@ -5030,7 +5037,7 @@
                     }
                   ]
                 },
-                "description": "GET /rfqs/seller/quotations — Quotations submitted by authenticated seller (paginated).\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL | RFQ title, RFQ number, quotation number |\n| `status` | OPTIONAL | Quotation status filter |\n| `sort_by` | OPTIONAL | id | price | total_amount | delivery_days | created_at |\n| `sort_order` | OPTIONAL | asc | desc |"
+                "description": "GET /rfqs/:id/quotations — Buyer views quotations for their RFQ (paginated). Each item includes seller `company`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL | Seller name, company, quotation number |\n| `status` | OPTIONAL | SUBMITTED | UPDATED | ACCEPTED | REJECTED | WITHDRAWN | EXPIRED |\n| `sort_by` | OPTIONAL | id | price | total_amount | delivery_days | created_at |\n| `sort_order` | OPTIONAL | asc | desc |"
               }
             },
             {
@@ -5060,7 +5067,7 @@
                     "{{quotation_id}}"
                   ]
                 },
-                "description": "GET /rfqs/seller/quotations/:quotationId — Single quotation owned by seller."
+                "description": "GET /rfqs/:id/quotations/compare — Side-by-side comparison sorted by total_amount ascending."
               }
             },
             {
@@ -5151,7 +5158,7 @@
                     "{{quotation_id}}"
                   ]
                 },
-                "description": "GET /rfqs/quotations/:quotationId — Quotation detail (buyer/seller/admin)."
+                "description": "GET /rfqs/:id/quotations — Buyer views quotations for their RFQ (paginated). Each item includes seller `company`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL | Seller name, company, quotation number |\n| `status` | OPTIONAL | SUBMITTED | UPDATED | ACCEPTED | REJECTED | WITHDRAWN | EXPIRED |\n| `sort_by` | OPTIONAL | id | price | total_amount | delivery_days | created_at |\n| `sort_order` | OPTIONAL | asc | desc |"
               }
             },
             {
@@ -5475,7 +5482,7 @@
                     "{{rfq_id}}"
                   ]
                 },
-                "description": "GET /rfqs/admin/:id — Admin RFQ detail with audit trail and buyer `company`."
+                "description": "GET /rfqs/:id/quotations — Buyer views quotations for their RFQ (paginated). Each item includes seller `company`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL | Seller name, company, quotation number |\n| `status` | OPTIONAL | SUBMITTED | UPDATED | ACCEPTED | REJECTED | WITHDRAWN | EXPIRED |\n| `sort_by` | OPTIONAL | id | price | total_amount | delivery_days | created_at |\n| `sort_order` | OPTIONAL | asc | desc |"
               }
             },
             {
@@ -5587,7 +5594,7 @@
                     }
                   ]
                 },
-                "description": "GET /rfqs/admin/quotations — Admin list all quotations (paginated).\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL | RFQ title/number, seller, company, quotation number |\n| `status` | OPTIONAL |  |\n| `rfq_id` | OPTIONAL |  |\n| `seller_id` | OPTIONAL |  |\n| `sort_by` | OPTIONAL | id | price | total_amount | delivery_days | created_at |\n| `sort_order` | OPTIONAL | asc | desc |"
+                "description": "GET /rfqs/:id/quotations — Buyer views quotations for their RFQ (paginated). Each item includes seller `company`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL | Seller name, company, quotation number |\n| `status` | OPTIONAL | SUBMITTED | UPDATED | ACCEPTED | REJECTED | WITHDRAWN | EXPIRED |\n| `sort_by` | OPTIONAL | id | price | total_amount | delivery_days | created_at |\n| `sort_order` | OPTIONAL | asc | desc |"
               }
             },
             {
@@ -5665,7 +5672,7 @@
                 }
               ]
             },
-            "description": "POST /inquiries — Create product inquiry (`pending`). Reuses buyer↔seller chat and seeds messages.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `product_id` | REQUIRED | integer | Product ID |\n| `quantity` | REQUIRED | integer | ≥ 1 |\n| `message` | REQUIRED | string | 10–2000 chars |\n| `unit` | OPTIONAL | string | Defaults to product unit |\n| `expected_price` | OPTIONAL | number | |\n| `currency` | OPTIONAL | string | Default INR |\n| `required_before` | OPTIONAL | string | ISO8601 |"
+            "description": "POST /inquiries — Buyer sends a product inquiry to the product seller. Status=`pending`. Auto-creates chat with product card + message.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `product_id` | REQUIRED | integer | Product to inquire about |\n| `quantity` | REQUIRED | integer | Requested quantity ≥ 1 |\n| `message` | REQUIRED | string | Inquiry message 10–2000 chars |\n| `unit` | OPTIONAL | string | Defaults to product unit |\n| `expected_price` | OPTIONAL | number | Buyer target unit price |\n| `currency` | OPTIONAL | string | Default INR |\n| `required_before` | OPTIONAL | string | ISO8601 delivery need-by |"
           },
           "event": [
             {
@@ -5741,7 +5748,7 @@
                 }
               ]
             },
-            "description": "GET /inquiries/my — Buyer inquiry inbox. Each item includes nested `quotation` or `null`."
+            "description": "GET /inquiries/my — Buyer inquiry inbox. Each item includes nested `quotation` (or `null`).\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL |  |\n| `status` | OPTIONAL | pending | quoted | rejected | accepted | cancelled | closed |\n| `product_id` | OPTIONAL |  |\n| `sort_by` | OPTIONAL | id | created_at | updated_at | status | quantity | expected_price |\n| `sort_order` | OPTIONAL | asc | desc |"
           }
         },
         {
@@ -5801,7 +5808,7 @@
                 }
               ]
             },
-            "description": "GET /inquiries/seller — Seller inquiry inbox. Each item includes nested `quotation` or `null`."
+            "description": "GET /inquiries/seller — Seller inquiry inbox (Reply chat / Send quote / Reject). Each item includes nested `quotation` (or `null`)."
           }
         },
         {
@@ -5830,7 +5837,7 @@
                 }
               ]
             },
-            "description": "GET /inquiries/seller/quotations — Quotes this seller submitted on inquiries."
+            "description": "GET /inquiries/seller/quotations — Seller quotes on inquiries."
           },
           "event": [
             {
@@ -5872,7 +5879,7 @@
                 }
               ]
             },
-            "description": "GET /inquiries/:id — Detail + nested `quotation` + `conversation_id`."
+            "description": "GET /inquiries/my — Buyer inquiry inbox. Each item includes nested `quotation` (or `null`).\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL |  |\n| `status` | OPTIONAL | pending | quoted | rejected | accepted | cancelled | closed |\n| `product_id` | OPTIONAL |  |\n| `sort_by` | OPTIONAL | id | created_at | updated_at | status | quantity | expected_price |\n| `sort_order` | OPTIONAL | asc | desc |"
           }
         },
         {
@@ -5908,7 +5915,8 @@
                   "type": "string"
                 }
               ]
-            }
+            },
+            "description": "PUT /inquiries/:id — Buyer update while pending."
           }
         },
         {
@@ -5936,7 +5944,8 @@
                   "type": "string"
                 }
               ]
-            }
+            },
+            "description": "POST /inquiries/:id/cancel — Buyer cancels inquiry."
           }
         },
         {
@@ -5979,7 +5988,7 @@
                 }
               ]
             },
-            "description": "POST /inquiries/:id/reject — Seller rejects inquiry.\n\n| Field | Required |\n|-------|----------|\n| `reason` | OPTIONAL |"
+            "description": "POST /inquiries/:id/reject — Seller rejects inquiry.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `reason` | OPTIONAL | string | Optional rejection reason |"
           }
         },
         {
@@ -6022,7 +6031,7 @@
                 }
               ]
             },
-            "description": "POST /inquiries/:id/quotations — Seller send quote (inquiry → quoted).\n\nAllowed when inquiry is `pending` or `quoted`.\nAfter buyer rejects a quote (inquiry → `pending`, quotation → `REJECTED`), seller can submit a new quote on the same inquiry (row is reused).\n\n| Field | Required | Type |\n|-------|----------|------|\n| `price` | REQUIRED | number |\n| `quantity` | OPTIONAL | integer |\n| `unit` | OPTIONAL | string |\n| `gst_percentage` | OPTIONAL | number |\n| `transportation_charge` | OPTIONAL | number |\n| `delivery_days` | OPTIONAL | integer |\n| `payment_terms` | OPTIONAL | string |\n| `validity_days` | OPTIONAL | integer |\n| `remarks` | OPTIONAL | string |"
+            "description": "POST /inquiries/:id/quotations — Seller send quote (status → quoted).\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `price` | REQUIRED | number | Unit price |\n| `quantity` | OPTIONAL | integer |  |\n| `unit` | OPTIONAL | string |  |\n| `gst_percentage` | OPTIONAL | number |  |\n| `transportation_charge` | OPTIONAL | number |  |\n| `delivery_days` | OPTIONAL | integer |  |\n| `payment_terms` | OPTIONAL | string |  |\n| `validity_days` | OPTIONAL | integer |  |\n| `remarks` | OPTIONAL | string |  |"
           },
           "event": [
             {
@@ -6067,7 +6076,7 @@
                 }
               ]
             },
-            "description": "POST /inquiries/:id/chat — Continue shared buyer↔seller conversation for this inquiry."
+            "description": "POST /inquiries/:id/chat — Get/start inquiry chat thread."
           }
         },
         {
@@ -6104,7 +6113,8 @@
                   "type": "string"
                 }
               ]
-            }
+            },
+            "description": "PUT /inquiries/quotations/:quotationId — Seller update quote."
           }
         },
         {
@@ -6134,7 +6144,7 @@
                 }
               ]
             },
-            "description": "POST /inquiries/quotations/:quotationId/withdraw — Seller withdraws quotation.\n\nAutomatically rejects the inquiry (`status: rejected`, reason: Quotation withdrawn by seller) and notifies the buyer (`INQUIRY_REJECTED`)."
+            "description": "POST /inquiries/quotations/:quotationId/withdraw — Seller withdraws quote."
           }
         },
         {
@@ -6163,7 +6173,8 @@
                   "type": "string"
                 }
               ]
-            }
+            },
+            "description": "POST /inquiries/quotations/:quotationId/accept — Buyer accepts quote."
           }
         },
         {
@@ -6193,15 +6204,15 @@
                 }
               ]
             },
-            "description": "POST /inquiries/quotations/:quotationId/reject — Buyer rejects quotation.\n\nSets quotation → `REJECTED`, inquiry → `pending`. Seller can then submit a new quote on the same inquiry."
+            "description": "POST /inquiries/quotations/:quotationId/reject — Buyer rejects quote."
           }
         }
       ],
-      "description": "Product Inquiry module — buyer inquires on a product; seller Reply (chat) / Quote / Reject.\n\nBase: `{{base_url}}/inquiries`\n\nStatuses: `pending` | `quoted` | `rejected` | `accepted` | `cancelled` | `closed`\n\nAfter buyer rejects a quotation, seller may re-quote the same inquiry.\n\nList responses include nested `quotation` (or `null`)."
+      "description": "Product inquiry → seller quote / reject → buyer accept/reject.\n\nCreating an inquiry seeds chat. Use Chat → inquiry conversations to open the thread."
     },
     {
       "name": "Chat",
-      "description": "RFQ-linked buyer/seller chat module — REST APIs under /chats. Use buyer_token or seller_token. Socket.IO: connect to {{socket_url}} with auth.token = access token.",
+      "description": "Buyer↔seller conversations under `/chats`.\n\nOne conversation per pair. RFQ/inquiry update `last_context` instead of new rooms.\n\n**REST** for inbox/history; **Socket.IO** for live send/receive. Connect to `{{socket_url}}` with JWT.",
       "item": [
         {
           "name": "Buyer",
@@ -6792,6 +6803,48 @@
                 },
                 "description": "POST /chats/conversations/:id/read — Mark conversation read.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `last_read_message_id` | OPTIONAL | integer | Defaults to latest message |"
               }
+            },
+            {
+              "name": "Get Inquiry Conversations",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{buyer_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/chats/inquiries/{{inquiry_id}}/conversations?page=1&limit=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "chats",
+                    "inquiries",
+                    "{{inquiry_id}}",
+                    "conversations"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10",
+                      "description": "Limit"
+                    }
+                  ]
+                },
+                "description": "GET /chats/inquiries/:inquiryId/conversations — Resolve the shared buyer↔seller chat thread for an inquiry.\n\n**Auth:** Bearer buyer / seller / buyer_seller / admin.\n\nPrefer this over creating a duplicate room — inquiry flows reuse the pair conversation and update `last_context`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL |  |\n| `sort_by` | OPTIONAL | last_message_at | created_at |\n| `sort_order` | OPTIONAL | asc | desc |"
+              }
             }
           ]
         },
@@ -7202,6 +7255,48 @@
                 },
                 "description": "POST /chats/conversations/:id/read — Mark conversation read.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `last_read_message_id` | OPTIONAL | integer | Defaults to latest message |"
               }
+            },
+            {
+              "name": "Get Inquiry Conversations",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{seller_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/chats/inquiries/{{inquiry_id}}/conversations?page=1&limit=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "chats",
+                    "inquiries",
+                    "{{inquiry_id}}",
+                    "conversations"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10",
+                      "description": "Limit"
+                    }
+                  ]
+                },
+                "description": "GET /chats/inquiries/:inquiryId/conversations — Resolve the shared buyer↔seller chat thread for an inquiry.\n\n**Auth:** Bearer buyer / seller / buyer_seller / admin.\n\nPrefer this over creating a duplicate room — inquiry flows reuse the pair conversation and update `last_context`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL |  |\n| `limit` | OPTIONAL |  |\n| `search` | OPTIONAL |  |\n| `sort_by` | OPTIONAL | last_message_at | created_at |\n| `sort_order` | OPTIONAL | asc | desc |"
+              }
             }
           ]
         }
@@ -7209,7 +7304,7 @@
     },
     {
       "name": "Notifications",
-      "description": "In-app notification inbox (RFQ + inquiry related only). Chat pushes are FCM-only and are **not** stored here.\n\nAuth required (buyer or seller). Realtime: Socket.IO events `notification:new`, `notification:unread_count`, `notification:updated` on room `user:{id}`.",
+      "description": "In-app notification inbox.\n\nFilter with `role=buyer|seller` for dual-role users. Unread counts return `{ total, buyer, seller }`.",
       "item": [
         {
           "name": "1. List Notifications",
@@ -7282,7 +7377,7 @@
                 }
               ]
             },
-            "description": "GET /notifications — Paginated in-app inbox (newest first). RFQ + inquiry types only; chat is excluded.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | 1-100 |\n| `is_read` | OPTIONAL | true \\| false |\n| `type` | OPTIONAL | One of IN_APP_NOTIFICATION_TYPES |\n| `role` | OPTIONAL | `buyer` \\| `seller` (for buyer_seller users) |\n\nResponse `data.results[]`: id, type, **role**, title, body, reference_id, sender_id, click_action, data, is_read, read_at, created_at."
+            "description": "GET /notifications — In-app notification inbox (paginated).\n\n**Auth:** Bearer access token.\n\nFor dual-role users (`buyer_seller`), filter by audience with `role=buyer` or `role=seller`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | 1–100 |\n| `is_read` | OPTIONAL | true | false |\n| `type` | OPTIONAL | Notification type code (e.g. RFQ_PUBLISHED, CHAT_MESSAGE, PRODUCT_APPROVED) |\n| `role` | OPTIONAL | buyer | seller — audience side for dual-role inboxes |"
           }
         },
         {
@@ -7318,7 +7413,7 @@
                 }
               ]
             },
-            "description": "GET /notifications/unread-count — Unread RFQ/inquiry notification counts for the logged-in user.\n\nAlways returns dual-role breakdown matching profile `counts.notifications_unread`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `role` | OPTIONAL | `buyer` \\| `seller` — scopes `unread_count` only |\n\nResponse: `{ \"total\": N, \"buyer\": N, \"seller\": N, \"unread_count\": N, \"role\": \"buyer\"|null }`\n\nAlso pushed realtime via Socket.IO `notification:unread_count` on connect and after create/read (same shape)."
+            "description": "GET /notifications/unread-count — Unread badge counts.\n\n**Auth:** Bearer access token.\n\n**Response:** `{ total, buyer, seller, unread_count }` (`unread_count` mirrors `total` for older clients).\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `role` | OPTIONAL | buyer | seller — optional; when set may scope the primary count |"
           }
         },
         {
@@ -7360,7 +7455,7 @@
                 "read"
               ]
             },
-            "description": "PATCH /notifications/:id/read — Mark one notification as read.\n\n| Path | Required | Description |\n|-------|----------|-------------|\n| `id` | REQUIRED | Notification id (`{{notification_id}}` from list) |\n\nEmits Socket.IO `notification:updated` + refreshed `notification:unread_count`."
+            "description": "PATCH /notifications/:id/read — Mark one notification as read.\n\n**Auth:** Bearer. **Body:** none."
           }
         },
         {
@@ -7402,7 +7497,7 @@
                 "read"
               ]
             },
-            "description": "POST /notifications/read — Mark multiple notifications as read.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `ids` | REQUIRED | number[] | 1-100 notification ids |\n\nResponse: `{ \"updated\": N }`"
+            "description": "POST /notifications/read — Mark many notifications as read.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `ids` | REQUIRED | integer[] | 1–100 notification IDs |"
           }
         },
         {
@@ -7446,7 +7541,7 @@
                 }
               ]
             },
-            "description": "POST /notifications/read-all — Mark unread in-app notifications as read.\n\nFor **buyer_seller** dual-role users, pass `role` to clear only that inbox:\n- `role=buyer` → only buyer notifications marked read\n- `role=seller` → only seller notifications marked read\n- omit `role` → all unread marked read\n\nPass via query `?role=` and/or JSON body `{ \"role\": \"buyer\" }`.\n\n| Query/Body | Required | Description |\n|------------|----------|-------------|\n| `role` | OPTIONAL | `buyer` \\| `seller` |\n\nResponse: `{ \"updated\": N, \"role\": \"buyer\"|null, \"unread\": { total, buyer, seller, unread_count } }`\n\nAlso pushes Socket.IO `notification:unread_count` and `notification:updated`."
+            "description": "POST /notifications/read-all — Mark all unread as read (optionally role-scoped).\n\nPass `role` as query and/or JSON body: `buyer` | `seller`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `role` | OPTIONAL | buyer | seller |\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `role` | OPTIONAL | string | buyer | seller |"
           }
         },
         {
@@ -7488,7 +7583,115 @@
                 }
               ]
             },
-            "description": "GET /notifications — Same inbox API using `{{seller_token}}` (sellers receive inquiry/RFQ notifications too)."
+            "description": "GET /notifications — In-app notification inbox (paginated).\n\n**Auth:** Bearer access token.\n\nFor dual-role users (`buyer_seller`), filter by audience with `role=buyer` or `role=seller`.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number |\n| `limit` | OPTIONAL | 1–100 |\n| `is_read` | OPTIONAL | true | false |\n| `type` | OPTIONAL | Notification type code (e.g. RFQ_PUBLISHED, CHAT_MESSAGE, PRODUCT_APPROVED) |\n| `role` | OPTIONAL | buyer | seller — audience side for dual-role inboxes |"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "description": "Aggregated KPIs.\n\n- `GET /dashboard/seller` — seller home metrics\n- `GET /dashboard/seller/top-performing-products` — ranked products\n- `GET /dashboard/admin` — platform admin panel",
+      "item": [
+        {
+          "name": "Seller Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{seller_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/dashboard/seller",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "dashboard",
+                "seller"
+              ]
+            },
+            "description": "GET /dashboard/seller — Seller home KPIs for the authenticated seller.\n\n**Auth:** Bearer seller / buyer_seller token.\n\n**Response `data` includes:**\n- `total_products` — active catalog count\n- `todays_leads` + `todays_leads_breakdown` (`inquiries`, `rfq_invites`)\n- `profile_views` — seller profile view count\n- `replies_sent` — chat replies sent\n- `top_performing_product` — best product by inquiry volume (or `null`)"
+          }
+        },
+        {
+          "name": "Seller Top Performing Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{seller_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/dashboard/seller/top-performing-products?page=1&limit=10&sort_order=desc",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "dashboard",
+                "seller",
+                "top-performing-products"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "1–100"
+                },
+                {
+                  "key": "sort_order",
+                  "value": "desc",
+                  "description": "asc | desc"
+                }
+              ]
+            },
+            "description": "GET /dashboard/seller/top-performing-products — Paginated seller products ranked by product-inquiry volume.\n\n**Auth:** Bearer seller / buyer_seller.\n\n| Query | Required | Description |\n|-------|----------|-------------|\n| `page` | OPTIONAL | Page number (default 1) |\n| `limit` | OPTIONAL | 1–100 (default 10) |\n| `sort_by` | OPTIONAL | inquiry_count | product name / id fields supported by API |\n| `sort_order` | OPTIONAL | asc | desc |"
+          }
+        },
+        {
+          "name": "Admin Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/dashboard/admin",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "dashboard",
+                "admin"
+              ]
+            },
+            "description": "GET /dashboard/admin — Platform-wide admin panel metrics and chart series.\n\n**Auth:** Bearer admin / super_admin / supporter.\n\n**Response highlights:** `summary` (users, products moderation, RFQs, inquiries, quotations, chat), plus detailed `users` / `products` / `rfqs` / `inquiries` / `quotations` / `chat` blocks and `charts` for the UI."
           }
         }
       ]
@@ -7714,7 +7917,8 @@
             "description": "DELETE /services/:id — Admin only."
           }
         }
-      ]
+      ],
+      "description": "Services catalog — public read; admin write (multipart icon)."
     },
     {
       "name": "News",
@@ -7942,7 +8146,8 @@
             "description": "DELETE /news/:id — Admin only."
           }
         }
-      ]
+      ],
+      "description": "News articles — public read; admin write (multipart thumbnail)."
     }
   ],
   "event": [],
