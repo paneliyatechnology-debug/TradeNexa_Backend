@@ -10,6 +10,8 @@ web_modules/
 .env.test.local
 .env.production.local
 *.env
+load-tests/k6.env
+load-tests/.env.load
 
 # Logs and Runtime Files
 logs/*

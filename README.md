@@ -23,6 +23,7 @@ REST API and realtime backend for the **TradeNexa** B2B marketplace — products
 - [Realtime (Socket.IO)](#realtime-socketio)
 - [Media and uploads](#media-and-uploads)
 - [Postman](#postman)
+- [Load testing](#load-testing)
 - [Code style](#code-style)
 - [Architecture notes](#architecture-notes)
 
@@ -191,6 +192,10 @@ When S3 env vars are set, uploads go to the bucket and private files are served 
 | `npm run seed` | Run seeds |
 | `npm run lint` | ESLint |
 | `npm run format` | Prettier write |
+| `npm run postman:sync` | Refresh Postman descriptions from `postman/api-specs.js` |
+| `npm run load-test:smoke` | k6 smoke — 1 call per safe API |
+| `npm run load-test:500` | k6 — 500 iterations, 50 VUs |
+| `npm run load-test:1000` | k6 — 1000 iterations, 100 VUs |
 
 ---
 
@@ -280,6 +285,48 @@ Presence and “active conversation” push suppression are **in-memory**. Run a
 3. Use `buyer_token` / `seller_token` / `admin_token` after OTP verify or admin login
 
 Request bodies and REQUIRED/OPTIONAL fields are documented on each request. Spec generators also live in `postman/api-specs.js`.
+
+---
+
+## Load testing
+
+Load tests use **[k6](https://k6.io/)** against the full API catalog in `load-tests/k6/endpoints.js`.
+
+### Install k6
+
+```bash
+# Debian/Ubuntu — see https://grafana.com/docs/k6/latest/set-up/install-k6/
+sudo gpg -k
+sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+  --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E52627
+echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+  | sudo tee /etc/apt/sources.list.d/k6.list
+sudo apt-get update && sudo apt-get install k6
+```
+
+### Configure
+
+```bash
+cp load-tests/k6.env.example load-tests/k6.env
+# set BUYER_TOKEN / SELLER_TOKEN / ADMIN_TOKEN and resource IDs
+```
+
+Start the API (`npm run dev`). For local stress tests set `RATE_LIMIT_ENABLED=false`.
+
+### Run
+
+```bash
+npm run load-test:smoke              # 1 request per safe endpoint
+npm run load-test:500                # 500 iterations · 50 VUs
+npm run load-test:1000               # 1000 iterations · 100 VUs
+
+# filters / writes
+bash load-tests/run-k6.sh smoke -e GROUP=products,rfqs
+bash load-tests/run-k6.sh 500 -e INCLUDE_WRITES=true
+k6 run --vus 50 --iterations 500 -e BUYER_TOKEN=... load-tests/k6/load.js
+```
+
+Default mode hits **safe read APIs only**. Set `INCLUDE_WRITES=true` to include mutating endpoints (use carefully). Multipart upload APIs are excluded.
 
 ---
 
