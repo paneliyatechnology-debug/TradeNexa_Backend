@@ -4,6 +4,7 @@
 const rfqService = require('../services/rfqService');
 const rfqModel = require('../models/rfqModel');
 const quotationModel = require('../models/quotationModel');
+const userModel = require('../models/userModel');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS, ADMIN_PANEL_ROLE_CODES } = require('../constants');
 
@@ -206,10 +207,17 @@ const getSellerRfqs = async (req, res, next) => {
   try {
     await rfqModel.expireOverdueRfqs();
     // Hide RFQs created by the authenticated user (buyer_id from JWT)
-    const data = await rfqModel.findSellerFeed(
-      req.user.id,
-      buildListFilters(req, { excludeOwnBuyer: true }),
-    );
+    const filters = buildListFilters(req, { excludeOwnBuyer: true });
+
+    // Default filter: seller profile category_id when set and query did not pass category_id
+    if (filters.category_id == null) {
+      const company = await userModel.getCompanyDetails(req.user.id);
+      if (company?.category_id) {
+        filters.category_id = company.category_id;
+      }
+    }
+
+    const data = await rfqModel.findSellerFeed(req.user.id, filters);
     return success(res, 'Seller RFQ feed retrieved successfully', data);
   } catch (err) {
     next(err);
