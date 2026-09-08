@@ -68,9 +68,11 @@ const formatPhone = (mobile) => {
  * @returns {Promise<{ firebaseVerificationId: string }>}
  */
 const sendOtp = async (mobileNumber, recaptchaToken = null) => {
+  console.log('sendOtp firebase entered');
   if (!config.firebase.apiKey) throw new AppError('Firebase API key not configured', 400);
 
   const url = `https://identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key=${config.firebase.apiKey}`;
+  console.log('sendOtp firebase url', url);
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -79,8 +81,10 @@ const sendOtp = async (mobileNumber, recaptchaToken = null) => {
       ...(recaptchaToken && { recaptchaToken }),
     }),
   });
+  console.log('sendOtp firebase response', response);
 
   const data = await response.json();
+  console.log('sendOtp firebase data', data);
   if (!response.ok) {
     throw new AppError(data.error?.message || 'Failed to send OTP', 400);
   }

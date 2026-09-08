@@ -30,6 +30,7 @@ const apiLimiter = config.rateLimit.enabled
 
 /** Applied to send-otp and resend-otp — 5 requests per 15 minutes. */
 const otpLimiter = rateLimit({
+
   windowMs: 15 * 60 * 1000,
   max: 5,
   standardHeaders: true,

@@ -163,7 +163,9 @@ const issueTokens = async (user, req) => {
  * @returns {Promise<Object>}
  */
 const sendOtp = async (mobileNumber, recaptchaToken) => {
+  console.log('sendOtp service entered');
   const result = await firebase.sendOtp(mobileNumber, recaptchaToken);
+  console.log('sendOtp service exited');
   await userModel.createOtpLog({
     mobile_number: mobileNumber,
     firebase_verification_id: result.firebaseVerificationId,

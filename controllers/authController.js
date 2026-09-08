@@ -14,7 +14,9 @@ const { MESSAGES, HTTP_STATUS } = require('../constants');
  */
 const sendOtp = async (req, res, next) => {
   try {
+    // console.log('sendOtp controller entered');
     const data = await authService.sendOtp(req.body.mobile_number, req.body.recaptcha_token);
+    // console.log('sendOtp controller exited');
     return success(res, MESSAGES.OTP_SENT, data);
   } catch (err) {
     next(err);

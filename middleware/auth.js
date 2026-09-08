@@ -246,7 +246,10 @@ const authorize = (...allowedRoles) => {
       }
       const roles = await userModel.getUserRoles(req.user.id);
       const userRoleCode = roles?.[0]?.code;
-      if (!userRoleCode || !allowedRoles.includes(userRoleCode)) {
+      const isSuperAdmin = userRoleCode === 'super_admin';
+      const hasRole = userRoleCode && (allowedRoles.includes(userRoleCode) || (allowedRoles.includes('admin') && isSuperAdmin));
+
+      if (!userRoleCode || !hasRole) {
         return next(new AppError('Forbidden: Access denied', 403));
       }
       req.user.role = userRoleCode;

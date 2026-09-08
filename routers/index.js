@@ -23,6 +23,7 @@ const roleRouter = require('./roleRouter');
 const adminAuthRouter = require('./adminAuthRouter');
 const dashboardRouter = require('./dashboardRouter');
 const notificationRouter = require('./notificationRouter');
+const mediaRouter = require('./mediaRouter');
 
 const router = express.Router();
 
@@ -50,5 +51,6 @@ router.use('/wishlist', wishlistRouter);
 router.use('/locations', locationRouter);
 router.use('/services', serviceRouter);
 router.use('/news', newsRouter);
+router.use('/media', mediaRouter);
 
 module.exports = router;
