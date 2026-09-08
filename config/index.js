@@ -20,8 +20,8 @@ module.exports = {
     chatPath: process.env.FRONTEND_CHAT_PATH || '/chats',
   },
   jwt: {
-    accessSecret: process.env.JWT_ACCESS_SECRET,
-    refreshSecret: process.env.JWT_REFRESH_SECRET,
+    accessSecret: process.env.JWT_ACCESS_SECRET || 'tradenexa-default-access-secret-key-2026',
+    refreshSecret: process.env.JWT_REFRESH_SECRET || 'tradenexa-default-refresh-secret-key-2026',
     accessExpiry: process.env.JWT_ACCESS_EXPIRY || '15m',
     refreshExpiry: process.env.JWT_REFRESH_EXPIRY || '7d',
     registrationExpiry: process.env.JWT_REGISTRATION_EXPIRY || '10m',
