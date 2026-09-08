@@ -26,8 +26,8 @@ const start = async () => {
     const server = http.createServer(app);
     initSocket(server);
 
-    server.listen(config.port, () => {
-      logger.info(`${config.app.name} running on port ${config.port}`);
+    server.listen(config.port, '0.0.0.0', () => {
+      logger.info(`${config.app.name} running on port ${config.port} (0.0.0.0)`);
       logger.info(`Socket.IO available at path /socket.io`);
       if (s3Service.isEnabled()) {
         logger.info(`S3 storage enabled — media served via ${config.app.url}/media/`);
