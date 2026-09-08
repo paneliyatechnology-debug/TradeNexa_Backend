@@ -11,9 +11,7 @@ const { ROLE_CODES } = require('../../constants');
  * @param { import("knex").Knex } knex
  */
 exports.seed = async function (knex) {
-  await knex('roles').del();
-
-  await knex('roles').insert([
+  const roles = [
     {
       code: ROLE_CODES.BUYER,
       name: 'Buyer',
@@ -50,5 +48,18 @@ exports.seed = async function (knex) {
       description: 'Customer support staff for the admin panel',
       is_active: true,
     },
-  ]);
+  ];
+
+  for (const role of roles) {
+    const existing = await knex('roles').where({ code: role.code }).first();
+    if (existing) {
+      await knex('roles').where({ id: existing.id }).update({
+        name: role.name,
+        description: role.description,
+        is_active: role.is_active,
+      });
+    } else {
+      await knex('roles').insert(role);
+    }
+  }
 };

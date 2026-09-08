@@ -10,17 +10,15 @@
  * @param { import("knex").Knex } knex
  */
 exports.seed = async function (knex) {
-  await knex('cities').del();
-  await knex('states').del();
-  await knex('countries').del();
-
-  await knex('countries').insert({
-    name: 'India',
-    code: 'IN',
-    is_active: true,
-  });
-
-  const country = await knex('countries').where('code', 'IN').first();
+  let country = await knex('countries').where('code', 'IN').first();
+  if (!country) {
+    const [id] = await knex('countries').insert({
+      name: 'India',
+      code: 'IN',
+      is_active: true,
+    });
+    country = { id };
+  }
   const indiaId = country.id;
 
   const states = [
@@ -32,29 +30,36 @@ exports.seed = async function (knex) {
   ];
 
   for (const state of states) {
-    await knex('states').insert({
-      country_id: indiaId,
-      name: state.name,
-      code: state.code,
-      is_active: true,
-    });
-
-    const insertedState = await knex('states').where('code', state.code).first();
-    const sid = insertedState.id;
+    let stateRow = await knex('states').where({ country_id: indiaId, code: state.code }).first();
+    if (!stateRow) {
+      const [id] = await knex('states').insert({
+        country_id: indiaId,
+        name: state.name,
+        code: state.code,
+        is_active: true,
+      });
+      stateRow = { id };
+    }
+    const sid = stateRow.id;
 
     if (state.code === 'GJ') {
-      await knex('cities').insert([
-        { state_id: sid, name: 'Ahmedabad', is_active: true },
-        { state_id: sid, name: 'Surat', is_active: true },
-        { state_id: sid, name: 'Vadodara', is_active: true },
-      ]);
+      const gjCities = ['Ahmedabad', 'Surat', 'Vadodara', 'Rajkot', 'Bhavnagar'];
+      for (const cityName of gjCities) {
+        const cExists = await knex('cities').where({ state_id: sid, name: cityName }).first();
+        if (!cExists) {
+          await knex('cities').insert({ state_id: sid, name: cityName, is_active: true });
+        }
+      }
     }
 
     if (state.code === 'MH') {
-      await knex('cities').insert([
-        { state_id: sid, name: 'Mumbai', is_active: true },
-        { state_id: sid, name: 'Pune', is_active: true },
-      ]);
+      const mhCities = ['Mumbai', 'Pune', 'Nagpur', 'Nashik'];
+      for (const cityName of mhCities) {
+        const cExists = await knex('cities').where({ state_id: sid, name: cityName }).first();
+        if (!cExists) {
+          await knex('cities').insert({ state_id: sid, name: cityName, is_active: true });
+        }
+      }
     }
   }
 };
