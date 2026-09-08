@@ -11,15 +11,35 @@ require('dotenv').config();
 // ==========================================
 
 function getConnectionConfig() {
-  const url =
+  let url =
     process.env.DATABASE_URL ||
     process.env.MYSQL_URL ||
     process.env.MYSQL_PRIVATE_URL ||
     process.env.MYSQL_PUBLIC_URL;
 
-  if (url) {
-    console.log('[Knex] Using database connection URL.');
-    return url;
+  if (url && typeof url === 'string' && !url.startsWith('${{') && !url.startsWith('VALUE') && url.trim() !== '') {
+    try {
+      const parsed = new URL(url.replace(/^mysql2:\/\//, 'mysql://'));
+      const host = parsed.hostname;
+      const port = parseInt(parsed.port, 10) || 3306;
+      const user = decodeURIComponent(parsed.username || 'root');
+      const password = decodeURIComponent(parsed.password || '');
+      const database = (parsed.pathname || '').replace(/^\//, '') || 'tradenexa';
+
+      console.log(`[Knex] Connecting via URL -> Host: ${host}, Port: ${port}, DB: ${database}, User: ${user}`);
+
+      return {
+        host,
+        port,
+        user,
+        password,
+        database,
+        charset: 'utf8mb4',
+      };
+    } catch (e) {
+      console.log('[Knex] Passing connection URL directly to knex.');
+      return url;
+    }
   }
 
   const host = process.env.MYSQLHOST || process.env.DB_HOST || '127.0.0.1';
