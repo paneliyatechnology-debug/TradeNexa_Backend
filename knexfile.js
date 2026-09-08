@@ -10,16 +10,42 @@ require('dotenv').config();
 // Shared connection config
 // ==========================================
 
+function getConnectionConfig() {
+  const url =
+    process.env.DATABASE_URL ||
+    process.env.MYSQL_URL ||
+    process.env.MYSQL_PRIVATE_URL ||
+    process.env.MYSQL_PUBLIC_URL;
+
+  if (url) {
+    console.log('[Knex] Using database connection URL.');
+    return url;
+  }
+
+  const host = process.env.MYSQLHOST || process.env.DB_HOST || '127.0.0.1';
+  const port = parseInt(process.env.MYSQLPORT || process.env.DB_PORT, 10) || 3306;
+  const user = process.env.MYSQLUSER || process.env.DB_USER || 'root';
+  const password =
+    process.env.MYSQLPASSWORD !== undefined
+      ? process.env.MYSQLPASSWORD
+      : process.env.DB_PASSWORD || '';
+  const database = process.env.MYSQLDATABASE || process.env.DB_NAME || 'tradenexa';
+
+  console.log(`[Knex] Connecting to MySQL at ${host}:${port}, database: ${database}, user: ${user}`);
+
+  return {
+    host,
+    port,
+    user,
+    password,
+    database,
+    charset: 'utf8mb4',
+  };
+}
+
 const baseConfig = {
   client: 'mysql2',
-  connection: process.env.MYSQL_URL || process.env.DATABASE_URL || {
-    host: process.env.DB_HOST || process.env.MYSQLHOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || process.env.MYSQLPORT, 10) || 3306,
-    user: process.env.DB_USER || process.env.MYSQLUSER || 'root',
-    password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || '',
-    database: process.env.DB_NAME || process.env.MYSQLDATABASE || 'tradenexa',
-    charset: 'utf8mb4',
-  },
+  connection: getConnectionConfig(),
   pool: { min: 2, max: 10 },
   migrations: {
     directory: './database/migrations',
