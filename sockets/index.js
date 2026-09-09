@@ -102,7 +102,7 @@ const initSocket = (httpServer) => {
 
   const io = new Server(httpServer, {
     cors: {
-      origin: corsOrigins,
+      origin: (origin, callback) => callback(null, true),
       credentials: true,
       methods: ['GET', 'POST'],
     },

@@ -42,7 +42,7 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    if (corsOrigins === '*') {
+    if (!corsOrigins || corsOrigins === '*' || corsOrigins === 'true') {
       return callback(null, true);
     }
 
@@ -50,7 +50,7 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    return callback(null, false);
+    return callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
