@@ -77,6 +77,8 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/media', mediaRouter);
 app.use(uploadConfig.publicPath, mediaRouter);
+app.use('/api/media', mediaRouter);
+app.use('/api/uploads', mediaRouter);
 
 app.get('/health', (_req, res) => {
   res.json({ success: true, message: 'Server is running' });
