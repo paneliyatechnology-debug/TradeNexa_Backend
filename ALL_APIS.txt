@@ -1,0 +1,1485 @@
+====================================================================================================
+TRADENEXA B2B BACKEND - COMPLETE API SPECIFICATION DOCUMENTATION FOR APP DEVELOPERS (FLUTTER / REACT NATIVE / NATIVE)
+====================================================================================================
+
+BASE ENVIRONMENTS:
+----------------------------------------------------------------------------------------------------
+1. LOCAL DEVELOPMENT BASE URL:
+   http://localhost:3000/api/v1
+
+2. PRODUCTION / STAGING (RAILWAY) BASE URL:
+   https://tradenexabackend-dev.up.railway.app/api/v1
+
+3. WEBSOCKET / SOCKET.IO SERVER:
+   Local: ws://localhost:3000 (or http://localhost:3000)
+   Live:  wss://tradenexabackend-dev.up.railway.app (or https://tradenexabackend-dev.up.railway.app)
+
+
+====================================================================================================
+GLOBAL REQUEST & RESPONSE FORMATS
+====================================================================================================
+
+1. AUTHENTICATION HEADER:
+   All authenticated APIs require the JWT access token in the HTTP Authorization header:
+   Authorization: Bearer <access_token>
+
+2. SUCCESS RESPONSE WRAPPER:
+   {
+     "success": true,
+     "message": "Operation completed successfully",
+     "data": { ... },
+     "pagination": {          // (Included when endpoints are paginated)
+       "page": 1,
+       "limit": 20,
+       "total_records": 150,
+       "total_pages": 8
+     }
+   }
+
+3. ERROR RESPONSE WRAPPER:
+   {
+     "success": false,
+     "message": "Validation failed",
+     "errors": [
+       { "field": "mobile_number", "message": "Invalid mobile number. Must include country code prefix (e.g., +919876543210)" }
+     ]
+   }
+
+4. USER ROLES (ROLE CODES):
+   - buyer         : Standard Buyer
+   - seller        : Standard Seller / Supplier
+   - buyer_seller  : Dual Role (Can buy & sell)
+   - admin         : Platform Admin
+   - super_admin   : Super Administrator
+   - supporter     : Customer Support Executive
+
+5. DEVICE TYPES:
+   - "android" | "ios" | "web"
+
+
+====================================================================================================
+TABLE OF CONTENTS
+====================================================================================================
+MODULE 01: AUTHENTICATION & PROFILE APIS (/auth)
+MODULE 02: ADMIN AUTHENTICATION APIS (/admin/auth)
+MODULE 03: ROLES & BUSINESS TYPES APIS (/roles, /business-types)
+MODULE 04: LOCATION REFERENCE APIS (/locations)
+MODULE 05: CATEGORIES & SUBCATEGORIES APIS (/categories)
+MODULE 06: PRODUCTS & CATALOG APIS (/products)
+MODULE 07: SELLERS & SUPPLIERS APIS (/sellers, /suppliers)
+MODULE 08: RFQ - REQUEST FOR QUOTATION APIS (/rfqs)
+MODULE 09: PRODUCT INQUIRIES APIS (/inquiries)
+MODULE 10: REAL-TIME CHAT & MESSAGING APIS (/chats + SOCKET.IO)
+MODULE 11: WISHLIST APIS (/wishlist)
+MODULE 12: IN-APP NOTIFICATIONS APIS (/notifications)
+MODULE 13: BANNERS & OFFERS APIS (/banners, /offers)
+MODULE 14: BRANDS APIS (/brands)
+MODULE 15: SERVICES & NEWS BLOG APIS (/services, /news)
+MODULE 16: DASHBOARD ANALYTICS APIS (/dashboard)
+MODULE 17: MEDIA & FILE STREAMING APIS (/media, /uploads)
+
+
+====================================================================================================
+MODULE 01: AUTHENTICATION & USER PROFILE (/auth)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1.1 SEND OTP
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /auth/send-otp
+- AUTH: Public (No token required)
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "mobile_number": "+919876543210",       // [Required] String with country code prefix (+91...)
+    "recaptcha_token": "optional_token_str"  // [Optional] String
+  }
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "message": "OTP sent successfully",
+    "data": {
+      "firebase_verification_id": "test_verification_id_or_firebase_id",
+      "mobile_number": "+919876543210",
+      "is_registered": true                  // If false, redirect user to Complete Registration Screen
+    }
+  }
+
+----------------------------------------------------------------------------------------------------
+1.2 VERIFY OTP
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /auth/verify-otp
+- AUTH: Public (No token required)
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "mobile_number": "+919876543210",               // [Required] String
+    "otp": "123456",                                 // [Required] String / Number (4-8 digits)
+    "firebase_verification_id": "verif_id_string",   // [Required] String
+    "device": {                                      // [Optional] Object
+      "device_type": "android",                      // "android" | "ios" | "web"
+      "device_token": "fcm_push_token_string"
+    }
+  }
+- RESPONSE (200 OK - If User Registered):
+  {
+    "success": true,
+    "message": "OTP verified successfully",
+    "data": {
+      "is_registered": true,
+      "access_token": "eyJhbGciOi...",
+      "refresh_token": "eyJhbGciOi...",
+      "user": {
+        "id": 1,
+        "full_name": "Rajesh Sharma",
+        "email": "rajesh@example.com",
+        "mobile_number": "+919876543210",
+        "roles": ["buyer"],
+        "is_completed_profile": true
+      }
+    }
+  }
+- RESPONSE (200 OK - If New User / Not Registered):
+  {
+    "success": true,
+    "message": "OTP verified successfully",
+    "data": {
+      "is_registered": false,
+      "registration_token": "temp_registration_jwt_token", // Send in Authorization header or body on register
+      "mobile_number": "+919876543210"
+    }
+  }
+
+----------------------------------------------------------------------------------------------------
+1.3 RESEND OTP
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /auth/resend-otp
+- AUTH: Public
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "mobile_number": "+919876543210",
+    "firebase_verification_id": "verif_id_string",
+    "recaptcha_token": "optional_token"
+  }
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "message": "OTP resent successfully",
+    "data": {
+      "firebase_verification_id": "new_or_existing_verif_id"
+    }
+  }
+
+----------------------------------------------------------------------------------------------------
+1.4 REGISTER (NEW USER ACCOUNT)
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /auth/register
+- AUTH: Required (Send Registration Token in Authorization Header: Bearer <registration_token>)
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "mobile_number": "+919876543210",       // [Required] Must match verified mobile
+    "full_name": "Jatin Patel",              // [Required] 2-100 characters
+    "email": "jatin@example.com",            // [Required] Valid email
+    "role_id": 1,                            // [Required] 1 = Buyer, 2 = Seller, 3 = Buyer+Seller
+    "business_type_id": 1,                   // [Required] From GET /business-types
+    "language_id": 1,                        // [Optional] 1 = English, 2 = Hindi, 3 = Gujarati
+    "device": {                              // [Optional]
+      "device_type": "android",
+      "device_token": "fcm_token_string"
+    }
+  }
+- RESPONSE (201 Created):
+  {
+    "success": true,
+    "message": "Registration successful",
+    "data": {
+      "access_token": "eyJhbGciOi...",
+      "refresh_token": "eyJhbGciOi...",
+      "user": {
+        "id": 5,
+        "full_name": "Jatin Patel",
+        "email": "jatin@example.com",
+        "mobile_number": "+919876543210",
+        "roles": ["seller"],
+        "is_completed_profile": false
+      }
+    }
+  }
+
+----------------------------------------------------------------------------------------------------
+1.5 REFRESH TOKEN
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /auth/refresh-token
+- AUTH: Public
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "refresh_token": "eyJhbGciOi..."        // [Required]
+  }
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "message": "Token refreshed successfully",
+    "data": {
+      "access_token": "eyJhbGciOiNewAccessToken...",
+      "refresh_token": "eyJhbGciOiNewRefreshToken..."
+    }
+  }
+
+----------------------------------------------------------------------------------------------------
+1.6 LOGOUT
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /auth/logout
+- AUTH: Required (Bearer <access_token>)
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "refresh_token": "eyJhbGciOi...",       // [Optional]
+    "device_token": "fcm_token_string",      // [Optional] Removes FCM device token
+    "device_type": "android"                 // [Optional]
+  }
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "message": "Logged out successfully"
+  }
+
+----------------------------------------------------------------------------------------------------
+1.7 GET USER PROFILE & COUNTERS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /auth/profile
+- AUTH: Required (Bearer <access_token>)
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": {
+      "id": 1,
+      "full_name": "Jatin Patel",
+      "email": "jatin@example.com",
+      "mobile_number": "+919876543210",
+      "is_completed_profile": true,
+      "roles": [ { "id": 2, "name": "Seller", "code": "seller" } ],
+      "business_type": { "id": 1, "name": "Manufacturer" },
+      "seller_profile": {
+        "company_name": "Patel Textiles Pvt Ltd",
+        "company_logo": "uploads/profiles/1/logo.png",
+        "company_banner": "uploads/profiles/1/banner.png",
+        "gst_number": "24AAAAA0000A1Z5",
+        "pan_number": "ABCDE1234F",
+        "business_description": "Manufacturer of premium cotton fabrics",
+        "category_id": 1,
+        "is_verified": true
+      },
+      "address": {
+        "address_line_1": "Plot 45, GIDC Industrial Estate",
+        "address_line_2": "Near Ring Road",
+        "country_id": 1,
+        "country_name": "India",
+        "state_id": 12,
+        "state_name": "Gujarat",
+        "city_id": 350,
+        "city_name": "Surat",
+        "pincode": "395006"
+      },
+      "counts": {
+        "wishlist": 12,
+        "notifications_unread": 3,
+        "chat_unread": 5,
+        "inquiries": 8,
+        "rfqs": 4
+      }
+    }
+  }
+
+----------------------------------------------------------------------------------------------------
+1.8 UPDATE / COMPLETE PROFILE
+----------------------------------------------------------------------------------------------------
+- METHOD: PUT
+- URL: /auth/profile
+- AUTH: Required (Bearer <access_token>)
+- HEADERS: Content-Type: multipart/form-data
+- FORM-DATA FIELDS:
+  • File Uploads (Optional):
+    - profile_image   : (File: jpg/jpeg/png/webp, max 5MB) User avatar
+    - company_logo    : (File: jpg/jpeg/png/webp, max 5MB) Company logo
+    - company_banner  : (File: jpg/jpeg/png/webp, max 10MB) Company profile banner
+
+  • For Buyer Role (Text Fields):
+    - company_name    : (String, 2-200 chars) [Required]
+    - industry        : (String, 2-200 chars) [Required]
+    - category_id     : (Integer) [Required] Main Category ID
+    - gst_number      : (String) [Optional] 15-char GST format
+    - address_line_1  : (String, 3-255 chars) [Required]
+    - address_line_2  : (String) [Optional]
+    - country_id      : (Integer) [Required] e.g. 1 (India)
+    - state_id        : (Integer) [Required]
+    - city_id         : (Integer) [Required]
+    - pincode         : (String, 6 digits) [Required] e.g. "395006"
+
+  • For Seller Role (Text Fields):
+    - company_name         : (String, 2-200 chars) [Required]
+    - category_id          : (Integer) [Required] Main Category ID
+    - gst_number           : (String) [Required] Valid GST
+    - pan_number           : (String) [Required] Valid PAN (ABCDE1234F)
+    - business_description : (String, min 10 chars) [Required]
+    - cin                  : (String) [Optional]
+    - iec                  : (String) [Optional]
+    - address_line_1       : (String, 3-255 chars) [Required]
+    - address_line_2       : (String) [Optional]
+    - country_id           : (Integer) [Required]
+    - state_id             : (Integer) [Required]
+    - city_id              : (Integer) [Required]
+    - pincode              : (String, 6 digits) [Required]
+
+  • For Buyer_Seller Dual Role (Text Fields):
+    - Includes all fields of both Buyer & Seller above.
+
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "message": "Profile updated successfully",
+    "data": { ...updated profile object... }
+  }
+
+
+====================================================================================================
+MODULE 02: ADMIN AUTHENTICATION (/admin/auth)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+2.1 ADMIN LOGIN
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /admin/auth/login
+- AUTH: Public
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "email": "admin@tradenexa.com",
+    "password": "SecurePassword@123"
+  }
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "message": "Login successful",
+    "data": {
+      "access_token": "eyJhbGciOi...",
+      "refresh_token": "eyJhbGciOi...",
+      "user": {
+        "id": 1,
+        "full_name": "Super Admin",
+        "email": "admin@tradenexa.com",
+        "roles": ["super_admin"]
+      }
+    }
+  }
+
+----------------------------------------------------------------------------------------------------
+2.2 CREATE ADMIN / SUPPORT USER
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /admin/auth/users
+- AUTH: Required (Super Admin / Admin token)
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "full_name": "Support Staff",
+    "email": "support@tradenexa.com",
+    "password": "StrongPassword@123",
+    "role_id": 6                             // Role ID for admin, super_admin, or supporter
+  }
+
+
+====================================================================================================
+MODULE 03: ROLES & BUSINESS TYPES (/roles, /business-types)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+3.1 GET ALL PLATFORM ROLES
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /roles
+- AUTH: Public
+- QUERY PARAMS:
+  - page        : (Integer, default: 1)
+  - limit       : (Integer, default: 20)
+  - is_active   : ("true" | "false")
+  - sort_by     : ("id" | "name" | "code" | "is_active" | "created_at")
+  - sort_order  : ("asc" | "desc")
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      { "id": 1, "name": "Buyer", "code": "buyer", "is_active": true },
+      { "id": 2, "name": "Seller", "code": "seller", "is_active": true },
+      { "id": 3, "name": "Buyer & Seller", "code": "buyer_seller", "is_active": true }
+    ]
+  }
+
+----------------------------------------------------------------------------------------------------
+3.2 GET BUSINESS TYPES
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /business-types
+- AUTH: Public
+- QUERY PARAMS:
+  - role_id     : (Integer, optional) Filter by role (e.g. ?role_id=2 for Seller business types)
+  - search      : (String, optional)
+  - is_active   : ("true" | "false")
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      { "id": 1, "name": "Manufacturer", "code": "manufacturer", "role_id": 2 },
+      { "id": 2, "name": "Wholesaler / Distributor", "code": "wholesaler", "role_id": 2 },
+      { "id": 3, "name": "Trader / Exporter", "code": "trader", "role_id": 2 },
+      { "id": 4, "name": "Retailer", "code": "retailer", "role_id": 1 }
+    ]
+  }
+
+
+====================================================================================================
+MODULE 04: LOCATION REFERENCE (/locations)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+4.1 GET COUNTRIES LIST
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /locations/countries
+- AUTH: Public
+- QUERY PARAMS:
+  - page        : (Integer, optional)
+  - limit       : (Integer, max: 100)
+  - search      : (String, optional) e.g. "India"
+  - code        : (String, optional) e.g. "IN"
+  - is_active   : ("true" | "false")
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      { "id": 1, "name": "India", "code": "IN", "phone_code": "+91", "currency": "INR", "is_active": true }
+    ]
+  }
+
+----------------------------------------------------------------------------------------------------
+4.2 GET STATES LIST
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /locations/states?country_id=1
+- AUTH: Public
+- QUERY PARAMS:
+  - country_id  : [Required] (Integer) e.g. 1
+  - search      : (String, optional) e.g. "Gujarat"
+  - page        : (Integer, optional)
+  - limit       : (Integer, max: 100)
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      { "id": 12, "name": "Gujarat", "code": "GJ", "country_id": 1, "is_active": true },
+      { "id": 21, "name": "Maharashtra", "code": "MH", "country_id": 1, "is_active": true }
+    ]
+  }
+
+----------------------------------------------------------------------------------------------------
+4.3 GET CITIES LIST
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /locations/cities?state_id=12
+- AUTH: Public
+- QUERY PARAMS:
+  - state_id    : [Optional/Recommended] (Integer) e.g. 12
+  - search      : (String, optional) e.g. "Surat"
+  - page        : (Integer, optional)
+  - limit       : (Integer, max: 100)
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      { "id": 350, "name": "Surat", "state_id": 12, "is_active": true },
+      { "id": 351, "name": "Ahmedabad", "state_id": 12, "is_active": true }
+    ]
+  }
+
+
+====================================================================================================
+MODULE 05: CATEGORIES & SUBCATEGORIES (/categories)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+5.1 GET ALL MAIN CATEGORIES
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /categories
+- AUTH: Public
+- QUERY PARAMS:
+  - page        : (Integer, default: 1)
+  - limit       : (Integer, default: 20)
+  - search      : (String, optional)
+  - is_active   : ("true" | "false")
+  - sort_by     : ("id" | "name" | "slug" | "is_active" | "subcategory_count" | "product_count")
+  - sort_order  : ("asc" | "desc")
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 1,
+        "name": "Textiles & Fabrics",
+        "slug": "textiles-fabrics",
+        "icon": "uploads/categories/1/icon.png",
+        "image": "uploads/categories/1/banner.jpg",
+        "subcategory_count": 8,
+        "product_count": 140,
+        "is_active": true
+      }
+    ]
+  }
+
+----------------------------------------------------------------------------------------------------
+5.2 GET CATEGORY DETAILS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /categories/:id
+- AUTH: Public
+
+----------------------------------------------------------------------------------------------------
+5.3 GET SUBCATEGORIES OF A CATEGORY
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /categories/:categoryId/subcategories
+- AUTH: Public
+- PATH PARAMS:
+  - categoryId  : (Integer) Parent category ID
+- QUERY PARAMS:
+  - page, limit, search, is_active, sort_by, sort_order
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 10,
+        "parent_id": 1,
+        "name": "Cotton Fabrics",
+        "slug": "cotton-fabrics",
+        "icon": "uploads/subcategories/10/icon.png",
+        "product_count": 45,
+        "is_active": true
+      }
+    ]
+  }
+
+----------------------------------------------------------------------------------------------------
+5.4 CREATE CATEGORY / SUBCATEGORY (ADMIN ONLY)
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /categories  (or /categories/:categoryId/subcategories)
+- AUTH: Required (Admin)
+- HEADERS: Content-Type: multipart/form-data
+- FORM-DATA:
+  - name        : (String, 2-100 chars) [Required]
+  - icon        : (File: png/svg/jpg, max 2MB) [Required]
+  - image       : (File: jpg/png, max 5MB) [Optional]
+  - slug        : (String, optional)
+  - is_active   : ("true" | "false")
+
+
+====================================================================================================
+MODULE 06: PRODUCTS & CATALOG (/products)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+6.1 GET PRODUCTS CATALOG (PUBLIC BROWSE / SEARCH / FILTER)
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /products
+- AUTH: Optional (If token passed, personal wishlist status is attached)
+- QUERY PARAMS:
+  - page             : (Integer, default: 1)
+  - limit            : (Integer, default: 20, max: 100)
+  - search           : (String, optional) Keywords e.g. "Cotton Yarn 40s"
+  - category_id      : (Integer, optional)
+  - subcategory_id   : (Integer, optional)
+  - brand_id         : (Integer, optional)
+  - seller_id        : (Integer, optional)
+  - city_id          : (Integer, optional)
+  - min_price        : (Float, optional)
+  - max_price        : (Float, optional)
+  - is_wishlist      : ("true" | "false", optional)
+  - sort_by          : ("id" | "name" | "price" | "moq" | "rating" | "is_trending" | "created_at")
+  - sort_order       : ("asc" | "desc")
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 15,
+        "name": "Organic Pure Cotton Fabric",
+        "slug": "organic-pure-cotton-fabric-15",
+        "short_description": "100% GOTS certified pure combed cotton fabric for apparel.",
+        "thumbnail": "uploads/products/15/thumb.jpg",
+        "price": "180.00",
+        "currency": "INR",
+        "show_price": true,
+        "moq": 100,
+        "unit": "Meter",
+        "material": "100% Organic Cotton",
+        "country_of_origin": "India",
+        "product_condition": "new",
+        "stock_status": "in_stock",
+        "stock_quantity": 5000,
+        "rating": "4.8",
+        "is_trending": true,
+        "is_wishlist": false,
+        "seller": {
+          "id": 2,
+          "company_name": "Patel Textiles",
+          "is_verified": true,
+          "city": "Surat",
+          "state": "Gujarat"
+        }
+      }
+    ],
+    "pagination": { "page": 1, "limit": 20, "total_records": 1, "total_pages": 1 }
+  }
+
+----------------------------------------------------------------------------------------------------
+6.2 GET TRENDING PRODUCTS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /products/trending
+- AUTH: Optional
+- QUERY PARAMS: category_id, subcategory_id, city_id, page, limit, sort_by, sort_order
+
+----------------------------------------------------------------------------------------------------
+6.3 GET RELATED PRODUCTS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /products/related?subcategory_id=10&product_id=15
+- AUTH: Optional
+- QUERY PARAMS:
+  - subcategory_id   : [Required] (Integer)
+  - product_id       : (Integer, optional) Excludes current product
+
+----------------------------------------------------------------------------------------------------
+6.4 GET SINGLE PRODUCT DETAILS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /products/:id
+- AUTH: Optional (Public sees approved products only; Owner/Admin sees any status)
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": {
+      "id": 15,
+      "name": "Organic Pure Cotton Fabric",
+      "slug": "organic-pure-cotton-fabric-15",
+      "short_description": "100% GOTS certified pure combed cotton fabric for apparel.",
+      "description": "Full HTML or markdown detailed specifications...",
+      "thumbnail": "uploads/products/15/thumb.jpg",
+      "media": [
+        { "id": 101, "media_type": "image", "url": "uploads/products/15/img1.jpg", "is_primary": true },
+        { "id": 102, "media_type": "image", "url": "uploads/products/15/img2.jpg", "is_primary": false },
+        { "id": 103, "media_type": "video", "url": "uploads/products/15/demo.mp4", "is_primary": false }
+      ],
+      "price": "180.00",
+      "currency": "INR",
+      "show_price": true,
+      "accept_inquiry": true,
+      "moq": 100,
+      "unit": "Meter",
+      "material": "100% Organic Cotton",
+      "country_of_origin": "India",
+      "product_condition": "new",
+      "stock_status": "in_stock",
+      "stock_quantity": 5000,
+      "hsn_code": "5208",
+      "gst_percentage": "5.00",
+      "warranty": "1 Year against manufacturing defects",
+      "search_tags": ["cotton", "fabric", "textile", "organic"],
+      "specifications": {
+        "GSM": "180",
+        "Width": "58 inches",
+        "Weave": "Plain"
+      },
+      "approval_status": "approved",
+      "is_active": true,
+      "is_wishlist": false,
+      "seller": {
+        "id": 2,
+        "company_name": "Patel Textiles Pvt Ltd",
+        "company_logo": "uploads/profiles/2/logo.png",
+        "is_verified": true,
+        "rating": "4.8",
+        "response_rate": "95%",
+        "address": { "city": "Surat", "state": "Gujarat", "country": "India" }
+      }
+    }
+  }
+
+----------------------------------------------------------------------------------------------------
+6.5 GET SELLER'S OWN PRODUCTS (SELLER DASHBOARD)
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /products/my
+- AUTH: Required (Seller / Supplier token)
+- QUERY PARAMS:
+  - approval_status  : ("draft" | "in_review" | "approved" | "revision_requested" | "rejected" | "all")
+  - page, limit, search, category_id, is_active, sort_by, sort_order
+
+----------------------------------------------------------------------------------------------------
+6.6 CREATE NEW PRODUCT (SELLER ONLY)
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /products
+- AUTH: Required (Seller / Buyer_Seller token)
+- HEADERS: Content-Type: multipart/form-data
+- FORM-DATA FIELDS:
+  • Mandatory Multipart Files:
+    - thumbnail            : (File: jpg/png/webp, max 5MB) [Required Main Image]
+    - image                : (File or Array of Files, max 8 images) [Optional Gallery]
+    - video                : (File: mp4/mov, max 50MB, max 1 video) [Optional Gallery]
+
+  • Mandatory Text Fields:
+    - name                 : (String, 2-200 chars) [Required]
+    - category_id          : (Integer) [Required]
+    - subcategory_id       : (Integer) [Required]
+    - brand_id             : (Integer) [Required]
+    - short_description    : (String, 10-500 chars) [Required]
+    - price                : (Float, e.g. 180.00) [Required]
+    - currency             : (String, e.g. "INR") [Required]
+    - moq                  : (Integer, min: 1, e.g. 100) [Required]
+    - unit                 : (String, e.g. "Meter", "Pieces", "Kg") [Required]
+    - material             : (String, max 150 chars) [Required]
+    - country_of_origin    : (String, e.g. "India") [Required]
+    - product_condition    : ("new" | "used" | "refurbished") [Required]
+    - stock_status         : ("in_stock" | "out_of_stock" | "made_to_order") [Required]
+    - show_price           : ("true" | "false") [Required]
+    - accept_inquiry       : ("true" | "false") [Required]
+    - is_active            : ("true" | "false") [Required]
+
+  • Optional Text Fields:
+    - description          : (String, max 5000 chars) Full rich description
+    - warranty             : (String, max 100 chars)
+    - stock_quantity       : (Integer, min: 0)
+    - hsn_code             : (String, max 20 chars)
+    - gst_percentage       : (Float, 0 to 100, e.g. 5.0)
+    - search_tags          : (Comma-separated string or JSON array, e.g. "cotton,fabric,textile")
+    - specifications       : (JSON string, e.g. "{\"GSM\":\"180\",\"Width\":\"58 inch\"}")
+    - is_trending          : ("true" | "false")
+- RESPONSE (201 Created):
+  {
+    "success": true,
+    "message": "Product created successfully and submitted for admin review",
+    "data": { "id": 16, "name": "...", "approval_status": "in_review" }
+  }
+
+----------------------------------------------------------------------------------------------------
+6.7 UPDATE PRODUCT
+----------------------------------------------------------------------------------------------------
+- METHOD: PUT
+- URL: /products/:id
+- AUTH: Required (Seller Owner / Admin)
+- HEADERS: Content-Type: multipart/form-data
+- FORM-DATA FIELDS:
+  - All fields from create are optional.
+  - If thumbnail/image/video files are provided, new media is uploaded.
+
+----------------------------------------------------------------------------------------------------
+6.8 DELETE PRODUCT MEDIA
+----------------------------------------------------------------------------------------------------
+- METHOD: DELETE
+- URL: /products/:id/media
+- AUTH: Required (Seller Owner / Admin)
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "image_ids": [101, 102],                // [Optional] Array of image IDs to remove
+    "video_ids": [103]                      // [Optional] Array of video IDs to remove
+  }
+
+----------------------------------------------------------------------------------------------------
+6.9 DELETE PRODUCT
+----------------------------------------------------------------------------------------------------
+- METHOD: DELETE
+- URL: /products/:id
+- AUTH: Required (Seller Owner / Admin)
+
+----------------------------------------------------------------------------------------------------
+6.10 SEARCH KEYWORDS HISTORY
+----------------------------------------------------------------------------------------------------
+- GET    /products/search-history          // Get last 20 searched terms
+- DELETE /products/search-history          // Clear all search history
+- DELETE /products/search-history/:id      // Delete single search history item
+
+----------------------------------------------------------------------------------------------------
+6.11 ADMIN PRODUCT MODERATION APIS
+----------------------------------------------------------------------------------------------------
+- GET  /products/admin/reviews?approval_status=in_review
+- POST /products/admin/approve
+  Body: { "product_ids": [15, 16], "remarks": "Approved after quality check" }
+- POST /products/admin/request-revision
+  Body: { "product_ids": [15], "remarks": "Please provide clearer high-res images" }
+- POST /products/admin/reject
+  Body: { "product_ids": [15], "remarks": "Product violates platform policies" }
+
+
+====================================================================================================
+MODULE 07: SELLERS & SUPPLIERS DIRECTORY (/sellers, /suppliers)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+7.1 GET SELLERS DIRECTORY
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /sellers
+- AUTH: Optional (Hides current seller from list if authenticated)
+- QUERY PARAMS:
+  - page, limit, search, is_verified, is_active, sort_by, sort_order
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 2,
+        "company_name": "Patel Textiles Pvt Ltd",
+        "company_logo": "uploads/profiles/2/logo.png",
+        "is_verified": true,
+        "rating": "4.8",
+        "response_rate": "95%",
+        "years_in_business": 12,
+        "product_count": 35,
+        "city": "Surat",
+        "state": "Gujarat"
+      }
+    ]
+  }
+
+----------------------------------------------------------------------------------------------------
+7.2 GET VERIFIED SELLERS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /sellers/verified
+
+----------------------------------------------------------------------------------------------------
+7.3 GET NEARBY SELLERS (GEO-LOCATION)
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /sellers/nearby?latitude=21.1702&longitude=72.8311&max_distance=50
+- AUTH: Optional
+- QUERY PARAMS:
+  - latitude      : [Required] (Float, -90 to 90)
+  - longitude     : [Required] (Float, -180 to 180)
+  - max_distance  : (Float, in KM, optional, default: 50)
+  - page, limit
+
+----------------------------------------------------------------------------------------------------
+7.4 GET SELLER PUBLIC PROFILE
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /sellers/:id
+
+----------------------------------------------------------------------------------------------------
+7.5 GET ALL PRODUCTS OF A SELLER
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /sellers/:id/products
+- QUERY PARAMS: category_id, subcategory_id, search, min_price, max_price, sort_by, page, limit
+
+
+====================================================================================================
+MODULE 08: RFQ - REQUEST FOR QUOTATIONS (/rfqs)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+8.1 BROWSE PUBLIC RFQS (MARKETPLACE FEED)
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /rfqs
+- AUTH: Optional
+- QUERY PARAMS:
+  - category_id, subcategory_id, city, state, country, status ("published"),
+  - min_budget, max_budget, date_from, date_to, sort_by, page, limit
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 10,
+        "title": "Need 5000 Meters Cotton Twill Fabric 240 GSM",
+        "category_id": 1,
+        "subcategory_id": 10,
+        "quantity": 5000,
+        "unit": "Meter",
+        "expected_price": "150.00",
+        "budget": "750000.00",
+        "currency": "INR",
+        "quotation_deadline": "2026-10-30T18:30:00.000Z",
+        "required_before": "2026-11-15T18:30:00.000Z",
+        "city": "Ahmedabad",
+        "state": "Gujarat",
+        "country": "India",
+        "quotation_count": 4,
+        "status": "published",
+        "buyer": { "id": 3, "company_name": "Garment Export Corp" }
+      }
+    ]
+  }
+
+----------------------------------------------------------------------------------------------------
+8.2 CREATE NEW RFQ (BUYER)
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /rfqs
+- AUTH: Required (Buyer / Buyer_Seller token)
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "title": "Requirement for 5000 Mtr Cotton Fabric",      // [Required] 2-200 chars
+    "category_id": 1,                                       // [Required]
+    "subcategory_id": 10,                                   // [Required]
+    "description": "Need 100% cotton fabric with reactive dye.", // [Required] Min 10 chars
+    "quantity": 5000,                                       // [Required] Min 1
+    "unit": "Meter",                                        // [Required]
+    "quotation_deadline": "2026-10-30T18:30:00.000Z",       // [Required] ISO8601 Date
+    "address_line_1": "Plot 10, Apparel Park",              // [Required]
+    "address_line_2": "SEZ Phase 2",                        // [Optional]
+    "city": "Ahmedabad",                                    // [Required]
+    "state": "Gujarat",                                     // [Required]
+    "country": "India",                                     // [Required]
+    "pincode": "380015",                                    // [Required] 6 digits
+    "product_id": 15,                                       // [Optional] Linked product ID
+    "expected_price": 150.00,                               // [Optional]
+    "budget": 750000.00,                                    // [Optional]
+    "currency": "INR",                                      // [Optional]
+    "required_before": "2026-11-15T18:30:00.000Z",          // [Optional]
+    "payment_terms": "30 days net",                         // [Optional]
+    "visibility": "public",                                 // "public" | "direct" (default: public)
+    "seller_ids": [2, 4]                                    // [Optional] If visibility is direct
+  }
+- RESPONSE (201 Created):
+  {
+    "success": true,
+    "message": "RFQ created successfully",
+    "data": { "id": 10, "status": "draft" }
+  }
+
+----------------------------------------------------------------------------------------------------
+8.3 PUBLISH / CANCEL / CLOSE RFQ (BUYER)
+----------------------------------------------------------------------------------------------------
+- POST /rfqs/:id/publish     // Makes RFQ visible to sellers in marketplace
+- POST /rfqs/:id/cancel      // Cancels RFQ
+- POST /rfqs/:id/close       // Closes RFQ for further quotes
+
+----------------------------------------------------------------------------------------------------
+8.4 GET BUYER'S OWN RFQS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /rfqs/my
+- AUTH: Required (Buyer)
+- QUERY PARAMS: status, category_id, page, limit
+
+----------------------------------------------------------------------------------------------------
+8.5 SELLER RFQ FEED & QUOTATION SUBMISSION
+----------------------------------------------------------------------------------------------------
+- GET  /rfqs/seller/feed                             // Relevant RFQs matching seller category
+- POST /rfqs/:id/quotations                          // Seller submits quotation for RFQ :id
+  Request Body (JSON):
+  {
+    "price": 145.00,                                 // [Required] Price per unit
+    "quantity": 5000,                                // [Optional] Offered quantity
+    "unit": "Meter",                                 // [Optional]
+    "gst_percentage": 5.0,                           // [Optional]
+    "transportation_charge": 2500.00,                // [Optional]
+    "delivery_days": 10,                             // [Optional] Lead time
+    "validity_days": 15,                             // [Optional] Quote validity in days
+    "payment_terms": "50% advance, 50% on delivery", // [Optional]
+    "remarks": "Best factory price with lab test certificate" // [Optional]
+  }
+
+----------------------------------------------------------------------------------------------------
+8.6 RFQ QUOTATION ACTIONS (BUYER & SELLER)
+----------------------------------------------------------------------------------------------------
+- GET  /rfqs/:id/quotations                          // Buyer views all quotes on their RFQ
+- GET  /rfqs/:id/quotations/compare                  // Buyer compares quotes side-by-side
+- GET  /rfqs/seller/quotations                       // Seller views all submitted quotations
+- POST /rfqs/quotations/:quotationId/accept          // Buyer accepts quote (Locks RFQ & starts order)
+- POST /rfqs/quotations/:quotationId/reject          // Buyer rejects quote
+- POST /rfqs/quotations/:quotationId/request-revision // Buyer asks seller to revise (Body: { "remarks": "..." })
+- POST /rfqs/quotations/:quotationId/revise          // Seller submits revised quote (Body: updated price, etc.)
+- POST /rfqs/quotations/:quotationId/withdraw        // Seller withdraws quote
+
+
+====================================================================================================
+MODULE 09: PRODUCT INQUIRIES (/inquiries)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+9.1 SEND PRODUCT INQUIRY (BUYER -> SELLER)
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /inquiries
+- AUTH: Required (Buyer / Dual role)
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "product_id": 15,                                // [Required] Product ID
+    "quantity": 500,                                 // [Required] Quantity
+    "message": "Interested in bulk order for export. Can you provide sample?", // [Required] 10-2000 chars
+    "unit": "Meter",                                 // [Optional]
+    "expected_price": 160.00,                        // [Optional]
+    "currency": "INR",                               // [Optional]
+    "required_before": "2026-10-15T18:30:00.000Z"    // [Optional]
+  }
+- RESPONSE (201 Created):
+  {
+    "success": true,
+    "message": "Inquiry submitted successfully to seller",
+    "data": { "id": 8, "status": "pending" }
+  }
+
+----------------------------------------------------------------------------------------------------
+9.2 GET BUYER'S SENT INQUIRIES
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /inquiries/my
+- AUTH: Required (Buyer)
+- QUERY PARAMS: status ("pending" | "quoted" | "accepted" | "rejected" | "cancelled"), page, limit
+
+----------------------------------------------------------------------------------------------------
+9.3 GET SELLER'S INBOX INQUIRIES
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /inquiries/seller
+- AUTH: Required (Seller)
+- QUERY PARAMS: status, product_id, date (YYYY-MM-DD), page, limit
+
+----------------------------------------------------------------------------------------------------
+9.4 SELLER RESPOND TO INQUIRY
+----------------------------------------------------------------------------------------------------
+- POST /inquiries/:id/quotations                     // Seller sends formal quote for inquiry
+  Request Body: { "price": 165.0, "quantity": 500, "gst_percentage": 5, "delivery_days": 7, "remarks": "..." }
+- POST /inquiries/:id/reject                         // Seller rejects inquiry (Body: { "reason": "Out of stock" })
+- POST /inquiries/:id/chat                           // Converts inquiry directly into real-time Chat Room!
+- POST /inquiries/quotations/:quotationId/accept     // Buyer accepts quotation
+- POST /inquiries/quotations/:quotationId/reject     // Buyer rejects quotation
+
+
+====================================================================================================
+MODULE 10: REAL-TIME CHAT & MESSAGING (/chats + SOCKET.IO)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+10.1 GET CONVERSATIONS LIST (INBOX)
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /chats/conversations
+- AUTH: Required (Bearer <access_token>)
+- QUERY PARAMS:
+  - context_type : ("rfq" | "inquiry", optional)
+  - role         : ("buyer" | "seller", optional)
+  - search       : (String, optional)
+  - page, limit
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 5,
+        "other_user": {
+          "id": 2,
+          "full_name": "Rajesh Patel",
+          "company_name": "Patel Textiles",
+          "company_logo": "uploads/profiles/2/logo.png"
+        },
+        "last_message": {
+          "id": 84,
+          "message_type": "TEXT",
+          "content": "Sure, we can dispatch tomorrow.",
+          "sender_id": 2,
+          "created_at": "2026-09-09T10:15:00.000Z"
+        },
+        "unread_count": 2,
+        "last_context": { "type": "inquiry", "id": 8 }
+      }
+    ]
+  }
+
+----------------------------------------------------------------------------------------------------
+10.2 GET UNREAD CHAT BADGE SUMMARY
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /chats/unread-summary
+- AUTH: Required
+- RESPONSE (200 OK):
+  { "success": true, "data": { "unread_conversations": 3, "total_unread_messages": 7 } }
+
+----------------------------------------------------------------------------------------------------
+10.3 START / RETRIEVE CONVERSATION
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /chats/conversations
+- AUTH: Required
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  {
+    "inquiry_id": 8                          // Provide either "inquiry_id" OR "rfq_id"
+    // OR "rfq_id": 10, "seller_id": 2
+  }
+- RESPONSE (200 OK):
+  { "success": true, "data": { "id": 5, "is_new": false } }
+
+----------------------------------------------------------------------------------------------------
+10.4 GET MESSAGE HISTORY OF A CONVERSATION
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /chats/conversations/:id/messages
+- AUTH: Required
+- QUERY PARAMS:
+  - before_id   : (Integer, for fetching older messages during upward scroll)
+  - after_id    : (Integer, for fetching newer messages)
+  - limit       : (Integer, default: 30, max: 100)
+  - order       : ("asc" | "desc", default: "desc")
+
+----------------------------------------------------------------------------------------------------
+10.5 SEND MESSAGE (TEXT / PRODUCT CARD / QUOTATION CARD)
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /chats/conversations/:id/messages
+- AUTH: Required
+- HEADERS: Content-Type: application/json
+- REQUEST BODY (JSON):
+  • Sending Text Message:
+    {
+      "message_type": "TEXT",
+      "content": "Hello, is this product available in blue color?",
+      "reply_to_message_id": 80              // [Optional] For quoted replies
+    }
+
+  • Sending Product Card in Chat:
+    {
+      "message_type": "PRODUCT",
+      "product_id": 15,
+      "content": "Check out this product"
+    }
+
+  • Sending Quotation Card in Chat:
+    {
+      "message_type": "QUOTATION",
+      "quotation_id": 22,
+      "content": "Here is the revised quotation"
+    }
+
+----------------------------------------------------------------------------------------------------
+10.6 SEND MEDIA MESSAGE (IMAGE / DOCUMENT ATTACHMENT)
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /chats/conversations/:id/messages/media
+- AUTH: Required
+- HEADERS: Content-Type: multipart/form-data
+- FORM-DATA FIELDS:
+  - file         : (File: jpg/png/pdf/doc/docx/xls/xlsx, max 10MB) [Required]
+  - message_type : ("IMAGE" | "DOCUMENT") [Required]
+  - content      : (String, max 500 chars) [Optional caption]
+
+----------------------------------------------------------------------------------------------------
+10.7 MARK CONVERSATION READ
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /chats/conversations/:id/read
+- AUTH: Required
+- REQUEST BODY: { "last_read_message_id": 84 }
+
+----------------------------------------------------------------------------------------------------
+10.8 SOCKET.IO REAL-TIME EVENTS SPECIFICATION
+----------------------------------------------------------------------------------------------------
+- Connect:
+  const socket = io('https://tradenexabackend-dev.up.railway.app', {
+    auth: { token: 'Bearer <access_token>' }
+  });
+
+- Client Emits:
+  1. socket.emit('join_conversation', { conversation_id: 5 });
+  2. socket.emit('leave_conversation', { conversation_id: 5 });
+  3. socket.emit('send_message', { conversation_id: 5, message_type: 'TEXT', content: 'Hello' });
+  4. socket.emit('typing_start', { conversation_id: 5 });
+  5. socket.emit('typing_stop', { conversation_id: 5 });
+  6. socket.emit('mark_read', { conversation_id: 5, last_read_message_id: 84 });
+
+- Client Listens:
+  1. socket.on('receive_message', (message) => { ... });
+  2. socket.on('message_read', ({ conversation_id, read_by_user_id, last_read_message_id }) => { ... });
+  3. socket.on('user_typing', ({ conversation_id, user_id, user_name }) => { ... });
+  4. socket.on('user_stop_typing', ({ conversation_id, user_id }) => { ... });
+
+
+====================================================================================================
+MODULE 11: WISHLIST (/wishlist)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+11.1 GET BUYER WISHLIST
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /wishlist
+- AUTH: Required (Bearer <access_token>)
+- QUERY PARAMS: page, limit, search, sort_by ("wishlisted_at" | "price" | "name"), sort_order
+
+----------------------------------------------------------------------------------------------------
+11.2 ADD TO WISHLIST
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /wishlist
+- AUTH: Required
+- REQUEST BODY: { "product_id": 15 }
+
+----------------------------------------------------------------------------------------------------
+11.3 TOGGLE WISHLIST (ADD IF NOT PRESENT, REMOVE IF PRESENT)
+----------------------------------------------------------------------------------------------------
+- METHOD: POST
+- URL: /wishlist/toggle
+- AUTH: Required
+- REQUEST BODY: { "product_id": 15 }
+- RESPONSE (200 OK):
+  { "success": true, "message": "Product added to wishlist", "data": { "is_wishlist": true } }
+
+----------------------------------------------------------------------------------------------------
+11.4 CHECK WISHLIST STATUS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /wishlist/check/:product_id
+- AUTH: Required
+- RESPONSE: { "success": true, "data": { "is_wishlist": true } }
+
+----------------------------------------------------------------------------------------------------
+11.5 REMOVE FROM WISHLIST
+----------------------------------------------------------------------------------------------------
+- METHOD: DELETE
+- URL: /wishlist/:product_id
+- AUTH: Required
+
+
+====================================================================================================
+MODULE 12: IN-APP NOTIFICATIONS (/notifications)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+12.1 GET USER NOTIFICATIONS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /notifications
+- AUTH: Required
+- QUERY PARAMS:
+  - is_read : ("true" | "false", optional)
+  - type    : (Optional notification type)
+  - role    : ("buyer" | "seller", optional)
+  - page, limit
+
+----------------------------------------------------------------------------------------------------
+12.2 GET UNREAD COUNT
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /notifications/unread-count
+- AUTH: Required
+- RESPONSE: { "success": true, "data": { "unread_count": 4 } }
+
+----------------------------------------------------------------------------------------------------
+12.3 MARK NOTIFICATIONS READ
+----------------------------------------------------------------------------------------------------
+- POST  /notifications/read      // Body: { "ids": [101, 102] }
+- POST  /notifications/read-all  // Query or Body: { "role": "buyer" }
+- PATCH /notifications/:id/read  // Marks single notification read
+
+
+====================================================================================================
+MODULE 13: BANNERS & PROMOTIONAL OFFERS (/banners, /offers)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+13.1 GET HOMEPAGE BANNERS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /banners
+- AUTH: Public
+- QUERY PARAMS: is_active=true, redirect_type ("category" | "product" | "offer" | "brand" | "url")
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 1,
+        "title": "Mega Textile Expo 2026",
+        "image": "uploads/banners/1/banner.jpg",
+        "redirect_type": "category",
+        "redirect_id": 1,
+        "priority": 1,
+        "is_active": true
+      }
+    ]
+  }
+
+----------------------------------------------------------------------------------------------------
+13.2 GET PROMOTIONAL OFFERS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /offers
+- AUTH: Public
+- QUERY PARAMS: include_expired="false", is_active="true", page, limit
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 3,
+        "title": "Flat 10% Off on Bulk Yarn Orders",
+        "banner": "uploads/offers/3/banner.jpg",
+        "discount": "10.00",
+        "expiry_date": "2026-12-31T23:59:59.000Z",
+        "is_active": true
+      }
+    ]
+  }
+
+
+====================================================================================================
+MODULE 14: BRANDS DIRECTORY (/brands)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+14.1 GET BRANDS LIST
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /brands
+- AUTH: Public
+- QUERY PARAMS:
+  - search      : (String, optional)
+  - country     : (String, optional)
+  - is_popular  : ("true" | "false")
+  - is_featured : ("true" | "false")
+  - is_active   : ("true" | "false")
+  - page, limit
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 1,
+        "name": "Raymond Fabrics",
+        "slug": "raymond-fabrics",
+        "logo": "uploads/brands/1/logo.png",
+        "description": "Leading Indian manufacturer of premium suiting fabrics.",
+        "country": "India",
+        "website": "https://www.raymond.in",
+        "is_popular": true,
+        "is_featured": true
+      }
+    ]
+  }
+
+----------------------------------------------------------------------------------------------------
+14.2 GET BRAND DETAIL
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /brands/:id
+
+
+====================================================================================================
+MODULE 15: SERVICES & NEWS BLOG (/services, /news)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+15.1 GET SERVICES CATALOG
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /services
+- AUTH: Public
+- RESPONSE (200 OK): List of platform value-added services (e.g. Quality Inspection, Freight, Logistics)
+
+----------------------------------------------------------------------------------------------------
+15.2 GET NEWS & MARKET UPDATES
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /news
+- AUTH: Public
+- QUERY PARAMS: search, is_active, page, limit
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 1,
+        "title": "Cotton MSP Increased by 8% for 2026 Season",
+        "thumbnail": "uploads/news/1/cover.jpg",
+        "content": "Full news article text...",
+        "published_at": "2026-09-01T10:00:00.000Z"
+      }
+    ]
+  }
+
+
+====================================================================================================
+MODULE 16: DASHBOARD ANALYTICS (/dashboard)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+16.1 GET SELLER DASHBOARD OVERVIEW
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /dashboard/seller
+- AUTH: Required (Seller / Buyer_Seller token)
+- RESPONSE (200 OK):
+  {
+    "success": true,
+    "data": {
+      "kpis": {
+        "total_products": 35,
+        "in_review_products": 2,
+        "total_inquiries": 120,
+        "pending_inquiries": 8,
+        "total_rfqs_quoted": 15,
+        "rfq_orders_won": 6
+      },
+      "recent_inquiries": [ ... ],
+      "recent_rfqs": [ ... ]
+    }
+  }
+
+----------------------------------------------------------------------------------------------------
+16.2 GET SELLER TOP PERFORMING PRODUCTS
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /dashboard/seller/top-performing-products
+- AUTH: Required (Seller)
+- QUERY PARAMS: page, limit, sort_by ("inquiries_total" | "inquiries_accepted" | "price" | "name")
+
+----------------------------------------------------------------------------------------------------
+16.3 GET ADMIN PLATFORM DASHBOARD
+----------------------------------------------------------------------------------------------------
+- METHOD: GET
+- URL: /dashboard/admin
+- AUTH: Required (Admin / Super Admin)
+
+
+====================================================================================================
+MODULE 17: MEDIA & FILE STREAMING (/media, /uploads)
+====================================================================================================
+
+All files stored on private storage/S3 or local uploads can be retrieved via:
+- GET /media/:key   (e.g., https://tradenexabackend-dev.up.railway.app/media/products/15/thumb.jpg)
+- GET /uploads/:key (e.g., https://tradenexabackend-dev.up.railway.app/uploads/profiles/1/avatar.png)
+
+Both endpoints automatically stream the requested image/document with correct Content-Type header.
+
+====================================================================================================
+DOCUMENTATION END
+====================================================================================================
