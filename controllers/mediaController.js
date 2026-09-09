@@ -17,24 +17,22 @@ const serveMedia = async (req, res, next) => {
     const rawPath = req.path.replace(/^\/+/, '');
 
     if (!rawPath || rawPath.includes('..')) {
-      return next(new AppError('Invalid media path', HTTP_STATUS.BAD_REQUEST));
+      return res.status(400).json({ success: false, message: 'Invalid media path' });
     }
 
-    // 1. Check local disk first
+    // 1. Check local disk first (using absolute path for res.sendFile)
     const localCandidates = [
-      path.join(uploadConfig.rootDir, rawPath),
-      path.join(uploadConfig.rootDir, rawPath.replace(/^uploads[\\/]/, '')),
+      path.resolve(uploadConfig.rootDir, rawPath),
+      path.resolve(uploadConfig.rootDir, rawPath.replace(/^uploads[\\/]/, '')),
     ];
 
     for (const localPath of localCandidates) {
-      if (fs.existsSync(localPath)) {
-        try {
-          if (fs.statSync(localPath).isFile()) {
-            return res.sendFile(localPath);
-          }
-        } catch {
-          /* continue */
+      try {
+        if (fs.existsSync(localPath) && fs.statSync(localPath).isFile()) {
+          return res.sendFile(localPath);
         }
+      } catch {
+        /* continue */
       }
     }
 
@@ -71,10 +69,10 @@ const serveMedia = async (req, res, next) => {
       }
     }
 
-    return next(new AppError('File not found', HTTP_STATUS.NOT_FOUND));
+    return res.status(404).json({ success: false, message: 'File not found' });
   } catch (err) {
     if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
-      return next(new AppError('File not found', HTTP_STATUS.NOT_FOUND));
+      return res.status(404).json({ success: false, message: 'File not found' });
     }
     next(err);
   }
