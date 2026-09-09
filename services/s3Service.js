@@ -114,13 +114,39 @@ const getPublicUrl = (relativePath) => {
 
 /** Fetch an object from S3 for streaming through the media proxy. */
 const getObject = async (relativePath) => {
-  const objectKey = buildObjectKey(stripObjectKeyPrefix(relativePath));
-  return getClient().send(
-    new GetObjectCommand({
-      Bucket: s3Config.bucket,
-      Key: objectKey,
-    }),
+  const clean = String(relativePath || '').replace(/^\/+/, '');
+  const candidateKeys = Array.from(
+    new Set(
+      [
+        buildObjectKey(stripObjectKeyPrefix(clean)),
+        `tradenexa/${clean}`,
+        `tradenexa/${clean.replace(/^uploads\//, '')}`,
+        clean,
+        clean.replace(/^uploads\//, ''),
+      ].filter(Boolean),
+    ),
   );
+
+  for (const key of candidateKeys) {
+    try {
+      const response = await getClient().send(
+        new GetObjectCommand({
+          Bucket: s3Config.bucket,
+          Key: key,
+        }),
+      );
+      if (response) return response;
+    } catch (err) {
+      if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  const notFoundErr = new Error('File not found in S3');
+  notFoundErr.name = 'NoSuchKey';
+  throw notFoundErr;
 };
 
 /** Try to extract relative storage path from a full URL (S3, proxy, or legacy). */
