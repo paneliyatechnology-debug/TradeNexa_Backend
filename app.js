@@ -75,11 +75,8 @@ app.use(express.urlencoded({ extended: true }));
 // Media proxy (private S3 bucket) & static files
 // ==========================================
 
-if (s3Service.isEnabled()) {
-  app.use('/media', mediaRouter);
-} else {
-  app.use(uploadConfig.publicPath, express.static(uploadConfig.rootDir));
-}
+app.use('/media', mediaRouter);
+app.use(uploadConfig.publicPath, mediaRouter);
 
 app.get('/health', (_req, res) => {
   res.json({ success: true, message: 'Server is running' });

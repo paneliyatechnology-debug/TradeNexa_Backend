@@ -1,33 +1,77 @@
 /**
- * Stream private S3 objects through the backend (Railway buckets are not public by default).
+ * Stream files from local disk or S3 through the backend.
  */
+const path = require('path');
+const fs = require('fs');
 const s3Service = require('../services/s3Service');
+const uploadConfig = require('../config/upload');
 const { AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
 
 /**
- * GET /media/*
- * Stream a file from S3 using server credentials.
+ * GET /media/* and GET /uploads/*
+ * Stream a file from local disk or private S3 bucket.
  */
 const serveMedia = async (req, res, next) => {
   try {
-    const relativePath = req.path.replace(/^\/+/, '');
+    const rawPath = req.path.replace(/^\/+/, '');
 
-    if (!relativePath || relativePath.includes('..')) {
+    if (!rawPath || rawPath.includes('..')) {
       return next(new AppError('Invalid media path', HTTP_STATUS.BAD_REQUEST));
     }
 
-    const object = await s3Service.getObject(relativePath);
+    // 1. Check local disk first
+    const localCandidates = [
+      path.join(uploadConfig.rootDir, rawPath),
+      path.join(uploadConfig.rootDir, rawPath.replace(/^uploads[\\/]/, '')),
+    ];
 
-    if (object.ContentType) {
-      res.set('Content-Type', object.ContentType);
+    for (const localPath of localCandidates) {
+      if (fs.existsSync(localPath)) {
+        try {
+          if (fs.statSync(localPath).isFile()) {
+            return res.sendFile(localPath);
+          }
+        } catch {
+          /* continue */
+        }
+      }
     }
-    if (object.ContentLength) {
-      res.set('Content-Length', String(object.ContentLength));
-    }
-    res.set('Cache-Control', 'public, max-age=31536000, immutable');
 
-    object.Body.pipe(res);
+    // 2. Try S3 storage if configured
+    if (s3Service.isEnabled()) {
+      let object = null;
+      try {
+        object = await s3Service.getObject(rawPath);
+      } catch (err) {
+        if (rawPath.startsWith('uploads/')) {
+          try {
+            object = await s3Service.getObject(rawPath.replace(/^uploads\//, ''));
+          } catch (e) {
+            /* ignore */
+          }
+        } else {
+          try {
+            object = await s3Service.getObject(`uploads/${rawPath}`);
+          } catch (e) {
+            /* ignore */
+          }
+        }
+      }
+
+      if (object) {
+        if (object.ContentType) {
+          res.set('Content-Type', object.ContentType);
+        }
+        if (object.ContentLength) {
+          res.set('Content-Length', String(object.ContentLength));
+        }
+        res.set('Cache-Control', 'public, max-age=31536000, immutable');
+        return object.Body.pipe(res);
+      }
+    }
+
+    return next(new AppError('File not found', HTTP_STATUS.NOT_FOUND));
   } catch (err) {
     if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
       return next(new AppError('File not found', HTTP_STATUS.NOT_FOUND));
