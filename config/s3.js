@@ -39,7 +39,7 @@ const publicUrl =
   '';
 
 /** Optional key prefix inside the bucket (e.g. tradenexa). */
-const keyPrefix = (process.env.AWS_S3_PREFIX || process.env.S3_PREFIX || '')
+const keyPrefix = (process.env.AWS_S3_PREFIX || process.env.S3_PREFIX || 'tradenexa')
   .replace(/^\/+|\/+$/g, '');
 
 const isEnabled = () => Boolean(bucket && accessKeyId && secretAccessKey);
