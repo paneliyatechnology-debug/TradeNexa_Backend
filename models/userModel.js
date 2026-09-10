@@ -116,39 +116,41 @@ const getFullProfile = async (userId) => {
   const user = await findUserById(userId);
   if (!user) return null;
 
-  const profile = await db('company_details').where({ user_id: userId }).first();
-  const roles = await getUserRoles(userId);
-  const languages = await getUserLanguages(userId);
-  const address = await db('addresses').where({ user_id: userId, is_primary: true }).first();
+  // Run independent queries in parallel
+  const [profile, roles, languages, address, businessType] = await Promise.all([
+    db('company_details').where({ user_id: userId }).first(),
+    getUserRoles(userId),
+    getUserLanguages(userId),
+    db('addresses').where({ user_id: userId, is_primary: true }).first(),
+    user.business_type_id
+      ? db('business_types')
+          .join('roles', 'business_types.role_id', 'roles.id')
+          .where('business_types.id', user.business_type_id)
+          .select('business_types.id', 'business_types.name', 'business_types.code', 'roles.code as role_code')
+          .first()
+      : null,
+  ]);
 
-  let businessType = null;
-  if (user.business_type_id) {
-    businessType = await db('business_types')
-      .join('roles', 'business_types.role_id', 'roles.id')
-      .where('business_types.id', user.business_type_id)
-      .select('business_types.id', 'business_types.name', 'business_types.code', 'roles.code as role_code')
-      .first();
-  }
+  // Run secondary dependent queries in parallel
+  const [category, locationDetails] = await Promise.all([
+    profile?.category_id
+      ? db('categories')
+          .where({ id: profile.category_id })
+          .whereNull('parent_id')
+          .whereNull('deleted_at')
+          .select('id', 'name', 'slug', 'icon', 'image')
+          .first()
+      : null,
+    address
+      ? Promise.all([
+          address.city_id ? db('cities').where({ id: address.city_id }).first() : null,
+          address.state_id ? db('states').where({ id: address.state_id }).first() : null,
+          address.country_id ? db('countries').where({ id: address.country_id }).first() : null,
+        ])
+      : null,
+  ]);
 
-  let category = null;
-  if (profile?.category_id) {
-    category = await db('categories')
-      .where({ id: profile.category_id })
-      .whereNull('parent_id')
-      .whereNull('deleted_at')
-      .select('id', 'name', 'slug', 'icon', 'image')
-      .first();
-  }
-
-  let city = null,
-    state = null,
-    country = null;
-  if (address) {
-    if (address.city_id) city = await db('cities').where({ id: address.city_id }).first();
-    if (address.state_id) state = await db('states').where({ id: address.state_id }).first();
-    if (address.country_id)
-      country = await db('countries').where({ id: address.country_id }).first();
-  }
+  const [city, state, country] = locationDetails || [null, null, null];
 
   return {
     ...user,
@@ -640,6 +642,39 @@ const findDeviceByUserId = async (userId) => {
 };
 
 /**
+ * Get recent login activity logs for a user.
+ * @param {number} userId - User ID
+ * @param {number} [limit=20] - Max logs to fetch
+ * @returns {Promise<Array>}
+ */
+const getUserLoginLogs = (userId, limit = 20) =>
+  db('login_logs')
+    .where({ user_id: userId })
+    .orderBy('login_at', 'desc')
+    .limit(limit);
+
+/**
+ * Delete a specific login log for a user.
+ * @param {number} userId - User ID
+ * @param {number} logId - Login log ID
+ * @returns {Promise<number>}
+ */
+const deleteLoginLogById = (userId, logId) =>
+  db('login_logs').where({ id: logId, user_id: userId }).del();
+
+/**
+ * Delete all login logs for a user except the given one.
+ * @param {number} userId - User ID
+ * @param {number|null} excludeLogId - ID to keep
+ * @returns {Promise<number>}
+ */
+const deleteAllLoginLogsExcept = (userId, excludeLogId = null) => {
+  const query = db('login_logs').where({ user_id: userId });
+  if (excludeLogId) query.whereNot({ id: excludeLogId });
+  return query.del();
+};
+
+/**
  * Delete a specific device token (e.g. invalid FCM registration or logout from one device).
  * @param {string} deviceToken
  * @returns {Promise<number>}
@@ -676,6 +711,9 @@ module.exports = {
   findLocationIds,
   updateAddress,
   createLoginLog,
+  getUserLoginLogs,
+  deleteLoginLogById,
+  deleteAllLoginLogsExcept,
   softDeleteUser,
   deleteUserDevice,
   deleteUserDeviceByType,

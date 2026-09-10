@@ -150,6 +150,45 @@ const deleteProfile = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /auth/devices
+ * Get all active login devices for the authenticated user.
+ */
+const getActiveDevices = async (req, res, next) => {
+  try {
+    const data = await authService.getActiveDevices(req.user.id, req);
+    return success(res, 'Active devices retrieved successfully', data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /auth/devices/:id
+ * Revoke/log out a specific device session.
+ */
+const logoutDevice = async (req, res, next) => {
+  try {
+    await authService.logoutDevice(req.user.id, req.params.id);
+    return success(res, 'Device session logged out successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /auth/devices/logout-all
+ * Revoke/log out all other device sessions.
+ */
+const logoutAllDevices = async (req, res, next) => {
+  try {
+    await authService.logoutAllDevices(req.user.id, req);
+    return success(res, 'All other devices logged out successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   sendOtp,
   verifyOtp,
@@ -157,6 +196,9 @@ module.exports = {
   register,
   refreshToken,
   logout,
+  getActiveDevices,
+  logoutDevice,
+  logoutAllDevices,
   getProfile,
   updateProfile,
   deleteProfile,

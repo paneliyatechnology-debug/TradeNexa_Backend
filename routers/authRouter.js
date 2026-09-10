@@ -32,11 +32,14 @@ router.post('/resend-otp', otpLimiter, resendOtpRules, validate, authController.
 router.post('/register', registerRules, validate, verifyRegistration, authController.register);
 
 // ==========================================
-// Session management
+// Session & Device management
 // ==========================================
 
 router.post('/refresh-token', refreshRules, validate, authController.refreshToken);
 router.post('/logout', authenticate, logoutRules, validate, authController.logout);
+router.get('/devices', authenticate, authController.getActiveDevices);
+router.delete('/devices/:id', authenticate, authController.logoutDevice);
+router.post('/devices/logout-all', authenticate, authController.logoutAllDevices);
 
 // ==========================================
 // Profile (authenticated)

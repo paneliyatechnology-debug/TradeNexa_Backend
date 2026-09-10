@@ -105,19 +105,19 @@ const issueTokens = async (user, req) => {
   const tokens = generateAuthTokens(user);
   const decoded = jwt.decode(tokens.refreshToken);
 
-  // Save new refresh token record and log user device details
-  await userModel.saveRefreshToken(user.id, tokens.refreshToken, new Date(decoded.exp * 1000));
-  await userModel.updateUser(user.id, { last_login: userModel.db.fn.now() });
-  await userModel.createLoginLog({
-    user_id: user.id,
-    ip_address: req.ip,
-    device_info: req.headers['user-agent'],
-    login_at: new Date(),
-  });
+  // Save new refresh token record and log user device details in parallel
+  await Promise.all([
+    userModel.saveRefreshToken(user.id, tokens.refreshToken, new Date(decoded.exp * 1000)),
+    userModel.updateUser(user.id, { last_login: userModel.db.fn.now() }),
+    userModel.createLoginLog({
+      user_id: user.id,
+      ip_address: req.ip,
+      device_info: req.headers['user-agent'],
+      login_at: new Date(),
+    }),
+  ]);
 
-  // Persist FCM token from verify-otp / register.
-  // Each distinct device_token is kept (multi-device); push goes to all of them.
-  // Clients must send a real FCM token — placeholders like "dev_token_…" are skipped at send time.
+  // Persist FCM token from verify-otp / register if provided
   const device = getDeviceFromBody(req.body);
   if (device?.device_token) {
     try {
@@ -140,12 +140,11 @@ const issueTokens = async (user, req) => {
     });
   }
 
-  const freshUser = await userModel.findUserById(user.id);
-  const profile = await userModel.getFullProfile(freshUser.id);
+  const profile = await userModel.getFullProfile(user.id);
 
   return {
     is_registered: true,
-    is_completed_profile: resolveIsCompletedProfile(freshUser),
+    is_completed_profile: resolveIsCompletedProfile(user),
     user: userModel.formatUser(profile),
     access_token: tokens.accessToken,
     refresh_token: tokens.refreshToken,
@@ -370,6 +369,338 @@ const deleteProfile = async (userId) => {
   await userModel.softDeleteUser(userId);
 };
 
+// ==========================================
+// Login Devices & Session Management
+// ==========================================
+
+/**
+ * Parse User-Agent string to extract device brand/model, OS, and browser details.
+ */
+const detectDeviceBrandAndModel = (uaRaw) => {
+  const ua = String(uaRaw || '');
+
+  // 1. Apple Devices
+  if (/iPhone/i.test(ua)) return 'Apple iPhone';
+  if (/iPad/i.test(ua)) return 'Apple iPad';
+  if (/Macintosh|Mac OS X/i.test(ua)) return 'Apple Mac';
+
+  // 2. Android Brand and Model Detection
+  const androidMatch = ua.match(/Android\s+([0-9\.]+)?;\s*([^;)]+)/i);
+  if (androidMatch && androidMatch[2]) {
+    const rawModel = androidMatch[2].trim();
+
+    // Samsung
+    if (/^SM-|SAMSUNG|GT-/i.test(rawModel)) {
+      return `Samsung Galaxy (${rawModel.replace(/^SM-/i, '')})`;
+    }
+    // Google Pixel
+    if (/Pixel/i.test(rawModel)) {
+      return `Google ${rawModel}`;
+    }
+    // OnePlus
+    if (/OnePlus|CPH[0-9]{4}|IN20[0-9]{2}|GM19[0-9]{2}/i.test(rawModel)) {
+      return `OnePlus (${rawModel})`;
+    }
+    // Xiaomi / Redmi / POCO
+    if (/Redmi|POCO|Xiaomi|220[0-9]|230[0-9]|210[0-9]|M20|M21/i.test(rawModel)) {
+      return `Xiaomi / Redmi (${rawModel})`;
+    }
+    // Vivo / iQOO
+    if (/Vivo|V2[0-9]{3}|iQOO/i.test(rawModel)) {
+      return `Vivo / iQOO (${rawModel})`;
+    }
+    // Realme / Oppo
+    if (/RMX[0-9]{4}|Realme|Oppo/i.test(rawModel)) {
+      return `Realme / Oppo (${rawModel})`;
+    }
+    // Motorola
+    if (/Moto|Motorola|XT[0-9]{4}/i.test(rawModel)) {
+      return `Motorola (${rawModel})`;
+    }
+
+    if (rawModel.length > 2 && rawModel.length < 30 && !/build|khtml|gecko|version/i.test(rawModel)) {
+      return `Android (${rawModel})`;
+    }
+    return 'Android Smartphone';
+  }
+
+  // 3. Windows PC
+  if (/Windows NT 10.0|Windows NT 11.0/i.test(ua)) return 'Windows 10/11 PC';
+  if (/Windows/i.test(ua)) return 'Windows PC';
+  if (/Linux/i.test(ua)) return 'Linux System';
+
+  return null;
+};
+
+const parseUserAgent = (uaString, explicitDeviceType) => {
+  const ua = String(uaString || '').toLowerCase();
+  let browser = 'Web Browser';
+  let os = 'Unknown OS';
+  let deviceType = explicitDeviceType || 'desktop';
+
+  // Specific App & Client detection
+  if (ua.includes('okhttp') || ua.includes('dalvik')) {
+    browser = 'TradeNexa Android App';
+    os = 'Android';
+    deviceType = 'mobile';
+  } else if (ua.includes('cfnetwork') || ua.includes('darwin')) {
+    browser = 'TradeNexa iOS App';
+    os = 'iOS';
+    deviceType = 'mobile';
+  } else if (ua.includes('dart') || ua.includes('flutter')) {
+    browser = 'TradeNexa Mobile App';
+    os = 'Mobile OS';
+    deviceType = 'mobile';
+  } else if (ua.includes('postman')) {
+    browser = 'Postman API Client';
+    os = 'Desktop';
+    deviceType = 'desktop';
+  } else {
+    // OS Detection
+    if (ua.includes('windows nt 10')) os = 'Windows 10/11';
+    else if (ua.includes('windows nt 6.3')) os = 'Windows 8.1';
+    else if (ua.includes('windows nt 6.1')) os = 'Windows 7';
+    else if (ua.includes('windows')) os = 'Windows';
+    else if (ua.includes('macintosh') || ua.includes('mac os x')) os = 'macOS';
+    else if (ua.includes('android')) os = 'Android';
+    else if (ua.includes('iphone')) os = 'iOS (iPhone)';
+    else if (ua.includes('ipad')) os = 'iPadOS';
+    else if (ua.includes('ipod')) os = 'iOS';
+    else if (ua.includes('linux')) os = 'Linux';
+
+    // Device type
+    if (ua.includes('ipad') || ua.includes('tablet')) {
+      deviceType = 'tablet';
+    } else if (
+      ua.includes('mobile') ||
+      ua.includes('iphone') ||
+      ua.includes('ipod') ||
+      ua.includes('android') ||
+      ua.includes('windows phone')
+    ) {
+      deviceType = 'mobile';
+    } else {
+      deviceType = 'desktop';
+    }
+
+    // Browser Detection
+    if (ua.includes('edg/')) browser = 'Microsoft Edge';
+    else if (ua.includes('chrome/') || ua.includes('crios/')) browser = deviceType === 'mobile' ? 'Chrome Mobile' : 'Chrome';
+    else if (ua.includes('firefox/') || ua.includes('fxios/')) browser = deviceType === 'mobile' ? 'Firefox Mobile' : 'Firefox';
+    else if (ua.includes('safari/') && !ua.includes('chrome/')) browser = deviceType === 'mobile' ? 'Safari Mobile' : 'Safari';
+    else if (ua.includes('opera/') || ua.includes('opr/')) browser = 'Opera';
+  }
+
+  const modelBrand = detectDeviceBrandAndModel(uaString);
+  const title = modelBrand
+    ? `${modelBrand} (${browser})`
+    : browser.includes(os)
+      ? browser
+      : `${browser} on ${os}`;
+
+  return { browser, os, deviceType, modelBrand, title };
+};
+
+/**
+ * Get all active login sessions / devices for the user (including web sessions and mobile app devices).
+ * @param {number} userId - Authenticated user ID
+ * @param {Object} req - Current request context
+ * @returns {Promise<Array>}
+ */
+const getActiveDevices = async (userId, req) => {
+  const currentIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+  const currentUa = req.headers['user-agent'] || '';
+
+  // 1. Fetch login activity logs & registered devices
+  const [logs, registeredDevices] = await Promise.all([
+    userModel.getUserLoginLogs(userId, 30),
+    userModel.findDevicesByUserId(userId),
+  ]);
+
+  const devicesList = [];
+  const seenKeys = new Set();
+  const currentParsed = parseUserAgent(currentUa);
+
+  // Match current device by comparing UA string or browser+os+type
+  let currentMatchedId = null;
+  for (const log of logs) {
+    if (log.device_info && currentUa && log.device_info.trim() === currentUa.trim()) {
+      currentMatchedId = log.id;
+      break;
+    }
+  }
+
+  // Process login logs
+  logs.forEach((log) => {
+    const parsed = parseUserAgent(log.device_info);
+    const key = `${parsed.deviceType}-${parsed.os}-${parsed.browser}-${log.ip_address}`;
+
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      const isCurrent = currentMatchedId ? log.id === currentMatchedId : false;
+      devicesList.push({
+        id: log.id,
+        title: parsed.title,
+        browser: parsed.browser,
+        os: parsed.os,
+        device_type: parsed.deviceType,
+        ip_address: log.ip_address || '127.0.0.1',
+        login_at: log.login_at,
+        last_active: log.login_at,
+        is_current: isCurrent,
+      });
+    }
+  });
+
+  // Process registered mobile push devices (from TradeNexa mobile apps)
+  registeredDevices.forEach((dev) => {
+    const isAndroid = dev.device_type === 'android';
+    const isIos = dev.device_type === 'ios';
+    const title = isAndroid
+      ? 'TradeNexa App (Android)'
+      : isIos
+        ? 'TradeNexa App (iOS)'
+        : 'TradeNexa Web Push';
+    const deviceType = isAndroid || isIos ? 'mobile' : 'desktop';
+    const os = isAndroid ? 'Android' : isIos ? 'iOS' : 'Web';
+    const key = `fcm-${dev.device_type}-${dev.id}`;
+
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      devicesList.push({
+        id: `fcm_${dev.id}`,
+        title,
+        browser: 'TradeNexa Mobile App',
+        os,
+        device_type: deviceType,
+        ip_address: 'Mobile App Device',
+        login_at: dev.last_active || dev.created_at || new Date(),
+        last_active: dev.last_active || dev.created_at || new Date(),
+        is_current: false,
+      });
+    }
+  });
+
+  // If no device marked as current, mark the first matching device type or first in list
+  let hasCurrent = devicesList.some((d) => d.is_current);
+  if (!hasCurrent && devicesList.length > 0) {
+    const matchType = devicesList.find((d) => d.device_type === currentParsed.deviceType);
+    if (matchType) {
+      matchType.is_current = true;
+    } else {
+      devicesList[0].is_current = true;
+    }
+    hasCurrent = true;
+  }
+
+  // If list is completely empty, create an entry for current session
+  if (devicesList.length === 0) {
+    devicesList.push({
+      id: 1,
+      title: currentParsed.title,
+      browser: currentParsed.browser,
+      os: currentParsed.os,
+      device_type: currentParsed.deviceType,
+      ip_address: currentIp,
+      login_at: new Date(),
+      last_active: new Date(),
+      is_current: true,
+    });
+  }
+
+  // Sort so current device is always first
+  devicesList.sort((a, b) => (b.is_current ? 1 : 0) - (a.is_current ? 1 : 0));
+
+  return devicesList;
+};
+
+/**
+ * Log out / remove a specific device session.
+ * @param {number} userId - Authenticated user ID
+ * @param {string|number} deviceId - Session ID
+ */
+const logoutDevice = async (userId, deviceId) => {
+  const idStr = String(deviceId);
+  if (idStr.startsWith('fcm_')) {
+    const rawId = idStr.replace('fcm_', '');
+    await userModel.db('devices').where({ id: rawId, user_id: userId }).del();
+    // Also remove mobile login logs
+    const userLogs = await userModel.db('login_logs').where({ user_id: userId });
+    for (const ul of userLogs) {
+      const parsed = parseUserAgent(ul.device_info);
+      if (parsed.deviceType === 'mobile' || parsed.deviceType === 'tablet') {
+        await userModel.deleteLoginLogById(userId, ul.id);
+      }
+    }
+  } else {
+    const targetLog = await userModel.db('login_logs').where({ id: Number(deviceId), user_id: userId }).first();
+    if (targetLog) {
+      const targetParsed = parseUserAgent(targetLog.device_info);
+
+      // 1. Delete target log by ID
+      await userModel.deleteLoginLogById(userId, Number(deviceId));
+
+      // 2. Fetch all remaining login logs for this user and delete any from the same platform / OS / IP
+      const userLogs = await userModel.db('login_logs').where({ user_id: userId });
+      for (const ul of userLogs) {
+        const ulParsed = parseUserAgent(ul.device_info);
+        const isSameIp = targetLog.ip_address && ul.ip_address === targetLog.ip_address && ul.ip_address !== '127.0.0.1';
+        const isSamePlatform =
+          ulParsed.deviceType === targetParsed.deviceType &&
+          (ulParsed.os === targetParsed.os || (ulParsed.deviceType === 'desktop' && targetParsed.deviceType === 'desktop'));
+
+        if (isSameIp || isSamePlatform) {
+          await userModel.deleteLoginLogById(userId, ul.id);
+        }
+      }
+
+      // 3. If mobile/tablet, clean up push devices
+      if (targetParsed.deviceType === 'mobile' || targetParsed.deviceType === 'tablet') {
+        await userModel.db('devices').where({ user_id: userId }).del();
+      }
+    } else {
+      await userModel.deleteLoginLogById(userId, Number(deviceId));
+    }
+  }
+
+  // Realtime notify all active connections so revoked device immediately signs out
+  try {
+    const chatSocketEmitter = require('./chatSocketEmitter');
+    chatSocketEmitter.emitToUser(userId, 'SESSION_REVOKED', {
+      user_id: userId,
+      device_id: deviceId,
+    });
+  } catch (err) {
+    logger.warn('Failed to emit SESSION_REVOKED socket', { error: err.message });
+  }
+};
+
+/**
+ * Log out all devices except the current active session.
+ * @param {number} userId - Authenticated user ID
+ * @param {Object} req - Request context
+ */
+const logoutAllDevices = async (userId, req) => {
+  const logs = await userModel.getUserLoginLogs(userId, 1);
+  const currentLogId = logs[0]?.id || null;
+  await Promise.all([
+    userModel.deleteAllLoginLogsExcept(userId, currentLogId),
+    userModel.db('devices').where({ user_id: userId }).del(),
+  ]);
+
+  // Realtime notify other devices to immediately clear session
+  try {
+    const chatSocketEmitter = require('./chatSocketEmitter');
+    chatSocketEmitter.emitToUser(userId, 'SESSION_REVOKED', {
+      user_id: userId,
+      all_except_current: true,
+      current_log_id: currentLogId,
+    });
+  } catch (err) {
+    logger.warn('Failed to emit SESSION_REVOKED socket', { error: err.message });
+  }
+};
+
 module.exports = {
   sendOtp,
   verifyOtp,
@@ -377,6 +708,9 @@ module.exports = {
   register,
   refreshToken,
   logout,
+  getActiveDevices,
+  logoutDevice,
+  logoutAllDevices,
   getProfile,
   updateProfile,
   deleteProfile,

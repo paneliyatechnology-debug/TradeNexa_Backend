@@ -68,33 +68,59 @@ const formatPhone = (mobile) => {
  * @returns {Promise<{ firebaseVerificationId: string }>}
  */
 const sendOtp = async (mobileNumber, recaptchaToken = null) => {
-  if (!config.firebase.apiKey) throw new AppError('Firebase API key not configured', 400);
-
-  const url = `https://identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key=${config.firebase.apiKey}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      phoneNumber: formatPhone(mobileNumber),
-      ...(recaptchaToken && { recaptchaToken }),
-    }),
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new AppError(data.error?.message || 'Failed to send OTP', 400);
+  // Fast development bypass when Firebase key is absent or in local dev
+  if (config.env !== 'production' && (!config.firebase.apiKey || recaptchaToken === 'dev')) {
+    return { firebaseVerificationId: `dev_verification_${Date.now()}` };
   }
 
-  return { firebaseVerificationId: data.sessionInfo };
+  if (!config.firebase.apiKey) throw new AppError('Firebase API key not configured', 400);
+
+  try {
+    const url = `https://identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key=${config.firebase.apiKey}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phoneNumber: formatPhone(mobileNumber),
+        ...(recaptchaToken && { recaptchaToken }),
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      if (config.env !== 'production') {
+        logger.warn(`Firebase sendOtp failed (${data.error?.message}), using dev fallback ID`);
+        return { firebaseVerificationId: `dev_verification_${Date.now()}` };
+      }
+      throw new AppError(data.error?.message || 'Failed to send OTP', 400);
+    }
+
+    return { firebaseVerificationId: data.sessionInfo };
+  } catch (err) {
+    if (config.env !== 'production') {
+      logger.warn(`Firebase sendOtp network error (${err.message}), using dev fallback ID`);
+      return { firebaseVerificationId: `dev_verification_${Date.now()}` };
+    }
+    throw err;
+  }
 };
 
 /**
  * Verify an OTP code against a Firebase verification session.
+ * In development mode, '123456' / '000000' or dev session IDs verify instantly (0ms network delay).
  * @param {string} firebaseVerificationId - Session ID from sendOtp
  * @param {string} otp - Verification code entered by the user
  * @returns {Promise<Object>}
  */
 const verifyOtp = async (firebaseVerificationId, otp) => {
+  // Fast instant bypass in non-production environments for test OTP 123456 / 000000
+  if (
+    config.env !== 'production' &&
+    (otp === '123456' || otp === '000000' || String(firebaseVerificationId).startsWith('dev_'))
+  ) {
+    return { sessionInfo: firebaseVerificationId, verified: true, isDevBypass: true };
+  }
+
   if (!config.firebase.apiKey) throw new AppError('Firebase API key not configured', 400);
 
   const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPhoneNumber?key=${config.firebase.apiKey}`;
