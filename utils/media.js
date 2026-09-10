@@ -71,6 +71,16 @@ const getMulterFile = (files, field) => files?.[field]?.[0] || null;
 // URL resolution
 // ==========================================
 
+const normalizeBaseUrl = (url) => {
+  if (!url) return '';
+  let clean = String(url).trim().replace(/\/+$/, '');
+  if (!clean) return '';
+  if (!/^https?:\/\//i.test(clean)) {
+    clean = `https://${clean}`;
+  }
+  return clean;
+};
+
 /**
  * Convert a stored relative path to a public URL.
  * S3: returns APP_URL/media/... proxy URL (Railway buckets are private).
@@ -86,7 +96,11 @@ const resolveMediaUrl = (storedValue) => {
 
   if (/^https?:\/\//i.test(storedValue)) return storedValue;
 
-  const baseUrl = (config.app.url || '').replace(/\/$/, '');
+  if (/^(?:tradenexabackend|localhost|127\.0\.0\.1)/i.test(storedValue)) {
+    return `https://${storedValue.replace(/^\/+/, '')}`;
+  }
+
+  const baseUrl = normalizeBaseUrl(config.app.url || 'https://tradenexabackend-dev.up.railway.app');
   const normalized = storedValue.replace(/^\/+/, '');
   return `${baseUrl}${uploadConfig.publicPath}/${normalized}`;
 };

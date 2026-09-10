@@ -12,11 +12,11 @@ module.exports = {
   port: parseInt(process.env.PORT, 10) || 3000,
   app: {
     name: process.env.APP_NAME || 'TradeNexa',
-    url: process.env.APP_URL || 'tradenexabackend-dev.up.railway.app',
+    url: process.env.APP_URL || 'https://tradenexabackend-dev.up.railway.app',
   },
   /** Web / deep-link targets for push notification click actions. */
   frontend: {
-    url: process.env.FRONTEND_URL || process.env.WEB_APP_URL || process.env.APP_URL || 'tradenexabackend-dev.up.railway.app',
+    url: process.env.FRONTEND_URL || process.env.WEB_APP_URL || process.env.APP_URL || 'https://tradenexabackend-dev.up.railway.app',
     chatPath: process.env.FRONTEND_CHAT_PATH || '/chats',
   },
   jwt: {

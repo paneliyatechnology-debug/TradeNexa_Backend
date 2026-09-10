@@ -104,12 +104,17 @@ const getPublicUrl = (relativePath) => {
   // Use direct bucket URL only when a dedicated public CDN/base URL is configured.
   if (s3Config.publicUrl) {
     const objectKey = buildObjectKey(normalized);
-    return `${s3Config.publicUrl.replace(/\/$/, '')}/${objectKey}`;
+    let pub = s3Config.publicUrl.replace(/\/$/, '');
+    if (!/^https?:\/\//i.test(pub)) pub = `https://${pub}`;
+    return `${pub}/${objectKey}`;
   }
 
   // Private Railway bucket — always serve through backend proxy.
-  const baseUrl = (config.app.url || '').replace(/\/$/, '');
-  return baseUrl ? `${baseUrl}/media/${normalized}` : `/media/${normalized}`;
+  let baseUrl = (config.app.url || 'https://tradenexabackend-dev.up.railway.app').replace(/\/$/, '');
+  if (!/^https?:\/\//i.test(baseUrl)) {
+    baseUrl = `https://${baseUrl}`;
+  }
+  return `${baseUrl}/media/${normalized}`;
 };
 
 /** Fetch an object from S3 for streaming through the media proxy. */
@@ -152,9 +157,14 @@ const getObject = async (relativePath) => {
 /** Try to extract relative storage path from a full URL (S3, proxy, or legacy). */
 const extractKeyFromUrl = (url) => {
   try {
-    const parsed = new URL(url);
+    let raw = String(url || '').trim();
+    if (!raw) return null;
+    if (!/^https?:\/\//i.test(raw)) {
+      raw = `https://${raw}`;
+    }
+    const parsed = new URL(raw);
 
-    const mediaMatch = parsed.pathname.match(/^\/media\/(.+)$/);
+    const mediaMatch = parsed.pathname.match(/^\/(?:media|uploads|api\/media|api\/uploads)\/(.+)$/);
     if (mediaMatch) {
       return stripObjectKeyPrefix(mediaMatch[1]);
     }
@@ -173,10 +183,11 @@ const extractKeyFromUrl = (url) => {
 /** Normalize any stored value to a relative path for DB/API use. */
 const normalizeStoredPath = (storedValue) => {
   if (!storedValue) return null;
-  if (/^https?:\/\//i.test(storedValue)) {
-    return extractKeyFromUrl(storedValue);
+  const str = String(storedValue).trim();
+  if (/^https?:\/\//i.test(str) || /^(?:tradenexabackend|localhost|127\.0\.0\.1)/i.test(str)) {
+    return extractKeyFromUrl(str) || str.replace(/^\/+/, '');
   }
-  return String(storedValue).replace(/^\/+/, '');
+  return str.replace(/^\/+/, '');
 };
 
 module.exports = {
