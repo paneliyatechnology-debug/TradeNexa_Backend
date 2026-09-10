@@ -109,12 +109,8 @@ const getPublicUrl = (relativePath) => {
     return `${pub}/${objectKey}`;
   }
 
-  // Private Railway bucket — always serve through backend proxy.
-  let baseUrl = (config.app.url || 'https://tradenexabackend-dev.up.railway.app').replace(/\/$/, '');
-  if (!/^https?:\/\//i.test(baseUrl)) {
-    baseUrl = `https://${baseUrl}`;
-  }
-  return `${baseUrl}/media/${normalized}`;
+  // Always serve through public live backend media proxy.
+  return `https://tradenexabackend-dev.up.railway.app/media/${normalized}`;
 };
 
 /** Fetch an object from S3 for streaming through the media proxy. */

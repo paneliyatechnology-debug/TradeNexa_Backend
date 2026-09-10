@@ -96,13 +96,8 @@ const resolveMediaUrl = (storedValue) => {
 
   if (/^https?:\/\//i.test(storedValue)) return storedValue;
 
-  if (/^(?:tradenexabackend|localhost|127\.0\.0\.1)/i.test(storedValue)) {
-    return `https://${storedValue.replace(/^\/+/, '')}`;
-  }
-
-  const baseUrl = normalizeBaseUrl(config.app.url || 'https://tradenexabackend-dev.up.railway.app');
   const normalized = storedValue.replace(/^\/+/, '');
-  return `${baseUrl}${uploadConfig.publicPath}/${normalized}`;
+  return `https://tradenexabackend-dev.up.railway.app/uploads/${normalized}`;
 };
 
 // ==========================================
