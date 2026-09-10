@@ -172,6 +172,8 @@ const storeUploadedFile = async (files, field, pathSegments, existingStoredPath 
   }
 
   await persistFile(relativePath, file);
+  const liveUrl = resolveMediaUrl(relativePath);
+  console.log(`📸 [MEDIA UPLOAD SUCCESS] Field: "${field}" | Live URL: ${liveUrl}`);
   return relativePath;
 };
 
@@ -185,6 +187,8 @@ const storeMultipleUploadedFiles = async (files, field, pathSegments) => {
     const fileName = file.filename || buildStoredFileName(field, file.originalname);
     const relativePath = buildRelativeStoredPath(...pathSegments, fileName);
     await persistFile(relativePath, file);
+    const liveUrl = resolveMediaUrl(relativePath);
+    console.log(`📸 [MEDIA UPLOAD SUCCESS] Field: "${field}" | Live URL: ${liveUrl}`);
     paths.push(relativePath);
   }
   return paths;
