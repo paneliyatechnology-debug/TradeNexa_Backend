@@ -94,6 +94,7 @@ router.post(
   authorize('admin'),
   categoryIdParam,
   handleCategoryCreateUpload,
+  requireIconUpload,
   subcategoryCreateRules,
   validate,
   categoryController.createSubcategory,

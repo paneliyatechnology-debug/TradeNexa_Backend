@@ -172,7 +172,7 @@ const categoryUpdateRules = [
 
 const subcategoryCreateRules = [
   body('name').trim().notEmpty().withMessage('Subcategory name is required').isLength({ min: 2, max: 100 }),
-  blockedOptionalUploadField('icon', 'Icon'),
+  blockedUploadField('icon', 'Icon'),
   blockedOptionalUploadField('image', 'Image'),
   body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
   optionalBooleanField('is_active'),
@@ -180,7 +180,7 @@ const subcategoryCreateRules = [
 
 const subcategoryUpdateRules = [
   optionalRequiredText('name', 'Subcategory name', 2, 100),
-  blockedOptionalUploadField('icon', 'Icon'),
+  blockedUploadField('icon', 'Icon'),
   blockedOptionalUploadField('image', 'Image'),
   body('slug').optional({ values: 'falsy' }).trim().matches(/^[a-z0-9-_]+$/).withMessage('Invalid slug format'),
   optionalBooleanField('is_active'),
