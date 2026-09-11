@@ -79,10 +79,95 @@ const markAllRead = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /notifications/device-token
+ * Register or update FCM device token for push notifications.
+ */
+const saveDeviceToken = async (req, res, next) => {
+  try {
+    const { device_token, device_type } = req.body;
+    if (!device_token) {
+      const { AppError } = require('../utils/response');
+      return next(new AppError('device_token is required', 400));
+    }
+    const userModel = require('../models/userModel');
+    const saved = await userModel.saveUserDevice(req.user.id, device_type || 'android', device_token);
+    return success(res, 'Device token registered successfully', saved);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /notifications/test-push
+ * Test push notification delivery directly to a token or registered devices.
+ */
+const sendTestPush = async (req, res, next) => {
+  try {
+    const { device_token, device_type, title, body } = req.body;
+    const firebase = require('../utils/firebase');
+    const userModel = require('../models/userModel');
+    const chatSocketEmitter = require('../services/chatSocketEmitter');
+    const notificationService = require('../services/notificationService');
+    const { AppError } = require('../utils/response');
+
+    const pushTitle = title || 'TradeNexa Push Test';
+    const pushBody = body || 'This is a test notification from TradeNexa.';
+
+    // 1. Trigger live in-app socket notification popup immediately
+    chatSocketEmitter.emitToUser(req.user.id, 'notification:new', {
+      notification: {
+        id: Date.now(),
+        user_id: req.user.id,
+        type: 'INQUIRY_RECEIVED',
+        title: pushTitle,
+        body: pushBody,
+        click_action: '/buyer/inquiries',
+        created_at: new Date().toISOString(),
+      },
+    });
+    notificationService.pushUnreadCount(req.user.id);
+
+    // 2. If explicit device token passed, send FCM push to it
+    if (device_token) {
+      const result = await firebase.sendPushToToken(device_token, {
+        notification: { title: pushTitle, body: pushBody },
+        data: { type: 'TEST_PUSH', click_action: 'FLUTTER_NOTIFICATION_CLICK' },
+      });
+      return success(res, 'Test push executed', result);
+    }
+
+    // 3. Otherwise send FCM push to all registered devices for this user
+    const devices = await userModel.findDevicesByUserId(req.user.id);
+    let fcmResults = [];
+    if (devices.length > 0) {
+      fcmResults = await Promise.all(
+        devices.map(async (d) => {
+          const res = await firebase.sendPushToToken(d.device_token, {
+            notification: { title: pushTitle, body: pushBody },
+            data: { type: 'TEST_PUSH', click_action: 'FLUTTER_NOTIFICATION_CLICK' },
+          });
+          return { deviceId: d.id, deviceType: d.device_type, ...res };
+        })
+      );
+    }
+
+    return success(res, 'Test notification triggered (Socket popup + FCM push)', {
+      socket_sent: true,
+      registered_devices: devices.length,
+      fcm_results: fcmResults,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   listNotifications,
   getUnreadCount,
   markRead,
   markManyRead,
   markAllRead,
+  saveDeviceToken,
+  sendTestPush,
 };

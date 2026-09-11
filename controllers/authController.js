@@ -189,6 +189,25 @@ const logoutAllDevices = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /auth/device-token
+ * Register or update FCM device token for push notifications.
+ */
+const saveDeviceToken = async (req, res, next) => {
+  try {
+    const { device_token, device_type } = req.body;
+    if (!device_token) {
+      const { AppError } = require('../utils/response');
+      return next(new AppError('device_token is required', 400));
+    }
+    const userModel = require('../models/userModel');
+    const saved = await userModel.saveUserDevice(req.user.id, device_type || 'android', device_token);
+    return success(res, 'Device token registered successfully', saved);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   sendOtp,
   verifyOtp,
@@ -199,6 +218,7 @@ module.exports = {
   getActiveDevices,
   logoutDevice,
   logoutAllDevices,
+  saveDeviceToken,
   getProfile,
   updateProfile,
   deleteProfile,

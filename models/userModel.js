@@ -544,14 +544,18 @@ const saveUserDevice = async (userId, deviceType, deviceToken) => {
   const { DEVICE_TYPE_VALUES, MAX_DEVICES_PER_USER } = require('../constants');
   const { AppError } = require('../utils/response');
 
-  const token = String(deviceToken || '').trim();
+  const token = String(deviceToken || '')
+    .trim()
+    .replace(/^"+|"+$/g, '')
+    .replace(/\s+/g, '');
   if (!token) throw new AppError('device_token is required', 400);
 
-  const normalizedType = String(deviceType || '')
+  let normalizedType = String(deviceType || '')
     .toLowerCase()
     .trim();
-  if (!DEVICE_TYPE_VALUES.includes(normalizedType)) {
-    throw new AppError('device_type must be android, ios, or web', 400);
+  if (normalizedType === 'mobile' || normalizedType === 'phone') normalizedType = 'android';
+  if (!normalizedType || !DEVICE_TYPE_VALUES.includes(normalizedType)) {
+    normalizedType = 'android';
   }
 
   let replaced = false;

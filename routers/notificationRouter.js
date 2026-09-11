@@ -31,5 +31,7 @@ router.post(
   notificationController.markAllRead,
 );
 router.patch('/:id/read', idParam, validate, notificationController.markRead);
+router.post('/device-token', notificationController.saveDeviceToken);
+router.post('/test-push', notificationController.sendTestPush);
 
 module.exports = router;

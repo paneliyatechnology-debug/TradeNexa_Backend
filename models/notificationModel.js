@@ -130,7 +130,9 @@ const listForUser = async (userId, filters = {}) => {
   }
 
   if (filters.role) {
-    q.andWhere('role', filters.role);
+    q.andWhere((builder) => {
+      builder.where('role', filters.role).orWhereNull('role');
+    });
   }
 
   q.orderBy('created_at', 'desc').orderBy('id', 'desc');
@@ -152,7 +154,9 @@ const listForUser = async (userId, filters = {}) => {
 const countUnread = async (userId, filters = {}) => {
   const q = db('notifications').where({ user_id: userId, is_read: false });
   if (filters.role) {
-    q.andWhere('role', filters.role);
+    q.andWhere((builder) => {
+      builder.where('role', filters.role).orWhereNull('role');
+    });
   }
   const row = await q.count({ total: '*' }).first();
   return parseInt(row?.total || 0, 10);
@@ -176,8 +180,13 @@ const countUnreadByRole = async (userId) => {
   rows.forEach((row) => {
     const count = parseInt(row.count || 0, 10);
     total += count;
-    if (row.role === 'buyer') buyer = count;
-    if (row.role === 'seller') seller = count;
+    if (row.role === 'buyer') buyer += count;
+    else if (row.role === 'seller') seller += count;
+    else {
+      // General/null role notifications count on both buyer & seller
+      buyer += count;
+      seller += count;
+    }
   });
 
   return { total, buyer, seller };

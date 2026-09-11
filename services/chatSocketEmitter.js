@@ -84,6 +84,8 @@ const emitNewMessage = (conversation, message, options = {}) => {
       (uid) => uid && !exclude.has(Number(uid)),
     );
     recipients.forEach((uid) => {
+      emitToUser(uid, CHAT_SOCKET_EVENT.RECEIVE_MESSAGE, payload);
+      emitToUser(uid, CHAT_SOCKET_EVENT.MESSAGE_NEW, payload);
       emitToUser(uid, CHAT_SOCKET_EVENT.CONVERSATION_UPDATED, conversationUpdatedBody);
     });
   }

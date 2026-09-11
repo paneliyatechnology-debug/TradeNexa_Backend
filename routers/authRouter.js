@@ -40,6 +40,7 @@ router.post('/logout', authenticate, logoutRules, validate, authController.logou
 router.get('/devices', authenticate, authController.getActiveDevices);
 router.delete('/devices/:id', authenticate, authController.logoutDevice);
 router.post('/devices/logout-all', authenticate, authController.logoutAllDevices);
+router.post('/device-token', authenticate, authController.saveDeviceToken);
 
 // ==========================================
 // Profile (authenticated)
