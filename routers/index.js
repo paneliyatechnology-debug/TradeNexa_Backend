@@ -24,6 +24,7 @@ const adminAuthRouter = require('./adminAuthRouter');
 const dashboardRouter = require('./dashboardRouter');
 const notificationRouter = require('./notificationRouter');
 const mediaRouter = require('./mediaRouter');
+const testRouter = require('./testRouter');
 
 const router = express.Router();
 
@@ -52,5 +53,6 @@ router.use('/locations', locationRouter);
 router.use('/services', serviceRouter);
 router.use('/news', newsRouter);
 router.use('/media', mediaRouter);
+router.use('/test', testRouter);
 
 module.exports = router;
