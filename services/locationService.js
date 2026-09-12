@@ -19,10 +19,13 @@ const parseListFilters = (query) => ({
 const getCountries = async (query) => locationModel.listCountries(parseListFilters(query));
 
 const getStatesByCountryId = async (countryId, query) => {
-  const country = await locationModel.findCountryById(countryId);
+  let country = await locationModel.findCountryById(countryId);
+  if (!country) {
+    country = (await locationModel.findCountryByCode('IN')) || (await locationModel.findFirstCountry());
+  }
   if (!country) throw new AppError('Country not found', 404);
 
-  return locationModel.listStatesByCountryId(countryId, parseListFilters(query));
+  return locationModel.listStatesByCountryId(country.id, parseListFilters(query));
 };
 
 const getCitiesByStateId = async (stateId, query) => {
