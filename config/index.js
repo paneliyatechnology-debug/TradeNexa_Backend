@@ -49,4 +49,13 @@ module.exports = {
     /** Per-IP max requests in the window (default 5000 — enough for app + Postman). */
     max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 5000,
   },
+  /**
+   * Testing Translation Provider configuration.
+   */
+  translation: {
+    provider: process.env.TRANSLATION_PROVIDER || 'free_google',
+    apiKey: process.env.TRANSLATION_API_KEY || '',
+    baseUrl: process.env.TRANSLATION_BASE_URL || '',
+    timeoutMs: parseInt(process.env.TRANSLATION_TIMEOUT_MS, 10) || 10000,
+  },
 };

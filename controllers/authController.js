@@ -1,8 +1,23 @@
-// User authentication, OTP verification, and profile management handlers.
-
 const authService = require('../services/authService');
+const translationService = require('../services/translationTestService');
 const { success } = require('../utils/response');
 const { MESSAGES, HTTP_STATUS } = require('../constants');
+
+/**
+ * Extracts language code from query ('lang' or 'language') or headers ('x-language' or 'accept-language').
+ */
+const extractRequestLanguage = (req) => {
+  const queryLang = req.query?.lang || req.query?.language;
+  if (queryLang && typeof queryLang === 'string') return queryLang.toLowerCase().trim();
+  const headerLang = req.headers?.['x-language'] || req.headers?.['accept-language'];
+  if (headerLang && typeof headerLang === 'string') {
+    const firstCode = headerLang.split(',')[0].split('-')[0].trim().toLowerCase();
+    if (firstCode && firstCode !== '*' && translationService.SUPPORTED_LANGUAGES[firstCode]) {
+      return firstCode;
+    }
+  }
+  return 'en';
+};
 
 // ==========================================
 // OTP Authentication
@@ -117,8 +132,10 @@ const logout = async (req, res, next) => {
  */
 const getProfile = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await authService.getProfile(req.user.id);
-    return success(res, MESSAGES.SUCCESS, data);
+    const finalData = await translationService.translateUserProfile(data, lang);
+    return success(res, MESSAGES.SUCCESS, finalData);
   } catch (err) {
     next(err);
   }
@@ -156,8 +173,10 @@ const deleteProfile = async (req, res, next) => {
  */
 const getActiveDevices = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await authService.getActiveDevices(req.user.id, req);
-    return success(res, 'Active devices retrieved successfully', data);
+    const finalData = await translationService.translateDeviceList(data, lang);
+    return success(res, 'Active devices retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }

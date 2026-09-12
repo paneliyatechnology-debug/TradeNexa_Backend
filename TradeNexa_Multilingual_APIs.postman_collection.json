@@ -1,0 +1,604 @@
+{
+  "info": {
+    "_postman_id": "tradenexa-multilingual-v1-collection",
+    "name": "TradeNexa - Multilingual & Translation APIs",
+    "description": "Complete collection of multilingual-enabled APIs for TradeNexa.\n\n### How to Pass Language:\nYou can request data in **English (`en`)**, **Hindi (`hi`)**, or **Gujarati (`gu`)** using either:\n1. **Query Parameter**: `?lang=hi` or `?lang=gu` or `?lang=en`\n2. **Header**: `x-language: hi` (or `gu`, `en`) or standard `Accept-Language: hi`\n\n### Multilingual Features:\n- **Products**: Full detail, list cards, search, unit, status, address, specs, tags.\n- **Categories & Subcategories**: Name, parent/child names, multilingual search.\n- **User & Seller Profiles**: Company name, business type, description/about, industry, city, state, country, designation.\n- **Notifications**: Inbox list notification titles and messages translated.\n- **Login Devices**: Active devices and browser descriptions translated.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "YOUR_BEARER_TOKEN_HERE",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Categories (Multilingual)",
+      "item": [
+        {
+          "name": "Get Categories List (with Language & Search)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-language",
+                "value": "hi",
+                "description": "Target language: 'en', 'hi', 'gu'",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/categories?lang=hi&search=कार&page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["categories"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "hi",
+                  "description": "Language code: 'en' | 'hi' | 'gu'"
+                },
+                {
+                  "key": "search",
+                  "value": "कार",
+                  "description": "Multilingual search query (e.g. 'कार', 'ખેતી', 'farming')"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Retrieve categories list. Category names are translated automatically to the requested language."
+          }
+        },
+        {
+          "name": "Get Category By ID (with Subcategories translated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-language",
+                "value": "gu",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/categories/3?lang=gu",
+              "host": ["{{base_url}}"],
+              "path": ["categories", "3"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "gu"
+                }
+              ]
+            },
+            "description": "Retrieve category details and all child subcategories translated."
+          }
+        },
+        {
+          "name": "Get Subcategories by Category ID (with Language & Search)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-language",
+                "value": "hi",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/categories/3/subcategories?lang=hi&search=इंजन&page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["categories", "3", "subcategories"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "hi"
+                },
+                {
+                  "key": "search",
+                  "value": "इंजन"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Retrieve subcategories of a category with translation and multilingual search."
+          }
+        },
+        {
+          "name": "Get Subcategory Detail By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-language",
+                "value": "gu",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/categories/3/subcategories/4?lang=gu",
+              "host": ["{{base_url}}"],
+              "path": ["categories", "3", "subcategories", "4"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "gu"
+                }
+              ]
+            },
+            "description": "Retrieve single subcategory detail with parent category translated."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Products (Buyer Side - Multilingual)",
+      "item": [
+        {
+          "name": "Get Products List (with Multilingual Search & Translation)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-language",
+                "value": "hi",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products?lang=hi&search=पेट्रोल&page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["products"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "hi",
+                  "description": "'en' | 'hi' | 'gu'"
+                },
+                {
+                  "key": "search",
+                  "value": "पेट्रोल",
+                  "description": "Multilingual query (English / Hindi / Gujarati)"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Fetches product cards list. Name, unit, category, subcategory, seller name, city, state, country, and status are translated."
+          }
+        },
+        {
+          "name": "Get Product Full Detail By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-language",
+                "value": "gu",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/2?lang=gu",
+              "host": ["{{base_url}}"],
+              "path": ["products", "2"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "gu"
+                }
+              ]
+            },
+            "description": "Fetches full product details. All basic details, pricing units, stock status, seller company, seller address, specifications, search tags, and warranty are translated."
+          }
+        },
+        {
+          "name": "Get Trending Products",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-language",
+                "value": "hi",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/trending?lang=hi&limit=8",
+              "host": ["{{base_url}}"],
+              "path": ["products", "trending"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "hi"
+                },
+                {
+                  "key": "limit",
+                  "value": "8"
+                }
+              ]
+            },
+            "description": "Fetches trending products with automatic translation."
+          }
+        },
+        {
+          "name": "Get Related Products",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-language",
+                "value": "gu",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/2/related?lang=gu&limit=4",
+              "host": ["{{base_url}}"],
+              "path": ["products", "2", "related"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "gu"
+                },
+                {
+                  "key": "limit",
+                  "value": "4"
+                }
+              ]
+            },
+            "description": "Fetches related products for a product ID translated into the selected language."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. User & Seller Profiles (Multilingual)",
+      "item": [
+        {
+          "name": "Get Authenticated User Profile (with Language Translation)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "x-language",
+                "value": "gu",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/profile?lang=gu",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "profile"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "gu",
+                  "description": "'en' | 'hi' | 'gu'"
+                }
+              ]
+            },
+            "description": "Fetches authenticated user profile. Full name, company name, business type, industry, description, city, state, country, and address lines are translated."
+          }
+        },
+        {
+          "name": "Get Seller Public Profile By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-language",
+                "value": "hi",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sellers/4?lang=hi",
+              "host": ["{{base_url}}"],
+              "path": ["sellers", "4"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "hi"
+                }
+              ]
+            },
+            "description": "Fetches public seller profile with translated company name, industry, city, state, country, and business description."
+          }
+        },
+        {
+          "name": "Get Sellers Directory List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-language",
+                "value": "gu",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sellers?lang=gu&page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["sellers"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "gu"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "List of sellers directory translated into selected language."
+          }
+        },
+        {
+          "name": "Get Verified Sellers List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-language",
+                "value": "hi",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sellers/verified?lang=hi&limit=8",
+              "host": ["{{base_url}}"],
+              "path": ["sellers", "verified"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "hi"
+                },
+                {
+                  "key": "limit",
+                  "value": "8"
+                }
+              ]
+            },
+            "description": "List of verified sellers for buyer home cards translated into selected language."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Notifications (Multilingual)",
+      "item": [
+        {
+          "name": "Get Notifications List (with Language Translation)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "x-language",
+                "value": "gu",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/notifications?lang=gu&page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "gu",
+                  "description": "'en' | 'hi' | 'gu'"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Fetches notifications inbox with notification title and message body translated."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Login Devices (Multilingual)",
+      "item": [
+        {
+          "name": "Get Active Login Devices (with Language Translation)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "x-language",
+                "value": "hi",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/devices?lang=hi",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "devices"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "hi",
+                  "description": "'en' | 'hi' | 'gu'"
+                }
+              ]
+            },
+            "description": "Fetches active logged-in devices with device titles, browser, OS, and type translated."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Products (Seller & Authenticated Side)",
+      "item": [
+        {
+          "name": "Get Seller Products List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "x-language",
+                "value": "hi",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/seller/products?lang=hi&page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["seller", "products"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "hi"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Seller dashboard product list with multilingual translation."
+          }
+        },
+        {
+          "name": "Get My Products List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "x-language",
+                "value": "gu",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/my-products?lang=gu&page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["products", "my-products"],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "gu"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Logged-in user's product list with multilingual translation."
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Translation Utilities & Testing APIs",
+      "item": [
+        {
+          "name": "Translate Text Payload Directly",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Industrial Water Pump\",\n  \"description\": \"High quality industrial water pump for factories.\",\n  \"source_language\": \"en\",\n  \"target_languages\": [\"hi\", \"gu\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/test/translate-product",
+              "host": ["{{base_url}}"],
+              "path": ["test", "translate-product"]
+            },
+            "description": "Directly translates text payload into target languages (Hindi & Gujarati)."
+          }
+        },
+        {
+          "name": "Get Supported Languages List",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/test/translation-languages",
+              "host": ["{{base_url}}"],
+              "path": ["test", "translation-languages"]
+            },
+            "description": "Returns list of supported language codes and their display names."
+          }
+        }
+      ]
+    }
+  ]
+}
