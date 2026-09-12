@@ -130,18 +130,19 @@ const getBuyerId = (rfq) => rfq.buyer_id;
 const mapRfqAddressFields = (data) => ({
   address_line_1: data.address_line_1 || null,
   address_line_2: data.address_line_2 || null,
-  city: data.city || null,
-  state: data.state ?? null,
-  country: data.country || null,
+  address_city: data.address_city || data.city || null,
+  address_state: data.address_state || data.state || null,
+  state: data.state || data.address_state || null,
+  address_country: data.address_country || data.country || null,
   pincode: data.pincode || null,
 });
 
 const formatRfqAddress = (rfq) => ({
   address_line_1: rfq.address_line_1 || null,
   address_line_2: rfq.address_line_2 || null,
-  city: rfq.city || null,
-  state: rfq.state || null,
-  country: rfq.country || null,
+  city: rfq.address_city || rfq.city || null,
+  state: rfq.address_state || rfq.state || null,
+  country: rfq.address_country || rfq.country || null,
   pincode: rfq.pincode || null,
 });
 
