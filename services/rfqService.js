@@ -148,6 +148,7 @@ const formatRfqAddress = (rfq) => ({
 
 const buildRfqPayload = (data, buyerId, overrides = {}) => ({
   buyer_id: buyerId,
+  user_id: buyerId,
   title: data.title,
   description: data.description || null,
   category_id: data.category_id,

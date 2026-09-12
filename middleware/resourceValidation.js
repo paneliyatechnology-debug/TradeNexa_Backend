@@ -763,29 +763,50 @@ const inquiryRejectRules = [
   body('reject_reason').optional({ values: 'falsy' }).trim().isLength({ max: 1000 }),
 ];
 
-const RFQ_PINCODE_REGEX = /^[1-9][0-9]{5}$/;
+const isValidDateInput = (value) => {
+  if (!value) return true;
+  const d = new Date(value);
+  return !Number.isNaN(d.getTime());
+};
 
 const rfqDateFields = [
-  body('required_before').optional({ values: 'falsy' }).isISO8601().withMessage('Required before must be a valid ISO8601 timestamp'),
-  body('quotation_deadline').optional({ values: 'falsy' }).isISO8601().withMessage('Quotation deadline must be a valid ISO8601 timestamp'),
+  body('required_before')
+    .optional({ values: 'falsy' })
+    .custom(isValidDateInput)
+    .withMessage('Required before must be a valid date'),
+  body('quotation_deadline')
+    .optional({ values: 'falsy' })
+    .custom(isValidDateInput)
+    .withMessage('Quotation deadline must be a valid date'),
 ];
 
 const rfqAddressFields = [
-  body('address_line_1').trim().notEmpty().withMessage('Address line 1 is required').isLength({ min: 3, max: 255 }),
+  body('address_line_1').trim().notEmpty().withMessage('Address line 1 is required').isLength({ min: 2, max: 255 }),
   body('address_line_2').optional({ values: 'falsy' }).trim().isLength({ max: 255 }),
-  body('city').trim().notEmpty().withMessage('City is required').isLength({ min: 2, max: 100 }),
-  body('state').trim().notEmpty().withMessage('State is required').isLength({ min: 2, max: 100 }),
-  body('country').trim().notEmpty().withMessage('Country is required').isLength({ min: 2, max: 100 }),
-  body('pincode').trim().notEmpty().withMessage('Pincode is required').matches(RFQ_PINCODE_REGEX).withMessage('Invalid pincode'),
+  body('city').trim().notEmpty().withMessage('City is required').isLength({ min: 1, max: 100 }),
+  body('state').trim().notEmpty().withMessage('State is required').isLength({ min: 1, max: 100 }),
+  body('country').trim().notEmpty().withMessage('Country is required').isLength({ min: 1, max: 100 }),
+  body('pincode')
+    .trim()
+    .notEmpty()
+    .withMessage('Pincode is required')
+    .customSanitizer((v) => (typeof v === 'string' ? v.replace(/\s+/g, '') : v))
+    .isLength({ min: 3, max: 20 })
+    .withMessage('Invalid pincode'),
 ];
 
 const rfqAddressUpdateFields = [
-  body('address_line_1').optional({ values: 'falsy' }).trim().isLength({ min: 3, max: 255 }).withMessage('Address line 1 must be 3 to 255 chars'),
+  body('address_line_1').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 255 }).withMessage('Address line 1 must be 2 to 255 chars'),
   body('address_line_2').optional({ values: 'falsy' }).trim().isLength({ max: 255 }),
-  body('city').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 100 }),
-  body('state').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 100 }),
-  body('country').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 100 }),
-  body('pincode').optional({ values: 'falsy' }).trim().matches(RFQ_PINCODE_REGEX).withMessage('Invalid pincode'),
+  body('city').optional({ values: 'falsy' }).trim().isLength({ min: 1, max: 100 }),
+  body('state').optional({ values: 'falsy' }).trim().isLength({ min: 1, max: 100 }),
+  body('country').optional({ values: 'falsy' }).trim().isLength({ min: 1, max: 100 }),
+  body('pincode')
+    .optional({ values: 'falsy' })
+    .trim()
+    .customSanitizer((v) => (typeof v === 'string' ? v.replace(/\s+/g, '') : v))
+    .isLength({ min: 3, max: 20 })
+    .withMessage('Invalid pincode'),
 ];
 
 const rfqCreateRules = [
@@ -795,13 +816,20 @@ const rfqCreateRules = [
   body('description').trim().notEmpty().withMessage('Description is required').isLength({ min: 10 }).withMessage('Description must be at least 10 characters'),
   body('quantity').toInt().isInt({ min: 1 }).withMessage('Quantity is required and must be at least 1'),
   body('unit').trim().notEmpty().withMessage('Unit is required').isLength({ max: 50 }).withMessage('Unit must be at most 50 characters'),
-  body('quotation_deadline').isISO8601().withMessage('Quotation deadline is required and must be a valid ISO8601 timestamp'),
+  body('quotation_deadline')
+    .notEmpty()
+    .withMessage('Quotation deadline is required')
+    .custom(isValidDateInput)
+    .withMessage('Quotation deadline must be a valid date'),
   ...rfqAddressFields,
   body('product_id').optional({ values: 'falsy' }).toInt().isInt({ min: 1 }).withMessage('Product ID must be an integer'),
   body('expected_price').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Expected price must be positive'),
   body('budget').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Budget must be positive'),
   body('currency').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
-  body('required_before').optional({ values: 'falsy' }).isISO8601().withMessage('Required before must be a valid ISO8601 timestamp'),
+  body('required_before')
+    .optional({ values: 'falsy' })
+    .custom(isValidDateInput)
+    .withMessage('Required before must be a valid date'),
   body('payment_terms').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
   body('visibility').optional().isIn(Object.values(RFQ_VISIBILITY)).withMessage('Invalid visibility'),
   body('seller_ids')
