@@ -790,14 +790,14 @@ const rfqAddressUpdateFields = [
 
 const rfqCreateRules = [
   body('title').trim().notEmpty().withMessage('RFQ title is required').isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
-  body('category_id').isInt({ min: 1 }).withMessage('Category ID is required and must be an integer'),
-  body('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required and must be an integer'),
+  body('category_id').toInt().isInt({ min: 1 }).withMessage('Category ID is required and must be an integer'),
+  body('subcategory_id').optional({ values: 'falsy' }).toInt().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
   body('description').trim().notEmpty().withMessage('Description is required').isLength({ min: 10 }).withMessage('Description must be at least 10 characters'),
-  body('quantity').isInt({ min: 1 }).withMessage('Quantity is required and must be at least 1'),
+  body('quantity').toInt().isInt({ min: 1 }).withMessage('Quantity is required and must be at least 1'),
   body('unit').trim().notEmpty().withMessage('Unit is required').isLength({ max: 50 }).withMessage('Unit must be at most 50 characters'),
   body('quotation_deadline').isISO8601().withMessage('Quotation deadline is required and must be a valid ISO8601 timestamp'),
   ...rfqAddressFields,
-  body('product_id').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Product ID must be an integer'),
+  body('product_id').optional({ values: 'falsy' }).toInt().isInt({ min: 1 }).withMessage('Product ID must be an integer'),
   body('expected_price').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Expected price must be positive'),
   body('budget').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Budget must be positive'),
   body('currency').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
