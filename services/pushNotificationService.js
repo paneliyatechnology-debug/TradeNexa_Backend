@@ -177,8 +177,12 @@ const sendChatMessagePush = async (conversation, message) => {
           // best-effort
         }
 
+        const recipientRole =
+          Number(recipientId) === Number(conversation.seller_id) ? 'seller' : 'buyer';
+
         await notificationService.send({
           receiverId: recipientId,
+          role: recipientRole,
           type: NOTIFICATION_TYPE.CHAT_MESSAGE,
           title,
           body,
@@ -194,6 +198,7 @@ const sendChatMessagePush = async (conversation, message) => {
             sender_name: message.sender_name,
             context_type: conversation.last_context_type,
             context_id: conversation.last_context_id,
+            role: recipientRole,
           },
         });
       }),

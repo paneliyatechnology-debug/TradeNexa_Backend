@@ -42,6 +42,55 @@ const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 /**
+ * Detect script / probable language of a given text.
+ */
+const detectScriptLanguage = (text) => {
+  if (!text || typeof text !== 'string') return 'en';
+  // Gujarati Unicode block: \u0A80-\u0AFF
+  if (/[\u0A80-\u0AFF]/.test(text)) return 'gu';
+  // Devanagari Unicode block (Hindi/Marathi): \u0900-\u097F
+  if (/[\u0900-\u097F]/.test(text)) return 'hi';
+  // Bengali: \u0980-\u09FF
+  if (/[\u0980-\u09FF]/.test(text)) return 'bn';
+  // Tamil: \u0B80-\u0BFF
+  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta';
+  // Telugu: \u0C00-\u0C7F
+  if (/[\u0C00-\u0C7F]/.test(text)) return 'te';
+  // Kannada: \u0C80-\u0CFF
+  if (/[\u0C80-\u0CFF]/.test(text)) return 'kn';
+  // Malayalam: \u0D00-\u0D7F
+  if (/[\u0D00-\u0D7F]/.test(text)) return 'ml';
+  // Arabic / Urdu: \u0600-\u06FF
+  if (/[\u0600-\u06FF]/.test(text)) return 'ur';
+  // Latin / English
+  if (/[a-zA-Z]/.test(text)) return 'en';
+  return 'auto';
+};
+
+/**
+ * Check if the translated string is an error message or invalid response from third-party translation providers.
+ */
+const isInvalidTranslation = (text) => {
+  if (!text || typeof text !== 'string') return true;
+  const upper = text.trim().toUpperCase();
+  if (
+    upper.includes('PLEASE SELECT TWO DISTINCT LANGUAGES') ||
+    upper.includes('INVALID TARGET LANGUAGE') ||
+    upper.includes('INVALID SOURCE LANGUAGE') ||
+    upper.includes('MYMEMORY WARNING') ||
+    upper.includes('NO QUERY SPECIFIED') ||
+    upper.includes('QUERY LENGTH LIMIT EXCEEDED') ||
+    upper.includes('TRANSLATION NOT FOUND') ||
+    upper.includes('RATELIMIT EXCEEDED') ||
+    upper.includes('YOU USED ALL AVAILABLE FREE TRANSLATIONS') ||
+    upper.includes('RESPONSE DATA IS NULL')
+  ) {
+    return true;
+  }
+  return false;
+};
+
+/**
  * Helper to fetch with timeout using AbortController
  */
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
@@ -67,7 +116,15 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
  * Fallback free translator (MyMemory API) if Google is rate limited
  */
 const translateWithMyMemory = async (text, targetLang, sourceLang = 'auto', timeoutMs = 10000) => {
-  const sLang = sourceLang === 'auto' ? 'autodetect' : sourceLang;
+  let sLang = sourceLang;
+  if (!sLang || sLang === 'auto' || sLang === 'autodetect') {
+    sLang = detectScriptLanguage(text);
+  }
+  if (sLang === 'auto' || sLang === targetLang) {
+    if (sLang === targetLang) return text;
+    sLang = targetLang === 'en' ? 'hi' : 'en';
+  }
+
   const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(
     sLang
   )}|${encodeURIComponent(targetLang)}`;
@@ -77,10 +134,10 @@ const translateWithMyMemory = async (text, targetLang, sourceLang = 'auto', time
   }
   const data = await response.json();
   const translated = data?.responseData?.translatedText;
-  if (translated) {
+  if (translated && !isInvalidTranslation(translated)) {
     return translated;
   }
-  throw new Error('No translation in MyMemory response');
+  throw new Error('No valid translation in MyMemory response');
 };
 
 /**
@@ -109,7 +166,10 @@ const translateWithFreeGoogle = async (text, targetLang, sourceLang = 'auto', ti
     if (response.ok) {
       const raw = await response.json();
       if (Array.isArray(raw) && Array.isArray(raw[0])) {
-        return raw[0].map((item) => (Array.isArray(item) ? item[0] : '')).join('');
+        const result = raw[0].map((item) => (Array.isArray(item) ? item[0] : '')).join('');
+        if (result && !isInvalidTranslation(result)) {
+          return result;
+        }
       }
     }
   } catch (googleErr) {
@@ -117,7 +177,11 @@ const translateWithFreeGoogle = async (text, targetLang, sourceLang = 'auto', ti
   }
 
   // Fallback to MyMemory
-  return await translateWithMyMemory(text, targetLang, sourceLang, timeoutMs);
+  try {
+    return await translateWithMyMemory(text, targetLang, sourceLang, timeoutMs);
+  } catch (memErr) {
+    return text;
+  }
 };
 
 /**
@@ -299,9 +363,17 @@ const translateSingleText = async (text, targetLang, sourceLang = 'auto', option
     return '';
   }
 
+  // Quick check: if detected script is already targetLang, no need to translate
+  const detected = detectScriptLanguage(text);
+  if (detected !== 'auto' && detected === targetLang) {
+    return text;
+  }
+
   if (sourceLang !== 'auto' && targetLang === sourceLang) {
     return text;
   }
+
+  const effectiveSource = sourceLang === 'auto' ? (detected !== 'auto' ? detected : 'auto') : sourceLang;
 
   const provider = (
     options.provider ||
@@ -311,9 +383,13 @@ const translateSingleText = async (text, targetLang, sourceLang = 'auto', option
   ).toLowerCase();
 
   // Cache key
-  const cacheKey = `${provider}:${sourceLang}:${targetLang}:${text.trim()}`;
+  const cacheKey = `${provider}:${effectiveSource}:${targetLang}:${text.trim()}`;
   if (translationCache.has(cacheKey)) {
-    return translationCache.get(cacheKey);
+    const cached = translationCache.get(cacheKey);
+    if (cached && !isInvalidTranslation(cached)) {
+      return cached;
+    }
+    translationCache.delete(cacheKey);
   }
 
   const apiKey = options.apiKey || config.translation?.apiKey || process.env.TRANSLATION_API_KEY;
@@ -326,33 +402,34 @@ const translateSingleText = async (text, targetLang, sourceLang = 'auto', option
   let translated = '';
   switch (provider) {
     case 'google':
-      translated = await translateWithGoogleCloud(text, targetLang, sourceLang, apiKey, timeoutMs);
+      translated = await translateWithGoogleCloud(text, targetLang, effectiveSource, apiKey, timeoutMs);
       break;
     case 'gemini':
-      translated = await translateWithGemini(text, targetLang, sourceLang, apiKey, timeoutMs);
+      translated = await translateWithGemini(text, targetLang, effectiveSource, apiKey, timeoutMs);
       break;
     case 'openai':
-      translated = await translateWithOpenAI(text, targetLang, sourceLang, apiKey, baseUrl, timeoutMs);
+      translated = await translateWithOpenAI(text, targetLang, effectiveSource, apiKey, baseUrl, timeoutMs);
       break;
     case 'libre':
-      translated = await translateWithLibre(text, targetLang, sourceLang, apiKey, baseUrl, timeoutMs);
+      translated = await translateWithLibre(text, targetLang, effectiveSource, apiKey, baseUrl, timeoutMs);
       break;
     case 'free_google':
     default:
-      translated = await translateWithFreeGoogle(text, targetLang, sourceLang, timeoutMs);
+      translated = await translateWithFreeGoogle(text, targetLang, effectiveSource, timeoutMs);
       break;
   }
 
-  if (translated) {
+  if (translated && !isInvalidTranslation(translated)) {
     // Keep cache from growing unbounded
     if (translationCache.size > 2000) {
       const firstKey = translationCache.keys().next().value;
       translationCache.delete(firstKey);
     }
     translationCache.set(cacheKey, translated);
+    return translated;
   }
 
-  return translated;
+  return text;
 };
 
 /**
@@ -431,12 +508,19 @@ const translateTextSafe = async (text, targetLang, sourceLang = 'auto', options 
   if (!text || typeof text !== 'string' || !text.trim()) {
     return text;
   }
+  const detected = detectScriptLanguage(text);
+  if (detected !== 'auto' && detected === targetLang) {
+    return text;
+  }
   if (sourceLang !== 'auto' && targetLang === sourceLang) {
     return text;
   }
   try {
     const translated = await translateSingleText(text, targetLang, sourceLang, options);
-    return translated || text;
+    if (translated && !isInvalidTranslation(translated)) {
+      return translated;
+    }
+    return text;
   } catch (err) {
     return text;
   }
@@ -541,28 +625,28 @@ const translateFullProductDetail = async (product, targetLang, sourceLang = 'en'
       product_condition: tCondition,
       category: product.basic_details?.category
         ? {
-            ...product.basic_details.category,
-            original_name: product.basic_details.category.name,
-            name: tCategoryName,
-          }
+          ...product.basic_details.category,
+          original_name: product.basic_details.category.name,
+          name: tCategoryName,
+        }
         : null,
       subcategory: product.basic_details?.subcategory
         ? {
-            ...product.basic_details.subcategory,
-            original_name: product.basic_details.subcategory.name,
-            name: tSubcategoryName,
-          }
+          ...product.basic_details.subcategory,
+          original_name: product.basic_details.subcategory.name,
+          name: tSubcategoryName,
+        }
         : null,
       brand: product.basic_details?.brand
         ? {
-            ...product.basic_details.brand,
-            original_name: product.basic_details.brand.name,
-            original_description: product.basic_details.brand.description,
-            original_country: product.basic_details.brand.country,
-            name: tBrandName,
-            description: tBrandDesc,
-            country: tBrandCountry,
-          }
+          ...product.basic_details.brand,
+          original_name: product.basic_details.brand.name,
+          original_description: product.basic_details.brand.description,
+          original_country: product.basic_details.brand.country,
+          name: tBrandName,
+          description: tBrandDesc,
+          country: tBrandCountry,
+        }
         : null,
     },
     pricing: {
@@ -577,28 +661,28 @@ const translateFullProductDetail = async (product, targetLang, sourceLang = 'en'
     },
     seller: product.seller
       ? {
-          ...product.seller,
-          company: product.seller.company
-            ? {
-                ...product.seller.company,
-                original_name: product.seller.company.name,
-                original_business_type: product.seller.company.business_type,
-                name: tSellerCompanyName,
-                business_type: tSellerBusinessType,
-              }
-            : null,
-          address: product.seller.address
-            ? {
-                ...product.seller.address,
-                original_city: product.seller.address.city,
-                original_state: product.seller.address.state,
-                original_country: product.seller.address.country,
-                city: tSellerCity,
-                state: tSellerState,
-                country: tSellerCountry,
-              }
-            : null,
-        }
+        ...product.seller,
+        company: product.seller.company
+          ? {
+            ...product.seller.company,
+            original_name: product.seller.company.name,
+            original_business_type: product.seller.company.business_type,
+            name: tSellerCompanyName,
+            business_type: tSellerBusinessType,
+          }
+          : null,
+        address: product.seller.address
+          ? {
+            ...product.seller.address,
+            original_city: product.seller.address.city,
+            original_state: product.seller.address.state,
+            original_country: product.seller.address.country,
+            city: tSellerCity,
+            state: tSellerState,
+            country: tSellerCountry,
+          }
+          : null,
+      }
       : null,
     original_warranty: product.warranty,
     warranty: tWarranty,
@@ -703,14 +787,14 @@ const translateProductListItem = async (product, targetLang, sourceLang = 'en', 
     specifications: translatedSpecifications,
     address: product.address
       ? {
-          ...product.address,
-          original_city: product.address.city,
-          original_state: product.address.state,
-          original_country: product.address.country,
-          city: tCity,
-          state: tState,
-          country: tCountry,
-        }
+        ...product.address,
+        original_city: product.address.city,
+        original_state: product.address.state,
+        original_country: product.address.country,
+        city: tCity,
+        state: tState,
+        country: tCountry,
+      }
       : null,
   };
 };
@@ -848,32 +932,32 @@ const translateUserProfile = async (userProfile, targetLang, sourceLang = 'en', 
     business_description: tBusinessDescription,
     business_type: userProfile.business_type
       ? {
-          ...userProfile.business_type,
-          original_name: userProfile.business_type.name,
-          name: tBusinessTypeName,
-        }
+        ...userProfile.business_type,
+        original_name: userProfile.business_type.name,
+        name: tBusinessTypeName,
+      }
       : null,
     category: userProfile.category
       ? {
-          ...userProfile.category,
-          original_name: userProfile.category.name,
-          name: tCategoryName,
-        }
+        ...userProfile.category,
+        original_name: userProfile.category.name,
+        name: tCategoryName,
+      }
       : null,
     address: userProfile.address
       ? {
-          ...userProfile.address,
-          original_city: userProfile.address.city,
-          original_state: userProfile.address.state,
-          original_country: userProfile.address.country,
-          original_address_line_1: userProfile.address.address_line_1,
-          original_address_line_2: userProfile.address.address_line_2,
-          city: tCity,
-          state: tState,
-          country: tCountry,
-          address_line_1: tAddress1,
-          address_line_2: tAddress2,
-        }
+        ...userProfile.address,
+        original_city: userProfile.address.city,
+        original_state: userProfile.address.state,
+        original_country: userProfile.address.country,
+        original_address_line_1: userProfile.address.address_line_1,
+        original_address_line_2: userProfile.address.address_line_2,
+        city: tCity,
+        state: tState,
+        country: tCountry,
+        address_line_1: tAddress1,
+        address_line_2: tAddress2,
+      }
       : null,
   };
 };
@@ -926,12 +1010,12 @@ const translateSellerProfile = async (seller, targetLang, sourceLang = 'en', opt
     country: tCountry,
     address: seller.address
       ? {
-          ...seller.address,
-          city: tCity,
-          state: tState,
-          country: tCountry,
-          address_line_1: tAddress1,
-        }
+        ...seller.address,
+        city: tCity,
+        state: tState,
+        country: tCountry,
+        address_line_1: tAddress1,
+      }
       : seller.address,
   };
 };
@@ -963,8 +1047,8 @@ const translateSellerList = async (sellersData, targetLang, sourceLang = 'en', o
 /**
  * Translates notification item.
  */
-const translateNotificationItem = async (notification, targetLang, sourceLang = 'en', options = {}) => {
-  if (!notification || !targetLang || targetLang === sourceLang) return notification;
+const translateNotificationItem = async (notification, targetLang, sourceLang = 'auto', options = {}) => {
+  if (!notification || !targetLang) return notification;
 
   const [tTitle, tBody] = await Promise.all([
     translateTextSafe(notification.title, targetLang, sourceLang, options),
@@ -985,8 +1069,8 @@ const translateNotificationItem = async (notification, targetLang, sourceLang = 
 /**
  * Translates notification list / pagination payload.
  */
-const translateNotificationList = async (data, targetLang, sourceLang = 'en', options = {}) => {
-  if (!data || !targetLang || targetLang === sourceLang) return data;
+const translateNotificationList = async (data, targetLang, sourceLang = 'auto', options = {}) => {
+  if (!data || !targetLang) return data;
 
   if (Array.isArray(data)) {
     return await Promise.all(
@@ -1134,9 +1218,9 @@ const translateInquiryItem = async (inquiry, targetLang, sourceLang = 'auto', op
     unit: tUnit,
     product: inquiry.product
       ? {
-          ...inquiry.product,
-          name: tProductName,
-        }
+        ...inquiry.product,
+        name: tProductName,
+      }
       : null,
     quotation: translatedQuotation,
   };
@@ -1172,10 +1256,13 @@ const translateInquiryList = async (data, targetLang, sourceLang = 'auto', optio
 const translateRfqQuotationItem = async (quotation, targetLang, sourceLang = 'auto', options = {}) => {
   if (!quotation || !targetLang) return quotation;
 
-  const [tPaymentTerms, tRemarks, tUnit] = await Promise.all([
+  const [tPaymentTerms, tRemarks, tUnit, tBuyerRemark, tRevisionRemarks, tRfqTitle] = await Promise.all([
     translateTextSafe(quotation.payment_terms, targetLang, sourceLang, options),
     translateTextSafe(quotation.remarks, targetLang, sourceLang, options),
     translateTextSafe(quotation.unit, targetLang, sourceLang, options),
+    translateTextSafe(quotation.buyer_remark || quotation.buyer_remarks, targetLang, sourceLang, options),
+    translateTextSafe(quotation.revision_request_remarks || quotation.revision_remarks, targetLang, sourceLang, options),
+    translateTextSafe(quotation.rfq_title || quotation.product_name, targetLang, sourceLang, options),
   ]);
 
   return {
@@ -1184,9 +1271,14 @@ const translateRfqQuotationItem = async (quotation, targetLang, sourceLang = 'au
     language_name: SUPPORTED_LANGUAGES[targetLang] || targetLang,
     original_remarks: quotation.remarks,
     original_payment_terms: quotation.payment_terms,
+    original_rfq_title: quotation.rfq_title,
     payment_terms: tPaymentTerms,
     remarks: tRemarks,
     unit: tUnit,
+    buyer_remark: tBuyerRemark,
+    revision_request_remarks: tRevisionRemarks,
+    rfq_title: tRfqTitle || quotation.rfq_title,
+    product_name: tRfqTitle || quotation.product_name,
   };
 };
 
@@ -1215,18 +1307,28 @@ const translateRfqQuotationList = async (data, targetLang, sourceLang = 'auto', 
 };
 
 /**
- * Translates RFQ item (title, description, category, subcategory, unit, quotations).
+ * Translates RFQ item (title, description, category, subcategory, unit, city, state, country, quotations).
  */
 const translateRfqItem = async (rfq, targetLang, sourceLang = 'auto', options = {}) => {
   if (!rfq || !targetLang) return rfq;
 
-  const [tTitle, tDescription, tUnit, tCategory, tSubcategory, tCity] = await Promise.all([
+  const rawCategory = rfq.category_name || (typeof rfq.category === 'string' ? rfq.category : rfq.category?.name);
+  const rawSubcategory = rfq.subcategory_name || (typeof rfq.subcategory === 'string' ? rfq.subcategory : rfq.subcategory?.name);
+  const rawCity = rfq.city || rfq.address_city || rfq.address?.city;
+  const rawState = rfq.state || rfq.address_state || rfq.address?.state;
+  const rawCountry = rfq.country || rfq.address_country || rfq.address?.country;
+  const rawProductName = rfq.product_name || (typeof rfq.product === 'string' ? rfq.product : rfq.product?.name);
+
+  const [tTitle, tDescription, tUnit, tCategory, tSubcategory, tCity, tState, tCountry, tProductName] = await Promise.all([
     translateTextSafe(rfq.title, targetLang, sourceLang, options),
     translateTextSafe(rfq.description, targetLang, sourceLang, options),
     translateTextSafe(rfq.unit, targetLang, sourceLang, options),
-    translateTextSafe(rfq.category_name, targetLang, 'auto', options),
-    translateTextSafe(rfq.subcategory_name, targetLang, 'auto', options),
-    translateTextSafe(rfq.city, targetLang, 'auto', options),
+    translateTextSafe(rawCategory, targetLang, 'auto', options),
+    translateTextSafe(rawSubcategory, targetLang, 'auto', options),
+    translateTextSafe(rawCity, targetLang, 'auto', options),
+    translateTextSafe(rawState, targetLang, 'auto', options),
+    translateTextSafe(rawCountry, targetLang, 'auto', options),
+    translateTextSafe(rawProductName, targetLang, 'auto', options),
   ]);
 
   let translatedQuotations = rfq.quotations;
@@ -1234,6 +1336,11 @@ const translateRfqItem = async (rfq, targetLang, sourceLang = 'auto', options = 
     translatedQuotations = await Promise.all(
       rfq.quotations.map((q) => translateRfqQuotationItem(q, targetLang, sourceLang, options))
     );
+  }
+
+  let translatedMyQuotation = rfq.my_quotation;
+  if (rfq.my_quotation && typeof rfq.my_quotation === 'object') {
+    translatedMyQuotation = await translateRfqQuotationItem(rfq.my_quotation, targetLang, sourceLang, options);
   }
 
   return {
@@ -1245,10 +1352,33 @@ const translateRfqItem = async (rfq, targetLang, sourceLang = 'auto', options = 
     title: tTitle,
     description: tDescription,
     unit: tUnit,
-    category_name: tCategory,
-    subcategory_name: tSubcategory,
-    city: tCity,
+    category: tCategory || rfq.category,
+    category_name: tCategory || rfq.category_name,
+    subcategory: tSubcategory || rfq.subcategory,
+    subcategory_name: tSubcategory || rfq.subcategory_name,
+    city: tCity || rfq.city,
+    address_city: tCity || rfq.address_city,
+    state: tState || rfq.state,
+    address_state: tState || rfq.address_state,
+    country: tCountry || rfq.country,
+    address_country: tCountry || rfq.address_country,
+    address: rfq.address
+      ? {
+        ...rfq.address,
+        city: tCity || rfq.address.city,
+        state: tState || rfq.address.state,
+        country: tCountry || rfq.address.country,
+      }
+      : rfq.address,
+    product_name: tProductName || rfq.product_name,
+    product: rfq.product && typeof rfq.product === 'object'
+      ? {
+        ...rfq.product,
+        name: tProductName || rfq.product.name,
+      }
+      : rfq.product,
     quotations: translatedQuotations,
+    my_quotation: translatedMyQuotation,
   };
 };
 
@@ -1276,8 +1406,15 @@ const translateRfqList = async (data, targetLang, sourceLang = 'auto', options =
   return data;
 };
 
+const clearTranslationCache = () => {
+  translationCache.clear();
+};
+
 module.exports = {
   SUPPORTED_LANGUAGES,
+  detectScriptLanguage,
+  isInvalidTranslation,
+  clearTranslationCache,
   translateSingleText,
   translateTextSafe,
   translateProduct,

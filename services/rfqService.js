@@ -93,7 +93,54 @@ const listRfqSellerIds = async (rfqId, buyerId = null) => {
 };
 
 /**
- * FCM + in-app inbox for sellers who should receive a new RFQ invite.
+ * Finds all candidate sellers who should be notified about a published RFQ:
+ * - Assigned / invited sellers (rfq_sellers)
+ * - Category / subcategory sellers whose company or products match the RFQ category
+ */
+const findSellersForRfq = async (rfq, buyerId = null) => {
+  const excludeBuyer = buyerId != null ? Number(buyerId) : null;
+  const assigned = await listRfqSellerIds(rfq.id, buyerId);
+
+  // If PRIVATE RFQ, strictly notify assigned sellers
+  if (rfq.visibility === RFQ_VISIBILITY.PRIVATE) {
+    return assigned;
+  }
+
+  // For PUBLIC RFQ, also find active sellers in the RFQ's category
+  let categorySellerIds = [];
+  if (rfq.category_id) {
+    try {
+      const rows = await db('users')
+        .join('roles', 'users.role_id', '=', 'roles.id')
+        .leftJoin('company_details', 'users.id', '=', 'company_details.user_id')
+        .leftJoin('products', function () {
+          this.on('users.id', '=', 'products.seller_id').andOnNull('products.deleted_at');
+        })
+        .whereIn('roles.code', ['seller', 'buyer_seller'])
+        .where('users.is_active', true)
+        .whereNull('users.deleted_at')
+        .where(function () {
+          this.where('company_details.category_id', rfq.category_id)
+            .orWhere('products.category_id', rfq.category_id);
+        })
+        .select('users.id')
+        .distinct();
+
+      categorySellerIds = (rows || []).map((r) => r.id);
+    } catch (e) {
+      logger.error('[findSellersForRfq] Error querying category sellers', e);
+    }
+  }
+
+  const allIds = [...new Set([...assigned, ...categorySellerIds])].filter(
+    (id) => id && Number(id) !== excludeBuyer
+  );
+
+  return allIds;
+};
+
+/**
+ * FCM + in-app inbox for sellers who should receive a new RFQ invite or lead.
  * Never notifies the buyer (creator).
  */
 const notifySellersOfNewRfq = async (rfq, buyerId, sellerIds = null) => {
@@ -102,7 +149,7 @@ const notifySellersOfNewRfq = async (rfq, buyerId, sellerIds = null) => {
   const ids =
     sellerIds != null
       ? [...new Set(sellerIds.map(Number).filter((id) => id && id !== Number(buyerId)))]
-      : await listRfqSellerIds(rfq.id, buyerId);
+      : await findSellersForRfq(rfq, buyerId);
 
   if (!ids.length) return;
 
@@ -343,10 +390,11 @@ const publishRfq = async (id, buyerId) => {
   // PRIVATE RFQ: open chats with invited sellers (same as inquiry create → product chat seed)
   if (rfq.visibility === RFQ_VISIBILITY.PRIVATE) {
     await chatService.initializeRfqChatsForInvitedSellers(id, buyerId);
-    // Business + in-app notification to invited sellers (not the buyer)
-    const fresh = await rfqModel.findRfqById(id, { raw: true });
-    await notifySellersOfNewRfq(fresh || rfq, buyerId);
   }
+
+  // Business + in-app notification to invited / category sellers (not the buyer)
+  const fresh = await rfqModel.findRfqById(id, { raw: true });
+  await notifySellersOfNewRfq(fresh || rfq, buyerId);
 
   return getRfqDetail(id);
 };

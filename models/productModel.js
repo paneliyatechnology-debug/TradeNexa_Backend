@@ -627,6 +627,10 @@ const findProducts = async (filters = {}) => {
     q.where('products.subcategory_id', filters.subcategory_id);
   }
 
+  if (filters.state_id) {
+    q.where('addresses.state_id', filters.state_id);
+  }
+
   if (filters.city_id) {
     q.where('addresses.city_id', filters.city_id);
   }

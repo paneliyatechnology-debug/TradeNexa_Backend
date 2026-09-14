@@ -47,6 +47,9 @@ const emitToUser = (userId, event, payload) => {
 const emitNewMessage = (conversation, message, options = {}) => {
   const payload = {
     conversation_id: conversation.id,
+    buyer_id: conversation.buyer_id,
+    seller_id: conversation.seller_id,
+    rfq_id: conversation.rfq_id || conversation.last_context_id || null,
     message,
   };
 
@@ -64,6 +67,8 @@ const emitNewMessage = (conversation, message, options = {}) => {
 
   const conversationUpdatedBody = {
     conversation_id: conversation.id,
+    buyer_id: conversation.buyer_id,
+    seller_id: conversation.seller_id,
     last_message: message,
     last_message_at: message.created_at,
     last_message_sender_id: message.sender_id,
@@ -145,10 +150,16 @@ const emitMessagesRead = (conversation, payload) => {
 const emitMessageRead = emitMessagesRead;
 
 const emitTyping = (conversationId, payload) => {
-  emitToConversation(conversationId, CHAT_SOCKET_EVENT.TYPING_INDICATOR, {
-    conversation_id: conversationId,
+  const data = {
+    conversation_id: Number(conversationId),
     ...payload,
-  });
+  };
+  emitToConversation(conversationId, CHAT_SOCKET_EVENT.TYPING_INDICATOR, data);
+  if (payload.is_typing) {
+    emitToConversation(conversationId, 'user_typing', data);
+  } else {
+    emitToConversation(conversationId, 'user_stop_typing', data);
+  }
 };
 
 const emitPresenceUpdate = (userId, presence) => {

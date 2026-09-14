@@ -261,8 +261,9 @@ const initSocket = (httpServer) => {
     // Typing
     // ==========================================
 
-    const handleTypingStart = async ({ conversation_id: conversationId } = {}) => {
+    const handleTypingStart = async (payload = {}) => {
       try {
+        const conversationId = Number(payload?.conversation_id || payload?.conversationId);
         if (!conversationId) return;
         await chatService.assertUserCanJoinConversation(conversationId, userId);
         chatSocketEmitter.emitTyping(conversationId, {
@@ -274,8 +275,9 @@ const initSocket = (httpServer) => {
       }
     };
 
-    const handleTypingStop = async ({ conversation_id: conversationId } = {}) => {
+    const handleTypingStop = async (payload = {}) => {
       try {
+        const conversationId = Number(payload?.conversation_id || payload?.conversationId);
         if (!conversationId) return;
         await chatService.assertUserCanJoinConversation(conversationId, userId);
         chatSocketEmitter.emitTyping(conversationId, {

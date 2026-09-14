@@ -136,6 +136,7 @@ const isAdminUser = (user) => ADMIN_PANEL_ROLE_CODES.includes(resolveRoleCode(us
 const pickProductListFilters = (req, extra = {}) => ({
   search: req.query.search,
   brand_id: req.query.brand_id,
+  state_id: req.query.state_id,
   city_id: req.query.city_id,
   exclude_seller_id: req.query.seller_id,
   min_price: req.query.min_price,

@@ -26,7 +26,7 @@ const categoryIdParam = [
 
 const paginationQuery = [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('limit').optional().isInt({ min: 1, max: 500 }).withMessage('Limit must be between 1 and 500'),
   query('search').optional().trim(),
 ];
 
@@ -559,6 +559,7 @@ const productListQuery = [
   query('search').optional().trim(),
   query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
   query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  query('state_id').optional().isInt({ min: 1 }).withMessage('State ID must be a positive integer'),
   query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   query('is_active')
     .optional()
@@ -574,6 +575,7 @@ const sellerProductsQuery = [
   query('search').optional().trim(),
   query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
   query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  query('state_id').optional().isInt({ min: 1 }).withMessage('State ID must be a positive integer'),
   query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   query('is_active')
     .optional()
@@ -590,6 +592,7 @@ const productTrendingQuery = [
   ...paginationQuery,
   query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
   query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  query('state_id').optional().isInt({ min: 1 }).withMessage('State ID must be a positive integer'),
   query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   ...productListFilterSortQuery,
 ];
@@ -597,6 +600,7 @@ const productTrendingQuery = [
 const productRelatedQuery = [
   query('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required'),
   query('product_id').optional().isInt({ min: 1 }).withMessage('Product ID must be a positive integer'),
+  query('state_id').optional().isInt({ min: 1 }).withMessage('State ID must be a positive integer'),
   query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   ...paginationQuery,
   ...productListFilterSortQuery,
