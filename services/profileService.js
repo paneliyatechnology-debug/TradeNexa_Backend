@@ -263,8 +263,14 @@ const updateProfile = async (userId, data, files = {}) => {
     companyUpdate.business_description = data.business_description;
   }
 
-  // Required main category for all marketplace roles
-  companyUpdate.category_id = Number(data.category_id);
+  // Main category for profile (required for seller/both, optional for buyer)
+  if (data.category_id != null && String(data.category_id).trim() !== '') {
+    companyUpdate.category_id = Number(data.category_id);
+  } else if (existingProfile.category_id != null) {
+    companyUpdate.category_id = existingProfile.category_id;
+  } else {
+    companyUpdate.category_id = null;
+  }
 
   userUpdate.is_completed_profile = true;
   await userModel.updateUser(userId, userUpdate);

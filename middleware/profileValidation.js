@@ -97,7 +97,23 @@ const industryRules = [
     .withMessage('Industry must be between 2 and 200 characters'),
 ];
 
-/** Required main category (categories.parent_id IS NULL). */
+/** Optional main category for buyers (categories.parent_id IS NULL when provided). */
+const optionalCategoryIdRules = [
+  body('category_id')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 1 })
+    .withMessage('category_id must be a positive integer')
+    .custom(async (categoryId) => {
+      if (!categoryId) return true;
+      const category = await categoryModel.findCategoryById(Number(categoryId));
+      if (!category) {
+        throw new Error('Invalid category_id — must be an active main category');
+      }
+      return true;
+    }),
+];
+
+/** Required main category for sellers (categories.parent_id IS NULL). */
 const categoryIdRules = [
   body('category_id')
     .notEmpty()
@@ -117,7 +133,7 @@ const buyerProfileRules = [
   ...blockedRules,
   body('company_name').trim().notEmpty().withMessage('Company name is required').isLength({ min: 2, max: 200 }),
   ...industryRules,
-  ...categoryIdRules,
+  ...optionalCategoryIdRules,
   body('gst_number')
     .optional({ values: 'falsy' })
     .trim()
