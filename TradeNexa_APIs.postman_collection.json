@@ -1753,7 +1753,7 @@
                     "subcategories"
                   ]
                 },
-                "description": "POST /categories/:categoryId/subcategories — Admin. multipart/form-data.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `name` | REQUIRED | text | 2-100 chars |\n| `icon` | REQUIRED | FILE upload only — do not send as URL text | Subcategory icon |\n| `image` | OPTIONAL | FILE upload only — do not send as URL text | Banner image |\n| `slug` | OPTIONAL | text | Auto-generated if omitted |\n| `is_active` | OPTIONAL | boolean | Default true |"
+                "description": "POST /categories/:categoryId/subcategories — Admin. multipart/form-data.\n\n| Field | Required | Type | Description |\n|-------|----------|------|-------------|\n| `name` | REQUIRED | text | 2-100 chars |\n| `icon` | OPTIONAL | FILE upload only — do not send as URL text | Subcategory icon |\n| `image` | OPTIONAL | FILE upload only — do not send as URL text | Banner image |\n| `slug` | OPTIONAL | text | Auto-generated if omitted |\n| `is_active` | OPTIONAL | boolean | Default true |"
               }
             },
             {

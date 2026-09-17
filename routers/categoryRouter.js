@@ -55,7 +55,7 @@ router.get('/:id', idParam, validate, categoryController.getCategory);
 router.post(
   '/',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'super_admin'),
   handleCategoryCreateUpload,
   requireIconUpload,
   categoryCreateRules,
@@ -66,7 +66,7 @@ router.post(
 router.put(
   '/:id',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'super_admin'),
   idParam,
   handleCategoryUpdateUpload,
   rejectEmptyFileFields([{ name: 'icon', label: 'Icon' }]),
@@ -78,7 +78,7 @@ router.put(
 router.delete(
   '/:id',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'super_admin'),
   idParam,
   validate,
   categoryController.deleteCategory,
@@ -91,10 +91,9 @@ router.delete(
 router.post(
   '/:categoryId/subcategories',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'super_admin'),
   categoryIdParam,
   handleCategoryCreateUpload,
-  requireIconUpload,
   subcategoryCreateRules,
   validate,
   categoryController.createSubcategory,
@@ -103,11 +102,10 @@ router.post(
 router.put(
   '/:categoryId/subcategories/:id',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'super_admin'),
   categoryIdParam,
   idParam,
   handleSubcategoryUpdateUpload,
-  rejectEmptyFileFields([{ name: 'icon', label: 'Icon' }]),
   subcategoryUpdateRules,
   validate,
   categoryController.updateSubcategory,
@@ -116,7 +114,7 @@ router.put(
 router.delete(
   '/:categoryId/subcategories/:id',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'super_admin'),
   categoryIdParam,
   idParam,
   validate,

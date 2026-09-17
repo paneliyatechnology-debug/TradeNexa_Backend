@@ -222,7 +222,7 @@ const handleProductUpdateUpload = createUploadMiddleware({
 // ==========================================
 
 /**
- * Require icon file on category/subcategory create.
+ * Require icon file on category create.
  * Must run after multer upload middleware.
  */
 const requireIconUpload = (req, _res, next) => {
