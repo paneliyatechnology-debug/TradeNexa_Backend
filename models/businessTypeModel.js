@@ -67,7 +67,16 @@ const findBusinessTypes = async (filters = {}) => {
     if (!role) {
       return paginate(db('business_types').whereRaw('1 = 0'), filters.page, filters.limit);
     }
-    q.where('business_types.role_id', filters.role_id);
+    if (filters.exact_role) {
+      q.where('business_types.role_id', filters.role_id);
+    } else {
+      const buyerSellerRole = await db('roles').where({ code: 'buyer_seller', is_active: true }).first();
+      if (buyerSellerRole && (role.code === 'buyer' || role.code === 'seller')) {
+        q.whereIn('business_types.role_id', [filters.role_id, buyerSellerRole.id]);
+      } else {
+        q.where('business_types.role_id', filters.role_id);
+      }
+    }
   }
 
   if (filters.search) {
