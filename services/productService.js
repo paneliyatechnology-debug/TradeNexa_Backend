@@ -184,8 +184,9 @@ const createProduct = async (data, files = {}, userId = null, actorRole = 'selle
   // Ownership always from JWT — ignore body.seller_id
   payload.seller_id = userId;
 
-  if (!payload.brand_id && (data.brand_name || data.brand)) {
-    const brandName = String(data.brand_name || data.brand).trim();
+  const brandNameInput = data.brand_name || data.brand || (typeof data.brand_id === 'string' && Number.isNaN(Number(data.brand_id)) ? data.brand_id : null);
+  if ((!payload.brand_id || payload.brand_id === 0) && brandNameInput) {
+    const brandName = String(brandNameInput).trim();
     if (brandName) {
       const resolvedBrandId = await brandModel.findOrCreateBrandByName(brandName, userId);
       if (resolvedBrandId) {
@@ -224,8 +225,9 @@ const updateProduct = async (id, data, files = {}, userId = null, actorRole = 's
   // seller_id is not updatable via body — ownership stays with original seller
   delete payload.seller_id;
 
-  if (!payload.brand_id && (data.brand_name || data.brand)) {
-    const brandName = String(data.brand_name || data.brand).trim();
+  const updateBrandInput = data.brand_name || data.brand || (typeof data.brand_id === 'string' && Number.isNaN(Number(data.brand_id)) ? data.brand_id : null);
+  if ((!payload.brand_id || payload.brand_id === 0) && updateBrandInput) {
+    const brandName = String(updateBrandInput).trim();
     if (brandName) {
       const resolvedBrandId = await brandModel.findOrCreateBrandByName(brandName, userId);
       if (resolvedBrandId) {

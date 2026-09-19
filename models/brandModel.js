@@ -281,14 +281,36 @@ const deleteBrand = async (id, userId = null) => {
 const findOrCreateBrandByName = async (name, userId = null) => {
   if (!name || typeof name !== 'string' || !name.trim()) return null;
   const trimmed = name.trim();
-  const existing = await db('brands')
-    .whereRaw('LOWER(name) = ?', [trimmed.toLowerCase()])
-    .whereNull('deleted_at')
-    .first();
-  if (existing) return existing.id;
 
-  const brand = await createBrand({ name: trimmed, is_active: true }, userId);
-  return brand?.id || null;
+  // 1. Search without deleted_at filter first (handles active and soft-deleted records)
+  const existing = await db('brands')
+    .whereRaw('LOWER(TRIM(name)) = ?', [trimmed.toLowerCase()])
+    .first();
+
+  if (existing) {
+    if (existing.deleted_at || !existing.is_active) {
+      await db('brands').where({ id: existing.id }).update({
+        deleted_at: null,
+        is_active: true,
+        updated_at: db.fn.now(),
+      });
+    }
+    return existing.id;
+  }
+
+  // 2. Try inserting new brand with fallback for duplicate race conditions
+  try {
+    const brand = await createBrand({ name: trimmed, is_active: true }, userId);
+    return brand?.id || null;
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY' || err.message?.includes('Duplicate entry')) {
+      const fallback = await db('brands')
+        .whereRaw('LOWER(TRIM(name)) = ?', [trimmed.toLowerCase()])
+        .first();
+      return fallback?.id || null;
+    }
+    throw err;
+  }
 };
 
 module.exports = {
