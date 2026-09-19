@@ -354,7 +354,8 @@ const productCreateRules = [
   body('name').trim().notEmpty().withMessage('Product name is required').isLength({ min: 2, max: 200 }).withMessage('Product name must be 2 to 200 chars'),
   body('category_id').isInt({ min: 1 }).withMessage('Category ID is required and must be a positive integer'),
   body('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required and must be a positive integer'),
-  body('brand_id').isInt({ min: 1 }).withMessage('Brand ID is required and must be a positive integer'),
+  body('brand_id').optional({ checkFalsy: true }).isInt({ min: 1 }).withMessage('Brand ID must be a positive integer'),
+  body('brand_name').optional().trim().isLength({ max: 100 }).withMessage('Brand name must be at most 100 chars'),
   body('short_description')
     .trim()
     .notEmpty()

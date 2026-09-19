@@ -278,12 +278,26 @@ const deleteBrand = async (id, userId = null) => {
     });
 };
 
+const findOrCreateBrandByName = async (name, userId = null) => {
+  if (!name || typeof name !== 'string' || !name.trim()) return null;
+  const trimmed = name.trim();
+  const existing = await db('brands')
+    .whereRaw('LOWER(name) = ?', [trimmed.toLowerCase()])
+    .whereNull('deleted_at')
+    .first();
+  if (existing) return existing.id;
+
+  const brand = await createBrand({ name: trimmed, is_active: true }, userId);
+  return brand?.id || null;
+};
+
 module.exports = {
   slugify,
   formatBrandEntity,
   formatRow,
   findBrandById,
   findBrands,
+  findOrCreateBrandByName,
   createBrand,
   updateBrand,
   applyBrandMediaUpdates,

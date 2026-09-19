@@ -5,6 +5,7 @@
  * before persisting text fields.
  */
 const productModel = require('../models/productModel');
+const brandModel = require('../models/brandModel');
 const { uploadPaths } = require('../constants/uploadPaths');
 const { processUploadedFiles, processMultipleUploadedFiles } = require('../services/uploadService');
 const { stripFields } = require('../utils/formBody');
@@ -183,6 +184,16 @@ const createProduct = async (data, files = {}, userId = null, actorRole = 'selle
   // Ownership always from JWT — ignore body.seller_id
   payload.seller_id = userId;
 
+  if (!payload.brand_id && (data.brand_name || data.brand)) {
+    const brandName = String(data.brand_name || data.brand).trim();
+    if (brandName) {
+      const resolvedBrandId = await brandModel.findOrCreateBrandByName(brandName, userId);
+      if (resolvedBrandId) {
+        payload.brand_id = resolvedBrandId;
+      }
+    }
+  }
+
   const product = await productModel.createProduct(payload, userId);
   await applyCreateThumbnail(product.id, files);
   await applyImageUploads(product.id, files, 'inbox');
@@ -212,6 +223,16 @@ const updateProduct = async (id, data, files = {}, userId = null, actorRole = 's
   delete payload.approval_status;
   // seller_id is not updatable via body — ownership stays with original seller
   delete payload.seller_id;
+
+  if (!payload.brand_id && (data.brand_name || data.brand)) {
+    const brandName = String(data.brand_name || data.brand).trim();
+    if (brandName) {
+      const resolvedBrandId = await brandModel.findOrCreateBrandByName(brandName, userId);
+      if (resolvedBrandId) {
+        payload.brand_id = resolvedBrandId;
+      }
+    }
+  }
 
   const existing = await productModel.findProductById(id, { raw: true });
   if (!existing) {
