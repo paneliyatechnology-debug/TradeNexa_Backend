@@ -1,0 +1,213 @@
+{
+  "info": {
+    "_postman_id": "tradenexa-auth-otp-collection-2026",
+    "name": "TradeNexa - Auth & OTP APIs",
+    "description": "Postman Collection for testing TradeNexa Firebase Phone Auth (Send OTP, Verify OTP, Resend OTP)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "liveUrl",
+      "value": "https://tradenexabackend-dev.up.railway.app/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "testMobile",
+      "value": "+917096539871",
+      "type": "string"
+    },
+    {
+      "key": "firebase_verification_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Send OTP (Local Server)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.success && jsonData.data && jsonData.data.firebase_verification_id) {",
+              "    pm.collectionVariables.set('firebase_verification_id', jsonData.data.firebase_verification_id);",
+              "    console.log('Saved verification ID:', jsonData.data.firebase_verification_id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"mobile_number\": \"{{testMobile}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/send-otp",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "send-otp"
+          ]
+        },
+        "description": "Send OTP to mobile number. For configured Firebase numbers (+917096539871, +919426886950, etc.) it verifies instantly with OTP 123456."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Verify OTP (Local Server)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"mobile_number\": \"{{testMobile}}\",\n  \"otp\": 123456,\n  \"firebase_verification_id\": \"{{firebase_verification_id}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/verify-otp",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "verify-otp"
+          ]
+        },
+        "description": "Verify the OTP and get JWT access_token and refresh_token."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Resend OTP (Local Server)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.success && jsonData.data && jsonData.data.firebase_verification_id) {",
+              "    pm.collectionVariables.set('firebase_verification_id', jsonData.data.firebase_verification_id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"mobile_number\": \"{{testMobile}}\",\n  \"firebase_verification_id\": \"{{firebase_verification_id}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/resend-otp",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "resend-otp"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4. Send OTP (Live Railway)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.success && jsonData.data && jsonData.data.firebase_verification_id) {",
+              "    pm.collectionVariables.set('firebase_verification_id', jsonData.data.firebase_verification_id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"mobile_number\": \"{{testMobile}}\"\n}"
+        },
+        "url": {
+          "raw": "{{liveUrl}}/auth/send-otp",
+          "host": [
+            "{{liveUrl}}"
+          ],
+          "path": [
+            "auth",
+            "send-otp"
+          ]
+        },
+        "description": "Send OTP against Railway production backend."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Verify OTP (Live Railway)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"mobile_number\": \"{{testMobile}}\",\n  \"otp\": 123456,\n  \"firebase_verification_id\": \"{{firebase_verification_id}}\"\n}"
+        },
+        "url": {
+          "raw": "{{liveUrl}}/auth/verify-otp",
+          "host": [
+            "{{liveUrl}}"
+          ],
+          "path": [
+            "auth",
+            "verify-otp"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

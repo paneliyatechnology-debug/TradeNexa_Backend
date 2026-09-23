@@ -16,14 +16,61 @@ let firebaseApp = null;
 // ==========================================
 
 /**
+ * Maps raw Firebase Identity Toolkit error messages to clear, secure user-facing messages.
+ * @param {string} rawError - Raw error message from Firebase Identity Toolkit
+ * @returns {string}
+ */
+const mapFirebaseError = (rawError = '') => {
+  if (rawError.includes('MISSING_CLIENT_IDENTIFIER')) {
+    return 'Verification token missing. Please complete reCAPTCHA verification to receive OTP.';
+  }
+  if (rawError.includes('CAPTCHA_CHECK_FAILED') || rawError.includes('MALFORMED')) {
+    return 'reCAPTCHA verification failed or has expired. Please try again.';
+  }
+  if (rawError.includes('INVALID_APP_CREDENTIAL')) {
+    return 'Invalid application credential. Please ensure the correct Firebase Web API Key is configured on Railway.';
+  }
+  if (rawError.includes('TOO_MANY_ATTEMPTS_TRY_LATER')) {
+    return 'Too many attempts from this device. Please try again later.';
+  }
+  if (rawError.includes('QUOTA_EXCEEDED')) {
+    return 'SMS quota exceeded for this period. Please try again later.';
+  }
+  if (rawError.includes('OPERATION_NOT_ALLOWED')) {
+    return 'Phone authentication is not enabled for this Firebase project.';
+  }
+  if (rawError.includes('INVALID_PHONE_NUMBER')) {
+    return 'Invalid mobile number format. Please provide a valid 10-digit mobile number.';
+  }
+  if (rawError.includes('INVALID_CODE')) {
+    return 'Invalid OTP code. Please enter the correct verification code.';
+  }
+  if (rawError.includes('SESSION_EXPIRED')) {
+    return 'OTP session expired. Please request a new verification code.';
+  }
+  return rawError || 'Authentication request failed. Please try again.';
+};
+
+/**
  * Initialize the Firebase Admin app (singleton).
  * Returns null when credentials are not configured.
  * @returns {import('firebase-admin').app.App|null}
  */
 const init = () => {
   if (firebaseApp) return firebaseApp;
-  if (!config.firebase.projectId || !config.firebase.clientEmail || !config.firebase.privateKey) {
-    logger.warn('Firebase credentials not configured');
+
+  const hasProjectId = Boolean(config.firebase.projectId);
+  const hasClientEmail = Boolean(config.firebase.clientEmail);
+  const hasPrivateKey = Boolean(config.firebase.privateKey);
+
+  logger.info('[Firebase] Initializing Admin SDK', {
+    projectId: config.firebase.projectId || 'unconfigured',
+    hasCredentials: hasProjectId && hasClientEmail && hasPrivateKey,
+    hasApiKey: Boolean(config.firebase.apiKey),
+  });
+
+  if (!hasProjectId || !hasClientEmail || !hasPrivateKey) {
+    logger.warn('[Firebase] Firebase Admin credentials not fully configured');
     return null;
   }
   try {
@@ -34,9 +81,15 @@ const init = () => {
         privateKey: config.firebase.privateKey,
       }),
     });
+    logger.info('[Firebase] Admin SDK initialized successfully', {
+      projectId: config.firebase.projectId,
+    });
     return firebaseApp;
   } catch (error) {
-    logger.error('Firebase init failed', { error: error.message });
+    logger.error('[Firebase] Admin SDK init failed', {
+      projectId: config.firebase.projectId,
+      error: error.message,
+    });
     return null;
   }
 };
@@ -63,17 +116,24 @@ const formatPhone = (mobile) => {
 
 /**
  * Send an OTP verification code via Firebase Identity Toolkit.
+ * Dispatches real SMS through Google Firebase.
  * @param {string} mobileNumber - Target mobile number
- * @param {string|null} [recaptchaToken] - Optional reCAPTCHA token
+ * @param {string|null} [recaptchaToken] - Optional reCAPTCHA token (required for non-test numbers)
  * @returns {Promise<{ firebaseVerificationId: string }>}
  */
 const sendOtp = async (mobileNumber, recaptchaToken = null) => {
-  // Fast development bypass when Firebase key is absent or in local dev
-  if (config.env !== 'production' && (!config.firebase.apiKey || recaptchaToken === 'dev')) {
-    return { firebaseVerificationId: `dev_verification_${Date.now()}` };
-  }
+  const hasApiKey = Boolean(config.firebase.apiKey);
+  const hasRecaptchaToken = Boolean(recaptchaToken && recaptchaToken.trim());
 
-  if (!config.firebase.apiKey) throw new AppError('Firebase API key not configured', 400);
+  logger.info('[Firebase Production] sendOtp initiated', {
+    projectId: config.firebase.projectId,
+    hasApiKey,
+    hasRecaptchaToken,
+  });
+
+  if (!config.firebase.apiKey) {
+    throw new AppError('Firebase API key not configured on server', 500);
+  }
 
   try {
     const url = `https://identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key=${config.firebase.apiKey}`;
@@ -88,54 +148,92 @@ const sendOtp = async (mobileNumber, recaptchaToken = null) => {
 
     const data = await response.json();
     if (!response.ok) {
-      if (config.env !== 'production') {
-        logger.warn(`Firebase sendOtp failed (${data.error?.message}), using dev fallback ID`);
-        return { firebaseVerificationId: `dev_verification_${Date.now()}` };
-      }
-      throw new AppError(data.error?.message || 'Failed to send OTP', 400);
+      const rawError = data.error?.message || 'Failed to send OTP';
+      const errorCode = rawError.split(' ')[0].replace(':', '').trim();
+
+      logger.warn('[Firebase Production] sendOtp rejected by Google', {
+        projectId: config.firebase.projectId,
+        status: response.status,
+        errorCode,
+      });
+
+      const mappedMessage = mapFirebaseError(rawError);
+      throw new AppError(mappedMessage, 400);
     }
+
+    logger.info('[Firebase Production] Real SMS OTP dispatched successfully by Google', {
+      projectId: config.firebase.projectId,
+    });
 
     return { firebaseVerificationId: data.sessionInfo };
   } catch (err) {
-    if (config.env !== 'production') {
-      logger.warn(`Firebase sendOtp network error (${err.message}), using dev fallback ID`);
-      return { firebaseVerificationId: `dev_verification_${Date.now()}` };
-    }
+    logger.error('[Firebase Production] sendOtp network/operational error:', { error: err.message });
     throw err;
   }
 };
 
 /**
  * Verify an OTP code against a Firebase verification session.
- * In development mode, '123456' / '000000' or dev session IDs verify instantly (0ms network delay).
+ * Validates the real SMS OTP code directly with Google Identity Toolkit.
  * @param {string} firebaseVerificationId - Session ID from sendOtp
  * @param {string} otp - Verification code entered by the user
  * @returns {Promise<Object>}
  */
 const verifyOtp = async (firebaseVerificationId, otp) => {
-  // Fast instant bypass in non-production environments for test OTP 123456 / 000000
-  if (
-    config.env !== 'production' &&
-    (otp === '123456' || otp === '000000' || String(firebaseVerificationId).startsWith('dev_'))
-  ) {
-    return { sessionInfo: firebaseVerificationId, verified: true, isDevBypass: true };
+  if (!config.firebase.apiKey) {
+    throw new AppError('Firebase API key not configured on server', 500);
   }
-
-  if (!config.firebase.apiKey) throw new AppError('Firebase API key not configured', 400);
 
   const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPhoneNumber?key=${config.firebase.apiKey}`;
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionInfo: firebaseVerificationId, code: otp }),
+    body: JSON.stringify({ sessionInfo: firebaseVerificationId, code: String(otp) }),
   });
 
   const data = await response.json();
   if (!response.ok) {
-    throw new AppError(data.error?.message || 'Invalid OTP', 400);
+    const rawError = data.error?.message || 'Invalid OTP';
+    const errorCode = rawError.split(' ')[0].replace(':', '').trim();
+
+    logger.warn('[Firebase Production] verifyOtp rejected by Google', {
+      projectId: config.firebase.projectId,
+      status: response.status,
+      errorCode,
+    });
+
+    const mappedMessage = mapFirebaseError(rawError);
+    throw new AppError(mappedMessage, 400);
   }
 
+  logger.info('[Firebase Production] Real SMS OTP verified successfully with Google', {
+    projectId: config.firebase.projectId,
+  });
+
   return data;
+};
+
+/**
+ * Verify a Firebase ID Token generated after client-side Phone Auth verification.
+ * @param {string} idToken - Firebase JWT ID token from client userCredential.user.getIdToken()
+ * @returns {Promise<import('firebase-admin').auth.DecodedIdToken>}
+ */
+const verifyIdToken = async (idToken) => {
+  const app = init();
+  if (!app) {
+    throw new AppError('Firebase Admin not initialized on server', 500);
+  }
+  try {
+    const decodedToken = await admin.auth(app).verifyIdToken(idToken);
+    logger.info('[Firebase Production] ID Token verified successfully via Admin SDK', {
+      uid: decodedToken.uid,
+      phoneNumber: decodedToken.phone_number,
+    });
+    return decodedToken;
+  } catch (err) {
+    logger.warn('[Firebase Production] ID Token verification failed', { error: err.message });
+    throw new AppError('Invalid or expired authentication token', 401);
+  }
 };
 
 /**
@@ -145,24 +243,45 @@ const verifyOtp = async (firebaseVerificationId, otp) => {
  * @returns {Promise<{ firebaseVerificationId: string }>}
  */
 const resendOtp = async (firebaseVerificationId, recaptchaToken = null) => {
-  if (!config.firebase.apiKey) throw new AppError('Firebase API key not configured', 400);
-
-  const url = `https://identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key=${config.firebase.apiKey}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sessionInfo: firebaseVerificationId,
-      ...(recaptchaToken && { recaptchaToken }),
-    }),
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new AppError(data.error?.message || 'Failed to resend OTP', 400);
+  if (!config.firebase.apiKey) {
+    throw new AppError('Firebase API key not configured on server', 500);
   }
 
-  return { firebaseVerificationId: data.sessionInfo };
+  try {
+    const url = `https://identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key=${config.firebase.apiKey}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionInfo: firebaseVerificationId,
+        ...(recaptchaToken && { recaptchaToken }),
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      const rawError = data.error?.message || 'Failed to resend OTP';
+      const errorCode = rawError.split(' ')[0].replace(':', '').trim();
+
+      logger.warn('[Firebase Production] resendOtp rejected by Google', {
+        projectId: config.firebase.projectId,
+        status: response.status,
+        errorCode,
+      });
+
+      const mappedMessage = mapFirebaseError(rawError);
+      throw new AppError(mappedMessage, 400);
+    }
+
+    logger.info('[Firebase Production] Real SMS OTP resent successfully by Google', {
+      projectId: config.firebase.projectId,
+    });
+
+    return { firebaseVerificationId: data.sessionInfo };
+  } catch (err) {
+    logger.error('[Firebase Production] resendOtp error:', { error: err.message });
+    throw err;
+  }
 };
 
 // ==========================================
@@ -336,6 +455,7 @@ module.exports = {
   init,
   sendOtp,
   verifyOtp,
+  verifyIdToken,
   resendOtp,
   getMessaging,
   sendPushToToken,

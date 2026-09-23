@@ -29,9 +29,11 @@ const extractRequestLanguage = (req) => {
  */
 const sendOtp = async (req, res, next) => {
   try {
-    // console.log('sendOtp controller entered');
-    const data = await authService.sendOtp(req.body.mobile_number, req.body.recaptcha_token);
-    // console.log('sendOtp controller exited');
+    const data = await authService.sendOtp(
+      req.body.mobile_number,
+      req.body.recaptcha_token,
+      req.body.firebase_verification_id,
+    );
     return success(res, MESSAGES.OTP_SENT, data);
   } catch (err) {
     next(err);
@@ -49,6 +51,7 @@ const verifyOtp = async (req, res, next) => {
       req.body.otp,
       req.body.firebase_verification_id,
       req,
+      req.body.id_token || req.body.firebase_id_token,
     );
     return success(res, MESSAGES.OTP_VERIFIED, data);
   } catch (err) {
