@@ -20,10 +20,51 @@ const extractRequestLanguage = (req) => {
 };
 
 // ==========================================
-// OTP Authentication
+// Firebase Phone Auth
 // ==========================================
 
 /**
+ * POST /auth/firebase-phone-login
+ * Authenticate with a verified Firebase ID Token from Flutter / Client.
+ *
+ * Expected payload:
+ * {
+ *   "idToken": "<FIREBASE_ID_TOKEN>",
+ *   "device": { "device_type": "android", "device_token": "<FCM_TOKEN>" }
+ * }
+ * Or Authorization: Bearer <FIREBASE_ID_TOKEN>
+ */
+const firebasePhoneLogin = async (req, res, next) => {
+  try {
+    const authHeader = req.headers?.authorization;
+    let idToken = req.body?.idToken || req.body?.id_token;
+
+    if (!idToken && authHeader && typeof authHeader === 'string') {
+      const match = authHeader.trim().match(/^Bearer\s+(.+)$/i);
+      idToken = match ? match[1].trim() : authHeader.trim();
+    }
+
+    const device = req.body?.device || {
+      device_type: req.body?.device_type,
+      device_token: req.body?.device_token,
+    };
+
+    const data = await authService.firebasePhoneLogin(idToken, device, req);
+    const message = data.is_registered
+      ? 'Login successful'
+      : 'Phone verified successfully. Please complete registration.';
+    return success(res, message, data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ==========================================
+// OTP Authentication (Legacy REST - Deprecated)
+// ==========================================
+
+/**
+ * @deprecated Legacy endpoint. Use POST /auth/firebase-phone-login instead.
  * POST /auth/send-otp
  * Send OTP verification code to the user's mobile number.
  */
@@ -228,6 +269,7 @@ const saveDeviceToken = async (req, res, next) => {
 };
 
 module.exports = {
+  firebasePhoneLogin,
   sendOtp,
   verifyOtp,
   resendOtp,

@@ -86,6 +86,30 @@ const deviceRules = [
 // Route validation rules
 // ==========================================
 
+const firebasePhoneLoginRules = [
+  body('idToken')
+    .optional({ values: 'falsy' })
+    .trim()
+    .notEmpty()
+    .withMessage('idToken cannot be empty'),
+  body('id_token')
+    .optional({ values: 'falsy' })
+    .trim()
+    .notEmpty()
+    .withMessage('id_token cannot be empty'),
+  body().custom((_, { req }) => {
+    const hasToken =
+      req.body?.idToken ||
+      req.body?.id_token ||
+      (req.headers?.authorization && req.headers.authorization.trim());
+    if (!hasToken) {
+      throw new Error('Firebase ID token is required in idToken or Authorization header');
+    }
+    return true;
+  }),
+  ...deviceRules,
+];
+
 const sendOtpRules = [mobile(), body('recaptcha_token').optional()];
 const verifyOtpRules = [mobile(), otp(), verificationId(), ...deviceRules];
 const resendOtpRules = [mobile(), verificationId(), body('recaptcha_token').optional()];
@@ -262,6 +286,7 @@ const authorize = (...allowedRoles) => {
 
 module.exports = {
   validate,
+  firebasePhoneLoginRules,
   sendOtpRules,
   verifyOtpRules,
   resendOtpRules,
