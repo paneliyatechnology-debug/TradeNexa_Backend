@@ -37,17 +37,8 @@ const corsOptions = {
   origin(origin, callback) {
     const { corsOrigins } = config;
 
-    // Allow non-browser clients (Postman, mobile apps, curl).
+    // Allow non-browser clients (Postman, mobile apps, server-to-server).
     if (!origin) {
-      return callback(null, true);
-    }
-
-    // Always permit local development origins (localhost, 127.0.0.1 on any port)
-    if (
-      origin.startsWith('http://localhost:') ||
-      origin.startsWith('http://127.0.0.1:') ||
-      origin.startsWith('https://localhost:')
-    ) {
       return callback(null, true);
     }
 
@@ -63,12 +54,21 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'x-language',
+    'x-lang',
+    'Accept-Language',
+    'Accept',
+  ],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   maxAge: 86400,
 };
 
 app.use(cors(corsOptions));
-app.options('/*', cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },

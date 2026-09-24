@@ -67,7 +67,7 @@ const getDeviceFromBody = (body = {}) => {
  * @param {string} otp - Verification code
  * @param {string} verificationId - Firebase verification ID
  */
-const verifyOtpSession = async (mobile, otp, verificationId, idToken = null) => {
+const verifyOtpSession = async (mobile, otp, verificationId) => {
   const otpLog = await userModel.findOtpByVerificationId(verificationId);
 
   if (!otpLog || otpLog.mobile_number !== mobile) {
@@ -81,21 +81,8 @@ const verifyOtpSession = async (mobile, otp, verificationId, idToken = null) => 
     throw new AppError('OTP has expired', 400);
   }
 
-  // If client already validated OTP directly with Firebase Web SDK and provided genuine ID Token:
-  if (idToken) {
-    const decodedToken = await firebase.verifyIdToken(idToken);
-    const tokenPhone = decodedToken.phone_number;
-    // Format and compare numbers
-    const cleanTokenPhone = (tokenPhone || '').replace(/\D/g, '');
-    const cleanMobile = (mobile || '').replace(/\D/g, '');
-    if (cleanTokenPhone && cleanMobile && cleanTokenPhone !== cleanMobile) {
-      throw new AppError('Mobile number does not match verified token', 400);
-    }
-  } else {
-    // Fallback: Verify against Firebase REST API
-    await firebase.verifyOtp(verificationId, otp);
-  }
-
+  // Verify against Firebase API
+  await firebase.verifyOtp(verificationId, otp);
   await userModel.markOtpVerified(otpLog.id);
 };
 
@@ -174,22 +161,18 @@ const issueTokens = async (user, req) => {
  * @param {string} [recaptchaToken] - Recaptcha token
  * @returns {Promise<Object>}
  */
-const sendOtp = async (mobileNumber, recaptchaToken, clientVerificationId = null) => {
-  let verificationId = clientVerificationId;
-  if (!verificationId) {
-    const result = await firebase.sendOtp(mobileNumber, recaptchaToken);
-    verificationId = result.firebaseVerificationId;
-  }
-
+const sendOtp = async (mobileNumber, recaptchaToken) => {
+  console.log('sendOtp service entered');
+  const result = await firebase.sendOtp(mobileNumber, recaptchaToken);
+  console.log('sendOtp service exited');
   await userModel.createOtpLog({
     mobile_number: mobileNumber,
-    firebase_verification_id: verificationId,
+    firebase_verification_id: result.firebaseVerificationId,
     status: OTP_STATUS.PENDING,
     expires_at: addMinutes(new Date(), OTP_EXPIRY_MINUTES),
   });
-
   return {
-    firebase_verification_id: verificationId,
+    firebase_verification_id: result.firebaseVerificationId,
     mobile_number: mobileNumber,
   };
 };
@@ -202,8 +185,8 @@ const sendOtp = async (mobileNumber, recaptchaToken, clientVerificationId = null
  * @param {Object} req - Request object
  * @returns {Promise<Object>}
  */
-const verifyOtp = async (mobileNumber, otp, verificationId, req, idToken = null) => {
-  await verifyOtpSession(mobileNumber, otp, verificationId, idToken);
+const verifyOtp = async (mobileNumber, otp, verificationId, req) => {
+  await verifyOtpSession(mobileNumber, otp, verificationId);
 
   const user = await userModel.findUserByMobile(mobileNumber);
   if (user) return issueTokens(user, req);
