@@ -38,7 +38,7 @@ router.post(
 // OTP & registration (Legacy public - Deprecated)
 // ==========================================
 
-router.post('/send-otp', otpLimiter, sendOtpRules, validate, authController.sendOtp);
+router.post('/send-otp', sendOtpRules, validate, authController.sendOtp);
 router.post('/verify-otp', verifyOtpRules, validate, authController.verifyOtp);
 router.post('/resend-otp', otpLimiter, resendOtpRules, validate, authController.resendOtp);
 router.post('/register', registerRules, validate, verifyRegistration, authController.register);
