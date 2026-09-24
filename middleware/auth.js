@@ -86,19 +86,8 @@ const deviceRules = [
 // Route validation rules
 // ==========================================
 
-const sendOtpRules = [
-  mobile(),
-  body('recaptcha_token').optional(),
-  body('firebase_verification_id').optional(),
-];
-const verifyOtpRules = [
-  mobile(),
-  otp(),
-  verificationId(),
-  body('id_token').optional().isString(),
-  body('firebase_id_token').optional().isString(),
-  ...deviceRules,
-];
+const sendOtpRules = [mobile(), body('recaptcha_token').optional()];
+const verifyOtpRules = [mobile(), otp(), verificationId(), ...deviceRules];
 const resendOtpRules = [mobile(), verificationId(), body('recaptcha_token').optional()];
 const refreshRules = [body('refresh_token').trim().notEmpty()];
 const logoutRules = [
