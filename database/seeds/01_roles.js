@@ -13,6 +13,12 @@ const { ROLE_CODES } = require('../../constants');
 exports.seed = async function (knex) {
   const roles = [
     {
+      code: ROLE_CODES.ADMIN,
+      name: 'Admin',
+      description: 'Platform administrator',
+      is_active: true,
+    },
+    {
       code: ROLE_CODES.BUYER,
       name: 'Buyer',
       description: 'User who purchases products',
@@ -28,12 +34,6 @@ exports.seed = async function (knex) {
       code: ROLE_CODES.BUYER_SELLER,
       name: 'Buyer + Seller',
       description: 'User who buys and sells products',
-      is_active: true,
-    },
-    {
-      code: ROLE_CODES.ADMIN,
-      name: 'Admin',
-      description: 'Platform administrator',
       is_active: true,
     },
     {
