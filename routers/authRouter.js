@@ -7,6 +7,7 @@ const express = require('express');
 const authController = require('../controllers/authController');
 const {
   validate,
+  firebasePhoneLoginRules,
   sendOtpRules,
   verifyOtpRules,
   resendOtpRules,
@@ -23,7 +24,18 @@ const { otpLimiter } = require('../middleware/rateLimiter');
 const router = express.Router();
 
 // ==========================================
-// OTP & registration (public)
+// Firebase Phone Auth (Target Architecture)
+// ==========================================
+
+router.post(
+  '/firebase-phone-login',
+  firebasePhoneLoginRules,
+  validate,
+  authController.firebasePhoneLogin,
+);
+
+// ==========================================
+// OTP & registration (Legacy public - Deprecated)
 // ==========================================
 
 router.post('/send-otp', otpLimiter, sendOtpRules, validate, authController.sendOtp);

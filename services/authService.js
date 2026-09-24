@@ -152,10 +152,103 @@ const issueTokens = async (user, req) => {
 };
 
 // ==========================================
-// OTP flow
+// Firebase Phone Auth flow (Target Architecture)
 // ==========================================
 
 /**
+ * Authenticate using a verified Firebase ID Token.
+ *
+ * Target Architecture:
+ * 1. Client (Flutter/Web) verifies phone OTP using Firebase SDK.
+ * 2. Client obtains Firebase ID Token and calls POST /auth/firebase-phone-login.
+ * 3. Backend verifies ID Token via Firebase Admin SDK.
+ * 4. Backend extracts verified phone_number and Firebase UID from token (never trusts client phone).
+ * 5. If user exists: issues full TradeNexa access & refresh tokens via issueTokens().
+ * 6. If user does not exist:
+ *    - If registration fields (full_name, email, role_id, business_type_id) are present, auto-registers user.
+ *    - Otherwise, returns is_registered: false with a signed registration token for the onboarding step.
+ *
+ * @param {string} idToken - Firebase ID Token
+ * @param {Object} [device] - Optional device info { device_type, device_token }
+ * @param {Object} req - Express request context
+ * @returns {Promise<Object>}
+ */
+const firebasePhoneLogin = async (idToken, device, req) => {
+  if (!idToken || typeof idToken !== 'string' || !idToken.trim()) {
+    throw new AppError('Firebase ID token is required', 400);
+  }
+
+  // 1. Verify token using Firebase Admin SDK
+  const decodedToken = await firebase.verifyIdToken(idToken.trim());
+  const firebaseUid = decodedToken.uid;
+  const rawPhoneNumber = decodedToken.phone_number;
+
+  if (!rawPhoneNumber) {
+    throw new AppError(
+      'Firebase ID token does not contain a verified phone number. Ensure Phone Auth was completed.',
+      400
+    );
+  }
+
+  // 2. Normalize to E.164 format (+91...)
+  const mobileNumber = rawPhoneNumber.startsWith('+') ? rawPhoneNumber : `+${rawPhoneNumber}`;
+
+  // 3. Find user in TradeNexa database by phone number
+  const user = await userModel.findUserByMobile(mobileNumber);
+
+  if (user) {
+    if (!user.is_active) {
+      throw new AppError('Account is inactive or has been suspended. Please contact support.', 403);
+    }
+
+    // Update firebase_uid if column exists and not yet set or changed
+    if (user.firebase_uid !== undefined && user.firebase_uid !== firebaseUid) {
+      try {
+        await userModel.updateUser(user.id, { firebase_uid: firebaseUid });
+        user.firebase_uid = firebaseUid;
+      } catch (err) {
+        logger.warn('Could not update firebase_uid on user', { userId: user.id, error: err.message });
+      }
+    }
+
+    return issueTokens(user, req);
+  }
+
+  // 4. If user not found, check if auto-registration fields were provided in request body
+  const body = req.body || {};
+  if (body.full_name && body.email && body.role_id && body.business_type_id) {
+    return register(
+      {
+        ...body,
+        mobile_number: mobileNumber,
+        ...(body.firebase_uid !== undefined ? { firebase_uid: firebaseUid } : {}),
+      },
+      req
+    );
+  }
+
+  // 5. Otherwise return onboarding registration response with signed registration token
+  return {
+    is_registered: false,
+    is_completed_profile: resolveIsCompletedProfile(null),
+    mobile_number: mobileNumber,
+    firebase_uid: firebaseUid,
+    access_token: signRegistration({
+      mobileNumber,
+      firebaseUid,
+      verified: true,
+      type: TOKEN_TYPES.REGISTRATION,
+    }),
+  };
+};
+
+// ==========================================
+// OTP flow (Legacy REST - Deprecated)
+// ==========================================
+
+/**
+ * @deprecated Legacy flow using Identity Toolkit REST. Use firebasePhoneLogin instead.
+ *
  * Send OTP verification code to a mobile number.
  * @param {string} mobileNumber - Target mobile number
  * @param {string} [recaptchaToken] - Recaptcha token
@@ -385,7 +478,7 @@ const detectDeviceBrandAndModel = (uaRaw) => {
   if (/Macintosh|Mac OS X/i.test(ua)) return 'Apple Mac';
 
   // 2. Android Brand and Model Detection
-  const androidMatch = ua.match(/Android\s+([0-9\.]+)?;\s*([^;)]+)/i);
+  const androidMatch = ua.match(/Android\s+([0-9.]+)?;\s*([^;)]+)/i);
   if (androidMatch && androidMatch[2]) {
     const rawModel = androidMatch[2].trim();
 
@@ -680,7 +773,7 @@ const logoutDevice = async (userId, deviceId) => {
  * @param {number} userId - Authenticated user ID
  * @param {Object} req - Request context
  */
-const logoutAllDevices = async (userId, req) => {
+const logoutAllDevices = async (userId, _req) => {
   const logs = await userModel.getUserLoginLogs(userId, 1);
   const currentLogId = logs[0]?.id || null;
   await Promise.all([
@@ -702,6 +795,7 @@ const logoutAllDevices = async (userId, req) => {
 };
 
 module.exports = {
+  firebasePhoneLogin,
   sendOtp,
   verifyOtp,
   resendOtp,

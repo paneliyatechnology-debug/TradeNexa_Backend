@@ -58,10 +58,56 @@ const formatPhone = (mobile) => {
 };
 
 // ==========================================
-// OTP operations
+// ID Token Verification (Target Architecture)
 // ==========================================
 
 /**
+ * Verify a Firebase ID Token using Firebase Admin SDK.
+ * Used for phone auth verification where the client (Flutter/Web) completes
+ * phone verification and passes the resulting Firebase ID Token to the backend.
+ *
+ * @param {string} idToken - Firebase ID token string from client
+ * @param {boolean} [checkRevoked=false] - Whether to verify if the token was revoked
+ * @returns {Promise<import('firebase-admin').auth.DecodedIdToken>}
+ */
+const verifyIdToken = async (idToken, checkRevoked = false) => {
+  if (!idToken || typeof idToken !== 'string' || !idToken.trim()) {
+    throw new AppError('Firebase ID token is required', 400);
+  }
+
+  const app = init();
+  if (!app) {
+    logger.error('Firebase Admin SDK is not initialized. Please configure credentials.');
+    throw new AppError('Firebase authentication is not configured on the server', 500);
+  }
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken.trim(), checkRevoked);
+    return decodedToken;
+  } catch (err) {
+    const code = err?.code || '';
+    if (code === 'auth/id-token-expired') {
+      throw new AppError('Firebase ID token has expired. Please authenticate again on your device.', 401);
+    }
+    if (code === 'auth/id-token-revoked') {
+      throw new AppError('Firebase ID token has been revoked.', 401);
+    }
+    if (code === 'auth/argument-error' || code === 'auth/invalid-id-token') {
+      throw new AppError('Invalid Firebase ID token format or signature.', 401);
+    }
+    logger.warn('Firebase verifyIdToken error', { code, message: err?.message });
+    throw new AppError(err?.message || 'Failed to verify Firebase ID token', 401);
+  }
+};
+
+// ==========================================
+// OTP operations (Legacy REST - Deprecated)
+// ==========================================
+
+/**
+ * @deprecated Legacy flow using Identity Toolkit REST API.
+ * Prefer client-side Firebase Phone Auth with /auth/firebase-phone-login.
+ *
  * Send an OTP verification code via Firebase Identity Toolkit.
  * @param {string} mobileNumber - Target mobile number
  * @param {string|null} [recaptchaToken] - Optional reCAPTCHA token
@@ -334,6 +380,7 @@ const isInvalidFcmTokenError = (errorCode) =>
 
 module.exports = {
   init,
+  verifyIdToken,
   sendOtp,
   verifyOtp,
   resendOtp,
