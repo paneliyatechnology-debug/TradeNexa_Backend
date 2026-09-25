@@ -98,17 +98,54 @@ const updateBusinessType = async (req, res, next) => {
   }
 };
 
-/**
- * DELETE /business-types/:id
- * Soft-delete a business type (admin only).
- */
 const deleteBusinessType = async (req, res, next) => {
   try {
     const existing = await businessTypeModel.findById(req.params.id);
     if (!existing) return next(new AppError('Business type not found', HTTP_STATUS.NOT_FOUND));
 
-    await businessTypeModel.softDelete(req.params.id);
+    if (req.query.permanent === 'true' || req.query.hard === 'true') {
+      await businessTypeModel.deleteMany([parseInt(req.params.id, 10)]);
+    } else {
+      await businessTypeModel.softDelete(req.params.id);
+    }
     return success(res, 'Business type deleted successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /business-types/bulk-delete or DELETE /business-types/bulk
+ * Bulk delete business types or delete all if all: true.
+ */
+const bulkDeleteBusinessTypes = async (req, res, next) => {
+  try {
+    const { ids, all } = req.body || {};
+    if (all === true || all === 'true') {
+      const deletedCount = await businessTypeModel.deleteAll();
+      return success(res, 'All business types deleted successfully', { deletedCount });
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return next(new AppError('No business type IDs provided', HTTP_STATUS.BAD_REQUEST));
+    }
+
+    const numericIds = ids.map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
+    const deletedCount = await businessTypeModel.deleteMany(numericIds);
+    return success(res, `${deletedCount} business type(s) deleted successfully`, { deletedCount });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /business-types/all
+ * Delete all business types and reset auto-increment.
+ */
+const deleteAllBusinessTypes = async (req, res, next) => {
+  try {
+    const deletedCount = await businessTypeModel.deleteAll();
+    return success(res, 'All business types deleted successfully', { deletedCount });
   } catch (err) {
     next(err);
   }
@@ -120,4 +157,7 @@ module.exports = {
   getBusinessTypes,
   updateBusinessType,
   deleteBusinessType,
+  bulkDeleteBusinessTypes,
+  deleteAllBusinessTypes,
 };
+

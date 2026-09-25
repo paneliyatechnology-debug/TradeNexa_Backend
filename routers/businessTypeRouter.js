@@ -10,6 +10,7 @@ const {
   idParam,
   businessTypeCreateRules,
   businessTypeUpdateRules,
+  businessTypeBulkDeleteRules,
   businessTypeListQuery,
 } = require('../middleware/resourceValidation');
 
@@ -35,6 +36,32 @@ router.post(
   businessTypeController.createBusinessType,
 );
 
+// Admin bulk & all delete routes (MUST be registered before /:id)
+router.delete(
+  '/all',
+  authenticate,
+  authorize('admin'),
+  businessTypeController.deleteAllBusinessTypes,
+);
+
+router.post(
+  '/bulk-delete',
+  authenticate,
+  authorize('admin'),
+  businessTypeBulkDeleteRules,
+  validate,
+  businessTypeController.bulkDeleteBusinessTypes,
+);
+
+router.delete(
+  '/bulk',
+  authenticate,
+  authorize('admin'),
+  businessTypeBulkDeleteRules,
+  validate,
+  businessTypeController.bulkDeleteBusinessTypes,
+);
+
 router.put(
   '/:id',
   authenticate,
@@ -55,3 +82,4 @@ router.delete(
 );
 
 module.exports = router;
+

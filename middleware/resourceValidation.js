@@ -1044,6 +1044,13 @@ const businessTypeUpdateRules = [
   body('is_active').optional().isBoolean(),
 ];
 
+const businessTypeBulkDeleteRules = [
+  body('ids').optional().isArray().withMessage('ids must be an array of integers'),
+  body('ids.*').optional().isInt({ min: 1 }).withMessage('Each id must be a positive integer'),
+  body('all').optional().isBoolean().withMessage('all must be a boolean'),
+];
+
+
 // ==========================================
 // Role validations
 // ==========================================
@@ -1328,6 +1335,7 @@ module.exports = {
   businessTypeListQuery,
   businessTypeCreateRules,
   businessTypeUpdateRules,
+  businessTypeBulkDeleteRules,
   roleListQuery,
   chatConversationListQuery,
   chatMessageListQuery,

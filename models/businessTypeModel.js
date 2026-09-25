@@ -194,6 +194,38 @@ const softDelete = async (id) => {
   return findById(id);
 };
 
+/**
+ * Bulk delete business types by ID array.
+ * Cleans up references in users and company_details, then deletes the records.
+ * @param {number[]} ids
+ * @returns {Promise<number>} Number of deleted rows
+ */
+const deleteMany = async (ids) => {
+  if (!Array.isArray(ids) || ids.length === 0) return 0;
+
+  await db('company_details').whereIn('business_type_id', ids).update({ business_type_id: null });
+  await db('users').whereIn('business_type_id', ids).update({ business_type_id: null });
+
+  return db('business_types').whereIn('id', ids).del();
+};
+
+/**
+ * Delete all business types and reset auto_increment counter.
+ * @returns {Promise<number>} Number of deleted rows
+ */
+const deleteAll = async () => {
+  await db('company_details').update({ business_type_id: null });
+  await db('users').update({ business_type_id: null });
+
+  const count = await db('business_types').del();
+  try {
+    await db.raw('ALTER TABLE business_types AUTO_INCREMENT = 1');
+  } catch (err) {
+    // Ignored if unsupported dialect
+  }
+  return count;
+};
+
 module.exports = {
   findById,
   findByRoleId,
@@ -202,4 +234,7 @@ module.exports = {
   create,
   update,
   softDelete,
+  deleteMany,
+  deleteAll,
 };
+
