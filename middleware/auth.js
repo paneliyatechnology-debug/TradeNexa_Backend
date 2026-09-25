@@ -148,7 +148,7 @@ const registerRules = [
   body('full_name').trim().notEmpty().isLength({ min: 2, max: 100 }),
   body('email').trim().notEmpty().isEmail().normalizeEmail(),
   body('role_id').isInt({ min: 1 }).withMessage('role_id is required'),
-  body('business_type_id').isInt({ min: 1 }).withMessage('business_type_id is required'),
+  body('business_type_id').isInt({ min: 0 }).withMessage('business_type_id is required'),
   body('language_id').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Invalid language ID'),
   ...deviceRules,
 ];

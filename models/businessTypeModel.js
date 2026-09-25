@@ -138,6 +138,27 @@ const create = async (data) => {
   }
 
   const code = data.code ? slugify(data.code) : slugify(data.name);
+
+  // If table is completely empty, insert the first record with ID 0
+  const countRow = await db('business_types').count('id as cnt').first();
+  const count = Number(countRow?.cnt || 0);
+
+  if (count === 0) {
+    try {
+      await db.raw("SET sql_mode = 'NO_AUTO_VALUE_ON_ZERO';");
+      await db('business_types').insert({
+        id: 0,
+        name: data.name.trim(),
+        code,
+        role_id: data.role_id,
+        is_active: data.is_active !== undefined ? data.is_active : true,
+      });
+      return findById(0);
+    } catch {
+      // Fallback to default auto-increment if engine rejects 0
+    }
+  }
+
   const [id] = await db('business_types').insert({
     name: data.name.trim(),
     code,
@@ -219,7 +240,7 @@ const deleteAll = async () => {
 
   const count = await db('business_types').del();
   try {
-    await db.raw('ALTER TABLE business_types AUTO_INCREMENT = 1');
+    await db.raw('ALTER TABLE business_types AUTO_INCREMENT = 0');
   } catch (err) {
     // Ignored if unsupported dialect
   }

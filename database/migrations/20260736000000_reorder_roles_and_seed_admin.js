@@ -79,27 +79,27 @@ exports.up = async function (knex) {
 
     // 5. Re-seed business types mapped to new role IDs
     const BUYER_TYPES = [
-      'Retailer',
-      'Wholesaler',
-      'Distributor',
-      'Trader',
-      'Importer',
-      'Contractor',
-      'Service Provider',
-      'Corporate Company',
-      'Startup',
+      // 'Retailer',
+      // 'Wholesaler',
+      // 'Distributor',
+      // 'Trader',
+      // 'Importer',
+      // 'Contractor',
+      // 'Service Provider',
+      // 'Corporate Company',
+      // 'Startup',
     ];
 
     const SELLER_TYPES = [
-      'Manufacturer',
-      'Wholesaler',
-      'Distributor',
-      'Exporter',
-      'Importer',
-      'Supplier',
-      'Dealer',
-      'Trader',
-      'Brand Owner',
+      // 'Manufacturer',
+      // 'Wholesaler',
+      // 'Distributor',
+      // 'Exporter',
+      // 'Importer',
+      // 'Supplier',
+      // 'Dealer',
+      // 'Trader',
+      // 'Brand Owner',
     ];
 
     const BUYER_SELLER_TYPES = [...new Set([...BUYER_TYPES, ...SELLER_TYPES])];
