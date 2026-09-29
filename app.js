@@ -33,24 +33,51 @@ app.set('trust proxy', 1);
 // Global middleware
 // ==========================================
 
+// Known frontend origins — always allowed regardless of CORS_ORIGIN env var.
+const ALWAYS_ALLOWED_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+  'https://tradenexabackend-dev.up.railway.app',
+  'https://tradenexabackend-production.up.railway.app',
+];
+
 const corsOptions = {
   origin(origin, callback) {
-    const { corsOrigins } = config;
-
     // Allow non-browser clients (Postman, mobile apps, server-to-server).
     if (!origin) {
       return callback(null, true);
     }
 
+    const { corsOrigins } = config;
+
+    // Wildcard config — reflect actual origin so credentials work.
     if (!corsOrigins || corsOrigins === '*' || corsOrigins === 'true') {
-      return callback(null, true);
+      return callback(null, origin);
     }
 
-    if (Array.isArray(corsOrigins) && corsOrigins.includes(origin)) {
-      return callback(null, true);
+    // Always allow known frontend origins.
+    if (ALWAYS_ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, origin);
     }
 
-    return callback(null, true);
+    // Allow private LAN IPs for mobile/LAN testing.
+    if (/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(origin)) {
+      return callback(null, origin);
+    }
+
+    // Allow any configured additional origins (comma-separated in CORS_ORIGIN env var).
+    const extra = Array.isArray(corsOrigins)
+      ? corsOrigins
+      : String(corsOrigins).split(',').map((o) => o.trim()).filter(Boolean);
+
+    if (extra.includes(origin)) {
+      return callback(null, origin);
+    }
+
+    // Reject unknown origins.
+    return callback(new Error(`CORS: origin '${origin}' not allowed`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
