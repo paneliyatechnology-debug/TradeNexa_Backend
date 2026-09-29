@@ -41,59 +41,82 @@ const ALWAYS_ALLOWED_ORIGINS = [
   'http://127.0.0.1:3001',
   'https://tradenexabackend-dev.up.railway.app',
   'https://tradenexabackend-production.up.railway.app',
+  'https://www.tradenexa.co',
+  'https://tradenexa.co',
 ];
 
+// const corsOptions = {
+//   origin(origin, callback) {
+//     // Allow non-browser clients (Postman, mobile apps, server-to-server).
+//     if (!origin) {
+//       return callback(null, true);
+//     }
+
+//     const { corsOrigins } = config;
+
+//     // Wildcard config — reflect actual origin so credentials work.
+//     if (!corsOrigins || corsOrigins === '*' || corsOrigins === 'true') {
+//       return callback(null, origin);
+//     }
+
+//     // Always allow known frontend origins.
+//     if (ALWAYS_ALLOWED_ORIGINS.includes(origin)) {
+//       return callback(null, origin);
+//     }
+
+//     // Allow private LAN IPs for mobile/LAN testing.
+//     if (/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(origin)) {
+//       return callback(null, origin);
+//     }
+
+//     // Allow any configured additional origins (comma-separated in CORS_ORIGIN env var).
+//     const extra = Array.isArray(corsOrigins)
+//       ? corsOrigins
+//       : String(corsOrigins).split(',').map((o) => o.trim()).filter(Boolean);
+
+//     if (extra.includes(origin)) {
+//       return callback(null, origin);
+//     }
+
+//     // Reject unknown origins.
+//     return callback(new Error(`CORS: origin '${origin}' not allowed`));
+//   },
+//   credentials: true,
+//   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+//   allowedHeaders: [
+//     'Content-Type',
+//     'Authorization',
+//     'X-Requested-With',
+//     'x-language',
+//     'x-lang',
+//     'Accept-Language',
+//     'Accept',
+//   ],
+//   exposedHeaders: ['Content-Range', 'X-Content-Range'],
+//   maxAge: 86400,
+// };
+
 const corsOptions = {
-  origin(origin, callback) {
-    // Allow non-browser clients (Postman, mobile apps, server-to-server).
-    if (!origin) {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
-    const { corsOrigins } = config;
-
-    // Wildcard config — reflect actual origin so credentials work.
-    if (!corsOrigins || corsOrigins === '*' || corsOrigins === 'true') {
-      return callback(null, origin);
-    }
-
-    // Always allow known frontend origins.
-    if (ALWAYS_ALLOWED_ORIGINS.includes(origin)) {
-      return callback(null, origin);
-    }
-
-    // Allow private LAN IPs for mobile/LAN testing.
-    if (/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(origin)) {
-      return callback(null, origin);
-    }
-
-    // Allow any configured additional origins (comma-separated in CORS_ORIGIN env var).
-    const extra = Array.isArray(corsOrigins)
-      ? corsOrigins
-      : String(corsOrigins).split(',').map((o) => o.trim()).filter(Boolean);
-
-    if (extra.includes(origin)) {
-      return callback(null, origin);
-    }
-
-    // Reject unknown origins.
-    return callback(new Error(`CORS: origin '${origin}' not allowed`));
+    return callback(new Error(`CORS origin not allowed: ${origin}`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type',
     'Authorization',
+    'Accept',
+    'Accept-Language',
     'X-Requested-With',
     'x-language',
     'x-lang',
-    'Accept-Language',
-    'Accept',
   ],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400,
+  optionsSuccessStatus: 204,
 };
-
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(
