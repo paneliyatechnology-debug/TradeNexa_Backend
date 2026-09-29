@@ -251,16 +251,15 @@ app.set('trust proxy', 1);
 // CORS Configuration
 // ==========================================
 
+// ==========================================
+// Global middleware
+// ==========================================
+
 const allowedOrigins = [
-  // Production
   'https://www.tradenexa.co',
   'https://tradenexa.co',
-
-  // Existing frontend environments
   'https://tradehub-admin.vercel.app',
   'https://mart-self.vercel.app',
-
-  // Local development
   'http://localhost:3000',
   'http://localhost:3001',
   'http://127.0.0.1:3000',
@@ -269,41 +268,16 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests without Origin header.
-    // Examples:
-    // Postman
-    // Server-to-server requests
-    // Health checks
     if (!origin) {
       return callback(null, true);
     }
 
-    // Allow known frontend origins.
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
-    // Allow additional origins configured in CORS_ORIGIN.
-    const configuredOrigins = String(config.corsOrigins || '')
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-
-    // Allow wildcard configuration.
-    if (configuredOrigins.includes('*')) {
-      return callback(null, true);
-    }
-
-    // Allow configured origin.
-    if (configuredOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    console.warn(`[CORS] Blocked origin: ${origin}`);
-
-    return callback(
-      new Error(`CORS origin not allowed: ${origin}`)
-    );
+    console.log(`[CORS] Blocked origin: ${origin}`);
+    return callback(new Error(`CORS origin not allowed: ${origin}`));
   },
 
   credentials: true,
@@ -318,59 +292,38 @@ const corsOptions = {
   ],
 
   allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'Accept',
     'Origin',
     'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
     'Accept-Language',
     'x-language',
     'x-lang',
   ],
 
-  exposedHeaders: [
-    'Content-Range',
-    'X-Content-Range',
-  ],
-
   optionsSuccessStatus: 204,
-
   maxAge: 86400,
 };
 
-// ==========================================
-// CORS MUST BE BEFORE API ROUTES
-// ==========================================
-
+// CORS FIRST
 app.use(cors(corsOptions));
 
-// Handle browser preflight requests.
+// Explicit preflight handler
 app.options('*', cors(corsOptions));
 
-// ==========================================
-// Other global middleware
-// ==========================================
-
 app.use(compression());
-
 app.use(morgan('dev'));
-
 app.use(express.json());
-
-app.use(
-  express.urlencoded({
-    extended: true,
-  })
-);
+app.use(express.urlencoded({ extended: true }));
 
 app.use(
   helmet({
     crossOriginResourcePolicy: {
       policy: 'cross-origin',
     },
-  })
+  }),
 );
-
 // ==========================================
 // Media proxy (private S3 bucket) & static files
 // ==========================================
