@@ -67,7 +67,16 @@ const findBusinessTypes = async (filters = {}) => {
     if (!role) {
       return paginate(db('business_types').whereRaw('1 = 0'), filters.page, filters.limit);
     }
-    q.where('business_types.role_id', filters.role_id);
+    if (filters.exact_role) {
+      q.where('business_types.role_id', filters.role_id);
+    } else {
+      const buyerSellerRole = await db('roles').where({ code: 'buyer_seller', is_active: true }).first();
+      if (buyerSellerRole && (role.code === 'buyer' || role.code === 'seller')) {
+        q.whereIn('business_types.role_id', [filters.role_id, buyerSellerRole.id]);
+      } else {
+        q.where('business_types.role_id', filters.role_id);
+      }
+    }
   }
 
   if (filters.search) {
@@ -129,6 +138,27 @@ const create = async (data) => {
   }
 
   const code = data.code ? slugify(data.code) : slugify(data.name);
+
+  // If table is completely empty, insert the first record with ID 0
+  const countRow = await db('business_types').count('id as cnt').first();
+  const count = Number(countRow?.cnt || 0);
+
+  if (count === 0) {
+    try {
+      await db.raw("SET sql_mode = 'NO_AUTO_VALUE_ON_ZERO';");
+      await db('business_types').insert({
+        id: 0,
+        name: data.name.trim(),
+        code,
+        role_id: data.role_id,
+        is_active: data.is_active !== undefined ? data.is_active : true,
+      });
+      return findById(0);
+    } catch {
+      // Fallback to default auto-increment if engine rejects 0
+    }
+  }
+
   const [id] = await db('business_types').insert({
     name: data.name.trim(),
     code,
@@ -185,6 +215,38 @@ const softDelete = async (id) => {
   return findById(id);
 };
 
+/**
+ * Bulk delete business types by ID array.
+ * Cleans up references in users and company_details, then deletes the records.
+ * @param {number[]} ids
+ * @returns {Promise<number>} Number of deleted rows
+ */
+const deleteMany = async (ids) => {
+  if (!Array.isArray(ids) || ids.length === 0) return 0;
+
+  await db('company_details').whereIn('business_type_id', ids).update({ business_type_id: null });
+  await db('users').whereIn('business_type_id', ids).update({ business_type_id: null });
+
+  return db('business_types').whereIn('id', ids).del();
+};
+
+/**
+ * Delete all business types and reset auto_increment counter.
+ * @returns {Promise<number>} Number of deleted rows
+ */
+const deleteAll = async () => {
+  await db('company_details').update({ business_type_id: null });
+  await db('users').update({ business_type_id: null });
+
+  const count = await db('business_types').del();
+  try {
+    await db.raw('ALTER TABLE business_types AUTO_INCREMENT = 0');
+  } catch (err) {
+    // Ignored if unsupported dialect
+  }
+  return count;
+};
+
 module.exports = {
   findById,
   findByRoleId,
@@ -193,4 +255,7 @@ module.exports = {
   create,
   update,
   softDelete,
+  deleteMany,
+  deleteAll,
 };
+

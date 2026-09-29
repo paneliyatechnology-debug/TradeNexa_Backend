@@ -71,6 +71,16 @@ const getMulterFile = (files, field) => files?.[field]?.[0] || null;
 // URL resolution
 // ==========================================
 
+const normalizeBaseUrl = (url) => {
+  if (!url) return '';
+  let clean = String(url).trim().replace(/\/+$/, '');
+  if (!clean) return '';
+  if (!/^https?:\/\//i.test(clean)) {
+    clean = `https://${clean}`;
+  }
+  return clean;
+};
+
 /**
  * Convert a stored relative path to a public URL.
  * S3: returns APP_URL/media/... proxy URL (Railway buckets are private).
@@ -86,9 +96,8 @@ const resolveMediaUrl = (storedValue) => {
 
   if (/^https?:\/\//i.test(storedValue)) return storedValue;
 
-  const baseUrl = (config.app.url || '').replace(/\/$/, '');
   const normalized = storedValue.replace(/^\/+/, '');
-  return `${baseUrl}${uploadConfig.publicPath}/${normalized}`;
+  return `https://tradenexabackend-dev.up.railway.app/uploads/${normalized}`;
 };
 
 // ==========================================
@@ -158,6 +167,8 @@ const storeUploadedFile = async (files, field, pathSegments, existingStoredPath 
   }
 
   await persistFile(relativePath, file);
+  const liveUrl = resolveMediaUrl(relativePath);
+  console.log(`📸 [MEDIA UPLOAD SUCCESS] Field: "${field}" | Live URL: ${liveUrl}`);
   return relativePath;
 };
 
@@ -171,6 +182,8 @@ const storeMultipleUploadedFiles = async (files, field, pathSegments) => {
     const fileName = file.filename || buildStoredFileName(field, file.originalname);
     const relativePath = buildRelativeStoredPath(...pathSegments, fileName);
     await persistFile(relativePath, file);
+    const liveUrl = resolveMediaUrl(relativePath);
+    console.log(`📸 [MEDIA UPLOAD SUCCESS] Field: "${field}" | Live URL: ${liveUrl}`);
     paths.push(relativePath);
   }
   return paths;

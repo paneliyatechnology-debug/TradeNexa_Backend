@@ -7,6 +7,7 @@ const express = require('express');
 const authController = require('../controllers/authController');
 const {
   validate,
+  firebasePhoneLoginRules,
   sendOtpRules,
   verifyOtpRules,
   resendOtpRules,
@@ -23,20 +24,35 @@ const { otpLimiter } = require('../middleware/rateLimiter');
 const router = express.Router();
 
 // ==========================================
-// OTP & registration (public)
+// Firebase Phone Auth (Target Architecture)
 // ==========================================
 
-router.post('/send-otp', otpLimiter, sendOtpRules, validate, authController.sendOtp);
+router.post(
+  '/firebase-phone-login',
+  firebasePhoneLoginRules,
+  validate,
+  authController.firebasePhoneLogin,
+);
+
+// ==========================================
+// OTP & registration (Legacy public - Deprecated)
+// ==========================================
+
+router.post('/send-otp', sendOtpRules, validate, authController.sendOtp);
 router.post('/verify-otp', verifyOtpRules, validate, authController.verifyOtp);
 router.post('/resend-otp', otpLimiter, resendOtpRules, validate, authController.resendOtp);
 router.post('/register', registerRules, validate, verifyRegistration, authController.register);
 
 // ==========================================
-// Session management
+// Session & Device management
 // ==========================================
 
 router.post('/refresh-token', refreshRules, validate, authController.refreshToken);
 router.post('/logout', authenticate, logoutRules, validate, authController.logout);
+router.get('/devices', authenticate, authController.getActiveDevices);
+router.delete('/devices/:id', authenticate, authController.logoutDevice);
+router.post('/devices/logout-all', authenticate, authController.logoutAllDevices);
+router.post('/device-token', authenticate, authController.saveDeviceToken);
 
 // ==========================================
 // Profile (authenticated)

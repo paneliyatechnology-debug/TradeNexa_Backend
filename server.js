@@ -22,19 +22,24 @@ const { initSocket } = require('./sockets');
  */
 const start = async () => {
   try {
+    console.log('[Server] Verifying database connection...');
     await db.raw('SELECT 1');
+    console.log('[Server] Database connected successfully!');
+
     const server = http.createServer(app);
     initSocket(server);
 
-    server.listen(config.port, () => {
-      logger.info(`${config.app.name} running on port ${config.port}`);
+    server.listen(config.port, '0.0.0.0', () => {
+      console.log(`[Server] ${config.app.name} listening on port ${config.port} (0.0.0.0)`);
+      logger.info(`${config.app.name} running on port ${config.port} (0.0.0.0)`);
       logger.info(`Socket.IO available at path /socket.io`);
       if (s3Service.isEnabled()) {
         logger.info(`S3 storage enabled — media served via ${config.app.url}/media/`);
       }
     });
   } catch (error) {
-    logger.error('Failed to start server', { error: error.message });
+    console.error('[Server] Failed to start server:', error);
+    logger.error('Failed to start server', { error: error.message, stack: error.stack });
     process.exit(1);
   }
 };

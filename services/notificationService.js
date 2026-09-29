@@ -99,17 +99,16 @@ const normalizeDeviceType = (deviceType) => {
 };
 
 /**
- * Reject obvious mock tokens (e.g. Android `dev_token_…`).
- * Real FCM tokens are typically 100+ characters.
+ * Reject obvious empty / short tokens.
  * @param {string} token
  * @returns {boolean}
  */
 const looksLikeValidFcmToken = (token) => {
-  const t = String(token || '').trim();
-  if (t.length < 80) return false;
-  if (/^dev[_-]?token/i.test(t)) return false;
-  if (/^mock[-_]/i.test(t)) return false;
-  if (/^test[-_]/i.test(t)) return false;
+  const t = String(token || '')
+    .trim()
+    .replace(/^"+|"+$/g, '')
+    .replace(/\s+/g, '');
+  if (t.length < 20) return false;
   return true;
 };
 
@@ -122,7 +121,7 @@ const buildPlatformPushPayload = (
   deviceType,
   { title, body, data, channelId, badge, notificationId = null },
 ) => {
-  const type = normalizeDeviceType(deviceType);
+  const type = normalizeDeviceType(deviceType) || 'android';
   const safeTitle = sanitizeText(title, 100) || 'TradeNexa';
   const safeBody = sanitizeText(body, 250) || 'You have a new notification';
   const tag = notificationTagForId(notificationId);
@@ -130,7 +129,7 @@ const buildPlatformPushPayload = (
     ...data,
     title: safeTitle,
     body: safeBody,
-    platform: type || 'unknown',
+    platform: type || 'android',
     ...(notificationId ? { notification_id: notificationId } : {}),
     ...(tag ? { notification_tag: tag } : {}),
   });
@@ -148,7 +147,6 @@ const buildPlatformPushPayload = (
           body: safeBody,
           channelId: androidChannel,
           sound: 'default',
-          clickAction: commonData.click_action || NOTIFICATION_CLICK_ACTION.OPEN_CHAT,
           defaultSound: true,
           // Same tag on every device → client can cancel this exact tray item later
           ...(tag ? { tag } : {}),

@@ -1,5 +1,19 @@
 const locationService = require('../services/locationService');
+const translationService = require('../services/translationTestService');
 const { success } = require('../utils/response');
+
+const extractRequestLanguage = (req) => {
+  const queryLang = req.query?.lang || req.query?.language;
+  if (queryLang && typeof queryLang === 'string') return queryLang.toLowerCase().trim();
+  const headerLang = req.headers?.['x-language'] || req.headers?.['accept-language'];
+  if (headerLang && typeof headerLang === 'string') {
+    const firstCode = headerLang.split(',')[0].split('-')[0].trim().toLowerCase();
+    if (firstCode && firstCode !== '*' && translationService.SUPPORTED_LANGUAGES[firstCode]) {
+      return firstCode;
+    }
+  }
+  return 'en';
+};
 
 // ==========================================
 // Location reference handlers

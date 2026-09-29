@@ -2,12 +2,23 @@
  * Widen device_token for FCM web tokens and allow one device per platform per user.
  */
 
+const dropIndexIfExists = async (knex, tableName, indexName) => {
+  try {
+    await knex.raw(`ALTER TABLE \`${tableName}\` DROP INDEX \`${indexName}\``);
+  } catch {
+    /* index may not exist */
+  }
+};
+
 /**
  * @param { import("knex").Knex } knex
  */
 exports.up = async function (knex) {
+  await dropIndexIfExists(knex, 'devices', 'devices_device_token_index');
+  await dropIndexIfExists(knex, 'devices', 'device_token');
+
   await knex.schema.alterTable('devices', (table) => {
-    table.string('device_token', 1024).alter();
+    table.string('device_token', 700).nullable().alter();
   });
 
   // Prefer latest token per (user_id, device_type); drop older duplicates first.

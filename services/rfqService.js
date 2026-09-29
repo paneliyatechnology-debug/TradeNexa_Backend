@@ -93,7 +93,54 @@ const listRfqSellerIds = async (rfqId, buyerId = null) => {
 };
 
 /**
- * FCM + in-app inbox for sellers who should receive a new RFQ invite.
+ * Finds all candidate sellers who should be notified about a published RFQ:
+ * - Assigned / invited sellers (rfq_sellers)
+ * - Category / subcategory sellers whose company or products match the RFQ category
+ */
+const findSellersForRfq = async (rfq, buyerId = null) => {
+  const excludeBuyer = buyerId != null ? Number(buyerId) : null;
+  const assigned = await listRfqSellerIds(rfq.id, buyerId);
+
+  // If PRIVATE RFQ, strictly notify assigned sellers
+  if (rfq.visibility === RFQ_VISIBILITY.PRIVATE) {
+    return assigned;
+  }
+
+  // For PUBLIC RFQ, also find active sellers in the RFQ's category
+  let categorySellerIds = [];
+  if (rfq.category_id) {
+    try {
+      const rows = await db('users')
+        .join('roles', 'users.role_id', '=', 'roles.id')
+        .leftJoin('company_details', 'users.id', '=', 'company_details.user_id')
+        .leftJoin('products', function () {
+          this.on('users.id', '=', 'products.seller_id').andOnNull('products.deleted_at');
+        })
+        .whereIn('roles.code', ['seller', 'buyer_seller'])
+        .where('users.is_active', true)
+        .whereNull('users.deleted_at')
+        .where(function () {
+          this.where('company_details.category_id', rfq.category_id)
+            .orWhere('products.category_id', rfq.category_id);
+        })
+        .select('users.id')
+        .distinct();
+
+      categorySellerIds = (rows || []).map((r) => r.id);
+    } catch (e) {
+      logger.error('[findSellersForRfq] Error querying category sellers', e);
+    }
+  }
+
+  const allIds = [...new Set([...assigned, ...categorySellerIds])].filter(
+    (id) => id && Number(id) !== excludeBuyer
+  );
+
+  return allIds;
+};
+
+/**
+ * FCM + in-app inbox for sellers who should receive a new RFQ invite or lead.
  * Never notifies the buyer (creator).
  */
 const notifySellersOfNewRfq = async (rfq, buyerId, sellerIds = null) => {
@@ -102,7 +149,7 @@ const notifySellersOfNewRfq = async (rfq, buyerId, sellerIds = null) => {
   const ids =
     sellerIds != null
       ? [...new Set(sellerIds.map(Number).filter((id) => id && id !== Number(buyerId)))]
-      : await listRfqSellerIds(rfq.id, buyerId);
+      : await findSellersForRfq(rfq, buyerId);
 
   if (!ids.length) return;
 
@@ -130,23 +177,25 @@ const getBuyerId = (rfq) => rfq.buyer_id;
 const mapRfqAddressFields = (data) => ({
   address_line_1: data.address_line_1 || null,
   address_line_2: data.address_line_2 || null,
-  city: data.city || null,
-  state: data.state ?? null,
-  country: data.country || null,
+  address_city: data.address_city || data.city || null,
+  address_state: data.address_state || data.state || null,
+  state: data.state || data.address_state || null,
+  address_country: data.address_country || data.country || null,
   pincode: data.pincode || null,
 });
 
 const formatRfqAddress = (rfq) => ({
   address_line_1: rfq.address_line_1 || null,
   address_line_2: rfq.address_line_2 || null,
-  city: rfq.city || null,
-  state: rfq.state || null,
-  country: rfq.country || null,
+  city: rfq.address_city || rfq.city || null,
+  state: rfq.address_state || rfq.state || null,
+  country: rfq.address_country || rfq.country || null,
   pincode: rfq.pincode || null,
 });
 
 const buildRfqPayload = (data, buyerId, overrides = {}) => ({
   buyer_id: buyerId,
+  user_id: buyerId,
   title: data.title,
   description: data.description || null,
   category_id: data.category_id,
@@ -341,10 +390,11 @@ const publishRfq = async (id, buyerId) => {
   // PRIVATE RFQ: open chats with invited sellers (same as inquiry create → product chat seed)
   if (rfq.visibility === RFQ_VISIBILITY.PRIVATE) {
     await chatService.initializeRfqChatsForInvitedSellers(id, buyerId);
-    // Business + in-app notification to invited sellers (not the buyer)
-    const fresh = await rfqModel.findRfqById(id, { raw: true });
-    await notifySellersOfNewRfq(fresh || rfq, buyerId);
   }
+
+  // Business + in-app notification to invited / category sellers (not the buyer)
+  const fresh = await rfqModel.findRfqById(id, { raw: true });
+  await notifySellersOfNewRfq(fresh || rfq, buyerId);
 
   return getRfqDetail(id);
 };

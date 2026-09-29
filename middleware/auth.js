@@ -86,6 +86,30 @@ const deviceRules = [
 // Route validation rules
 // ==========================================
 
+const firebasePhoneLoginRules = [
+  body('idToken')
+    .optional({ values: 'falsy' })
+    .trim()
+    .notEmpty()
+    .withMessage('idToken cannot be empty'),
+  body('id_token')
+    .optional({ values: 'falsy' })
+    .trim()
+    .notEmpty()
+    .withMessage('id_token cannot be empty'),
+  body().custom((_, { req }) => {
+    const hasToken =
+      req.body?.idToken ||
+      req.body?.id_token ||
+      (req.headers?.authorization && req.headers.authorization.trim());
+    if (!hasToken) {
+      throw new Error('Firebase ID token is required in idToken or Authorization header');
+    }
+    return true;
+  }),
+  ...deviceRules,
+];
+
 const sendOtpRules = [mobile(), body('recaptcha_token').optional()];
 const verifyOtpRules = [mobile(), otp(), verificationId(), ...deviceRules];
 const resendOtpRules = [mobile(), verificationId(), body('recaptcha_token').optional()];
@@ -124,7 +148,7 @@ const registerRules = [
   body('full_name').trim().notEmpty().isLength({ min: 2, max: 100 }),
   body('email').trim().notEmpty().isEmail().normalizeEmail(),
   body('role_id').isInt({ min: 1 }).withMessage('role_id is required'),
-  body('business_type_id').isInt({ min: 1 }).withMessage('business_type_id is required'),
+  body('business_type_id').isInt({ min: 0 }).withMessage('business_type_id is required'),
   body('language_id').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Invalid language ID'),
   ...deviceRules,
 ];
@@ -246,12 +270,7 @@ const authorize = (...allowedRoles) => {
       }
       const roles = await userModel.getUserRoles(req.user.id);
       const userRoleCode = roles?.[0]?.code;
-      const hasAccess =
-        userRoleCode &&
-        (allowedRoles.includes(userRoleCode) ||
-          (userRoleCode === 'super_admin' && (allowedRoles.includes('admin') || allowedRoles.includes('super_admin'))));
-
-      if (!hasAccess) {
+      if (!userRoleCode || !allowedRoles.includes(userRoleCode)) {
         return next(new AppError('Forbidden: Access denied', 403));
       }
       req.user.role = userRoleCode;
@@ -264,6 +283,7 @@ const authorize = (...allowedRoles) => {
 
 module.exports = {
   validate,
+  firebasePhoneLoginRules,
   sendOtpRules,
   verifyOtpRules,
   resendOtpRules,

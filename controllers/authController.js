@@ -1,20 +1,78 @@
-// User authentication, OTP verification, and profile management handlers.
-
 const authService = require('../services/authService');
+const translationService = require('../services/translationTestService');
 const { success } = require('../utils/response');
 const { MESSAGES, HTTP_STATUS } = require('../constants');
 
+/**
+ * Extracts language code from query ('lang' or 'language') or headers ('x-language' or 'accept-language').
+ */
+const extractRequestLanguage = (req) => {
+  const queryLang = req.query?.lang || req.query?.language;
+  if (queryLang && typeof queryLang === 'string') return queryLang.toLowerCase().trim();
+  const headerLang = req.headers?.['x-language'] || req.headers?.['accept-language'];
+  if (headerLang && typeof headerLang === 'string') {
+    const firstCode = headerLang.split(',')[0].split('-')[0].trim().toLowerCase();
+    if (firstCode && firstCode !== '*' && translationService.SUPPORTED_LANGUAGES[firstCode]) {
+      return firstCode;
+    }
+  }
+  return 'en';
+};
+
 // ==========================================
-// OTP Authentication
+// Firebase Phone Auth
 // ==========================================
 
 /**
+ * POST /auth/firebase-phone-login
+ * Authenticate with a verified Firebase ID Token from Flutter / Client.
+ *
+ * Expected payload:
+ * {
+ *   "idToken": "<FIREBASE_ID_TOKEN>",
+ *   "device": { "device_type": "android", "device_token": "<FCM_TOKEN>" }
+ * }
+ * Or Authorization: Bearer <FIREBASE_ID_TOKEN>
+ */
+const firebasePhoneLogin = async (req, res, next) => {
+  try {
+    const authHeader = req.headers?.authorization;
+    let idToken = req.body?.idToken || req.body?.id_token;
+
+    if (!idToken && authHeader && typeof authHeader === 'string') {
+      const match = authHeader.trim().match(/^Bearer\s+(.+)$/i);
+      idToken = match ? match[1].trim() : authHeader.trim();
+    }
+
+    const device = req.body?.device || {
+      device_type: req.body?.device_type,
+      device_token: req.body?.device_token,
+    };
+
+    const data = await authService.firebasePhoneLogin(idToken, device, req);
+    const message = data.is_registered
+      ? 'Login successful'
+      : 'Phone verified successfully. Please complete registration.';
+    return success(res, message, data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ==========================================
+// OTP Authentication (Legacy REST - Deprecated)
+// ==========================================
+
+/**
+ * @deprecated Legacy endpoint. Use POST /auth/firebase-phone-login instead.
  * POST /auth/send-otp
  * Send OTP verification code to the user's mobile number.
  */
 const sendOtp = async (req, res, next) => {
   try {
+    // console.log('sendOtp controller entered');
     const data = await authService.sendOtp(req.body.mobile_number, req.body.recaptcha_token);
+    // console.log('sendOtp controller exited');
     return success(res, MESSAGES.OTP_SENT, data);
   } catch (err) {
     next(err);
@@ -115,8 +173,10 @@ const logout = async (req, res, next) => {
  */
 const getProfile = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await authService.getProfile(req.user.id);
-    return success(res, MESSAGES.SUCCESS, data);
+    const finalData = await translationService.translateUserProfile(data, lang);
+    return success(res, MESSAGES.SUCCESS, finalData);
   } catch (err) {
     next(err);
   }
@@ -148,13 +208,78 @@ const deleteProfile = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /auth/devices
+ * Get all active login devices for the authenticated user.
+ */
+const getActiveDevices = async (req, res, next) => {
+  try {
+    const lang = extractRequestLanguage(req);
+    const data = await authService.getActiveDevices(req.user.id, req);
+    const finalData = await translationService.translateDeviceList(data, lang);
+    return success(res, 'Active devices retrieved successfully', finalData);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /auth/devices/:id
+ * Revoke/log out a specific device session.
+ */
+const logoutDevice = async (req, res, next) => {
+  try {
+    await authService.logoutDevice(req.user.id, req.params.id);
+    return success(res, 'Device session logged out successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /auth/devices/logout-all
+ * Revoke/log out all other device sessions.
+ */
+const logoutAllDevices = async (req, res, next) => {
+  try {
+    await authService.logoutAllDevices(req.user.id, req);
+    return success(res, 'All other devices logged out successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /auth/device-token
+ * Register or update FCM device token for push notifications.
+ */
+const saveDeviceToken = async (req, res, next) => {
+  try {
+    const { device_token, device_type } = req.body;
+    if (!device_token) {
+      const { AppError } = require('../utils/response');
+      return next(new AppError('device_token is required', 400));
+    }
+    const userModel = require('../models/userModel');
+    const saved = await userModel.saveUserDevice(req.user.id, device_type || 'android', device_token);
+    return success(res, 'Device token registered successfully', saved);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
+  firebasePhoneLogin,
   sendOtp,
   verifyOtp,
   resendOtp,
   register,
   refreshToken,
   logout,
+  getActiveDevices,
+  logoutDevice,
+  logoutAllDevices,
+  saveDeviceToken,
   getProfile,
   updateProfile,
   deleteProfile,

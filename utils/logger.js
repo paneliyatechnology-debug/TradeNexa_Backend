@@ -19,16 +19,14 @@ const logger = winston.createLogger({
   ],
 });
 
-// ==========================================
-// Development console transport
-// ==========================================
-
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(
-    new winston.transports.Console({
-      format: winston.format.combine(winston.format.colorize(), winston.format.simple()),
-    }),
-  );
-}
+// Always log to Console for containerized/cloud environments (Railway, Docker)
+logger.add(
+  new winston.transports.Console({
+    format:
+      process.env.NODE_ENV === 'production'
+        ? winston.format.combine(winston.format.timestamp(), winston.format.json())
+        : winston.format.combine(winston.format.colorize(), winston.format.simple()),
+  }),
+);
 
 module.exports = logger;

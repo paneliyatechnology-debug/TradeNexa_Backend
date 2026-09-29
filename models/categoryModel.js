@@ -66,8 +66,24 @@ const SUBCATEGORY_SORT_FIELDS = {
 
 /** Apply list filters shared by category and subcategory queries. */
 const applyListFilters = (q, filters, prefix = 'categories') => {
-  if (filters.search) {
-    q.where(`${prefix}.name`, 'like', `%${filters.search}%`);
+  const searchTerms =
+    Array.isArray(filters.search_terms) && filters.search_terms.length > 0
+      ? filters.search_terms
+      : filters.search
+      ? [filters.search]
+      : [];
+
+  if (searchTerms.length > 0) {
+    q.where((builder) => {
+      searchTerms.forEach((term, index) => {
+        const pattern = `%${term}%`;
+        if (index === 0) {
+          builder.where(`${prefix}.name`, 'like', pattern);
+        } else {
+          builder.orWhere(`${prefix}.name`, 'like', pattern);
+        }
+      });
+    });
   }
   if (filters.slug) {
     q.where(`${prefix}.slug`, filters.slug);

@@ -42,7 +42,7 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    if (corsOrigins === '*') {
+    if (!corsOrigins || corsOrigins === '*' || corsOrigins === 'true') {
       return callback(null, true);
     }
 
@@ -50,11 +50,19 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    return callback(null, false);
+    return callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'x-language',
+    'x-lang',
+    'Accept-Language',
+    'Accept',
+  ],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   maxAge: 86400,
 };
@@ -75,11 +83,10 @@ app.use(express.urlencoded({ extended: true }));
 // Media proxy (private S3 bucket) & static files
 // ==========================================
 
-if (s3Service.isEnabled()) {
-  app.use('/media', mediaRouter);
-} else {
-  app.use(uploadConfig.publicPath, express.static(uploadConfig.rootDir));
-}
+app.use('/media', mediaRouter);
+app.use(uploadConfig.publicPath, mediaRouter);
+app.use('/api/media', mediaRouter);
+app.use('/api/uploads', mediaRouter);
 
 app.get('/health', (_req, res) => {
   res.json({ success: true, message: 'Server is running' });

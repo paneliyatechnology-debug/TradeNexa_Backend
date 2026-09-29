@@ -26,7 +26,7 @@ const categoryIdParam = [
 
 const paginationQuery = [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('limit').optional().isInt({ min: 1, max: 500 }).withMessage('Limit must be between 1 and 500'),
   query('search').optional().trim(),
 ];
 
@@ -354,7 +354,8 @@ const productCreateRules = [
   body('name').trim().notEmpty().withMessage('Product name is required').isLength({ min: 2, max: 200 }).withMessage('Product name must be 2 to 200 chars'),
   body('category_id').isInt({ min: 1 }).withMessage('Category ID is required and must be a positive integer'),
   body('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required and must be a positive integer'),
-  body('brand_id').isInt({ min: 1 }).withMessage('Brand ID is required and must be a positive integer'),
+  body('brand_id').optional({ checkFalsy: true }).isInt({ min: 1 }).withMessage('Brand ID must be a positive integer'),
+  body('brand_name').optional().trim().isLength({ max: 100 }).withMessage('Brand name must be at most 100 chars'),
   body('short_description')
     .trim()
     .notEmpty()
@@ -559,6 +560,7 @@ const productListQuery = [
   query('search').optional().trim(),
   query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
   query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  query('state_id').optional().isInt({ min: 1 }).withMessage('State ID must be a positive integer'),
   query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   query('is_active')
     .optional()
@@ -574,6 +576,7 @@ const sellerProductsQuery = [
   query('search').optional().trim(),
   query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
   query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  query('state_id').optional().isInt({ min: 1 }).withMessage('State ID must be a positive integer'),
   query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   query('is_active')
     .optional()
@@ -590,6 +593,7 @@ const productTrendingQuery = [
   ...paginationQuery,
   query('category_id').optional().isInt({ min: 1 }).withMessage('Category ID must be an integer'),
   query('subcategory_id').optional().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
+  query('state_id').optional().isInt({ min: 1 }).withMessage('State ID must be a positive integer'),
   query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   ...productListFilterSortQuery,
 ];
@@ -597,6 +601,7 @@ const productTrendingQuery = [
 const productRelatedQuery = [
   query('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required'),
   query('product_id').optional().isInt({ min: 1 }).withMessage('Product ID must be a positive integer'),
+  query('state_id').optional().isInt({ min: 1 }).withMessage('State ID must be a positive integer'),
   query('city_id').optional().isInt({ min: 1 }).withMessage('City ID must be a positive integer'),
   ...paginationQuery,
   ...productListFilterSortQuery,
@@ -763,45 +768,73 @@ const inquiryRejectRules = [
   body('reject_reason').optional({ values: 'falsy' }).trim().isLength({ max: 1000 }),
 ];
 
-const RFQ_PINCODE_REGEX = /^[1-9][0-9]{5}$/;
+const isValidDateInput = (value) => {
+  if (!value) return true;
+  const d = new Date(value);
+  return !Number.isNaN(d.getTime());
+};
 
 const rfqDateFields = [
-  body('required_before').optional({ values: 'falsy' }).isISO8601().withMessage('Required before must be a valid ISO8601 timestamp'),
-  body('quotation_deadline').optional({ values: 'falsy' }).isISO8601().withMessage('Quotation deadline must be a valid ISO8601 timestamp'),
+  body('required_before')
+    .optional({ values: 'falsy' })
+    .custom(isValidDateInput)
+    .withMessage('Required before must be a valid date'),
+  body('quotation_deadline')
+    .optional({ values: 'falsy' })
+    .custom(isValidDateInput)
+    .withMessage('Quotation deadline must be a valid date'),
 ];
 
 const rfqAddressFields = [
-  body('address_line_1').trim().notEmpty().withMessage('Address line 1 is required').isLength({ min: 3, max: 255 }),
+  body('address_line_1').trim().notEmpty().withMessage('Address line 1 is required').isLength({ min: 2, max: 255 }),
   body('address_line_2').optional({ values: 'falsy' }).trim().isLength({ max: 255 }),
-  body('city').trim().notEmpty().withMessage('City is required').isLength({ min: 2, max: 100 }),
-  body('state').trim().notEmpty().withMessage('State is required').isLength({ min: 2, max: 100 }),
-  body('country').trim().notEmpty().withMessage('Country is required').isLength({ min: 2, max: 100 }),
-  body('pincode').trim().notEmpty().withMessage('Pincode is required').matches(RFQ_PINCODE_REGEX).withMessage('Invalid pincode'),
+  body('city').trim().notEmpty().withMessage('City is required').isLength({ min: 1, max: 100 }),
+  body('state').trim().notEmpty().withMessage('State is required').isLength({ min: 1, max: 100 }),
+  body('country').trim().notEmpty().withMessage('Country is required').isLength({ min: 1, max: 100 }),
+  body('pincode')
+    .trim()
+    .notEmpty()
+    .withMessage('Pincode is required')
+    .customSanitizer((v) => (typeof v === 'string' ? v.replace(/\s+/g, '') : v))
+    .isLength({ min: 3, max: 20 })
+    .withMessage('Invalid pincode'),
 ];
 
 const rfqAddressUpdateFields = [
-  body('address_line_1').optional({ values: 'falsy' }).trim().isLength({ min: 3, max: 255 }).withMessage('Address line 1 must be 3 to 255 chars'),
+  body('address_line_1').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 255 }).withMessage('Address line 1 must be 2 to 255 chars'),
   body('address_line_2').optional({ values: 'falsy' }).trim().isLength({ max: 255 }),
-  body('city').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 100 }),
-  body('state').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 100 }),
-  body('country').optional({ values: 'falsy' }).trim().isLength({ min: 2, max: 100 }),
-  body('pincode').optional({ values: 'falsy' }).trim().matches(RFQ_PINCODE_REGEX).withMessage('Invalid pincode'),
+  body('city').optional({ values: 'falsy' }).trim().isLength({ min: 1, max: 100 }),
+  body('state').optional({ values: 'falsy' }).trim().isLength({ min: 1, max: 100 }),
+  body('country').optional({ values: 'falsy' }).trim().isLength({ min: 1, max: 100 }),
+  body('pincode')
+    .optional({ values: 'falsy' })
+    .trim()
+    .customSanitizer((v) => (typeof v === 'string' ? v.replace(/\s+/g, '') : v))
+    .isLength({ min: 3, max: 20 })
+    .withMessage('Invalid pincode'),
 ];
 
 const rfqCreateRules = [
   body('title').trim().notEmpty().withMessage('RFQ title is required').isLength({ min: 2, max: 200 }).withMessage('Title must be 2 to 200 chars'),
-  body('category_id').isInt({ min: 1 }).withMessage('Category ID is required and must be an integer'),
-  body('subcategory_id').isInt({ min: 1 }).withMessage('Subcategory ID is required and must be an integer'),
+  body('category_id').toInt().isInt({ min: 1 }).withMessage('Category ID is required and must be an integer'),
+  body('subcategory_id').optional({ values: 'falsy' }).toInt().isInt({ min: 1 }).withMessage('Subcategory ID must be an integer'),
   body('description').trim().notEmpty().withMessage('Description is required').isLength({ min: 10 }).withMessage('Description must be at least 10 characters'),
-  body('quantity').isInt({ min: 1 }).withMessage('Quantity is required and must be at least 1'),
+  body('quantity').toInt().isInt({ min: 1 }).withMessage('Quantity is required and must be at least 1'),
   body('unit').trim().notEmpty().withMessage('Unit is required').isLength({ max: 50 }).withMessage('Unit must be at most 50 characters'),
-  body('quotation_deadline').isISO8601().withMessage('Quotation deadline is required and must be a valid ISO8601 timestamp'),
+  body('quotation_deadline')
+    .notEmpty()
+    .withMessage('Quotation deadline is required')
+    .custom(isValidDateInput)
+    .withMessage('Quotation deadline must be a valid date'),
   ...rfqAddressFields,
-  body('product_id').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Product ID must be an integer'),
+  body('product_id').optional({ values: 'falsy' }).toInt().isInt({ min: 1 }).withMessage('Product ID must be an integer'),
   body('expected_price').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Expected price must be positive'),
   body('budget').optional({ values: 'falsy' }).isFloat({ min: 0 }).withMessage('Budget must be positive'),
   body('currency').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
-  body('required_before').optional({ values: 'falsy' }).isISO8601().withMessage('Required before must be a valid ISO8601 timestamp'),
+  body('required_before')
+    .optional({ values: 'falsy' })
+    .custom(isValidDateInput)
+    .withMessage('Required before must be a valid date'),
   body('payment_terms').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
   body('visibility').optional().isIn(Object.values(RFQ_VISIBILITY)).withMessage('Invalid visibility'),
   body('seller_ids')
@@ -1010,6 +1043,13 @@ const businessTypeUpdateRules = [
   optionalRequiredInt('role_id', 'role_id', { min: 1 }),
   body('is_active').optional().isBoolean(),
 ];
+
+const businessTypeBulkDeleteRules = [
+  body('ids').optional().isArray().withMessage('ids must be an array of integers'),
+  body('ids.*').optional().isInt({ min: 1 }).withMessage('Each id must be a positive integer'),
+  body('all').optional().isBoolean().withMessage('all must be a boolean'),
+];
+
 
 // ==========================================
 // Role validations
@@ -1295,6 +1335,7 @@ module.exports = {
   businessTypeListQuery,
   businessTypeCreateRules,
   businessTypeUpdateRules,
+  businessTypeBulkDeleteRules,
   roleListQuery,
   chatConversationListQuery,
   chatMessageListQuery,

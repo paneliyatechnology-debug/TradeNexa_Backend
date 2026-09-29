@@ -5,6 +5,7 @@
  * before persisting text fields.
  */
 const productModel = require('../models/productModel');
+const brandModel = require('../models/brandModel');
 const { uploadPaths } = require('../constants/uploadPaths');
 const { processUploadedFiles, processMultipleUploadedFiles } = require('../services/uploadService');
 const { stripFields } = require('../utils/formBody');
@@ -183,6 +184,17 @@ const createProduct = async (data, files = {}, userId = null, actorRole = 'selle
   // Ownership always from JWT — ignore body.seller_id
   payload.seller_id = userId;
 
+  const brandNameInput = data.brand_name || data.brand || (typeof data.brand_id === 'string' && Number.isNaN(Number(data.brand_id)) ? data.brand_id : null);
+  if ((!payload.brand_id || payload.brand_id === 0) && brandNameInput) {
+    const brandName = String(brandNameInput).trim();
+    if (brandName) {
+      const resolvedBrandId = await brandModel.findOrCreateBrandByName(brandName, userId);
+      if (resolvedBrandId) {
+        payload.brand_id = resolvedBrandId;
+      }
+    }
+  }
+
   const product = await productModel.createProduct(payload, userId);
   await applyCreateThumbnail(product.id, files);
   await applyImageUploads(product.id, files, 'inbox');
@@ -212,6 +224,17 @@ const updateProduct = async (id, data, files = {}, userId = null, actorRole = 's
   delete payload.approval_status;
   // seller_id is not updatable via body — ownership stays with original seller
   delete payload.seller_id;
+
+  const updateBrandInput = data.brand_name || data.brand || (typeof data.brand_id === 'string' && Number.isNaN(Number(data.brand_id)) ? data.brand_id : null);
+  if ((!payload.brand_id || payload.brand_id === 0) && updateBrandInput) {
+    const brandName = String(updateBrandInput).trim();
+    if (brandName) {
+      const resolvedBrandId = await brandModel.findOrCreateBrandByName(brandName, userId);
+      if (resolvedBrandId) {
+        payload.brand_id = resolvedBrandId;
+      }
+    }
+  }
 
   const existing = await productModel.findProductById(id, { raw: true });
   if (!existing) {

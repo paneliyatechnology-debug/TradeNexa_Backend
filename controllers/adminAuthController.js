@@ -14,7 +14,9 @@ const { MESSAGES, HTTP_STATUS } = require('../constants');
  */
 const login = async (req, res, next) => {
   try {
+    console.log("req.body", req.body)
     const data = await adminAuthService.login(req.body.email, req.body.password, req);
+    console.log("data", data)
     return success(res, MESSAGES.ADMIN_LOGIN_SUCCESS, data);
   } catch (err) {
     next(err);

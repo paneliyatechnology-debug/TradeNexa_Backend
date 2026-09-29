@@ -6,10 +6,61 @@ const productReviewService = require('../services/productReviewService');
 const wishlistService = require('../services/wishlistService');
 const productSearchHistoryService = require('../services/productSearchHistoryService');
 const inquiryModel = require('../models/inquiryModel');
+const translationService = require('../services/translationTestService');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS, ADMIN_PANEL_ROLE_CODES } = require('../constants');
 const { PRODUCT_APPROVAL_STATUS } = require('../constants/product');
 const logger = require('../utils/logger');
+
+/**
+ * Extracts language code from query ('lang' or 'language') or headers ('x-language' or 'accept-language').
+ */
+const extractRequestLanguage = (req) => {
+  const queryLang = req.query?.lang || req.query?.language;
+  if (queryLang && typeof queryLang === 'string') return queryLang.toLowerCase().trim();
+  const headerLang = req.headers?.['x-language'] || req.headers?.['accept-language'];
+  if (headerLang && typeof headerLang === 'string') {
+    const firstCode = headerLang.split(',')[0].split('-')[0].trim().toLowerCase();
+    if (firstCode && firstCode !== '*' && translationService.SUPPORTED_LANGUAGES[firstCode]) {
+      return firstCode;
+    }
+  }
+  return 'en';
+};
+
+/**
+ * Applies language translation to product data (list, pagination object, or detail object) if lang !== 'en'.
+ */
+const applyProductLanguageTranslation = async (productData, lang) => {
+  if (!productData || !lang || lang === 'en') return productData;
+  if (!translationService.SUPPORTED_LANGUAGES[lang]) return productData;
+
+  try {
+    if (Array.isArray(productData)) {
+      return await Promise.all(
+        productData.map((p) => translationService.translateProductListItem(p, lang))
+      );
+    } else if (productData.results && Array.isArray(productData.results)) {
+      const translatedResults = await Promise.all(
+        productData.results.map((p) => translationService.translateProductListItem(p, lang))
+      );
+      return {
+        ...productData,
+        language: lang,
+        language_name: translationService.SUPPORTED_LANGUAGES[lang] || lang,
+        results: translatedResults,
+      };
+    } else if (productData.basic_details) {
+      return await translationService.translateFullProductDetail(productData, lang);
+    }
+  } catch (err) {
+    logger.warn('[Translation] Failed to translate product payload, returning original', {
+      lang,
+      error: err.message,
+    });
+  }
+  return productData;
+};
 
 // ==========================================
 // Product Operations
@@ -85,6 +136,7 @@ const isAdminUser = (user) => ADMIN_PANEL_ROLE_CODES.includes(resolveRoleCode(us
 const pickProductListFilters = (req, extra = {}) => ({
   search: req.query.search,
   brand_id: req.query.brand_id,
+  state_id: req.query.state_id,
   city_id: req.query.city_id,
   exclude_seller_id: req.query.seller_id,
   min_price: req.query.min_price,
@@ -237,7 +289,8 @@ const getProduct = async (req, res, next) => {
         withWishlist.marketplace?.accept_inquiry !== false;
     }
 
-    return success(res, 'Product details retrieved successfully', withWishlist);
+    const finalProduct = await applyProductLanguageTranslation(withWishlist, extractRequestLanguage(req));
+    return success(res, 'Product details retrieved successfully', finalProduct);
   } catch (err) {
     next(err);
   }
@@ -273,7 +326,13 @@ const buildProductListFilters = (req, { defaultActiveOnly = true, publicOnly = f
  */
 const getProducts = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const filters = withWishlistFilter(req, buildProductListFilters(req, { publicOnly: true }));
+
+    if (filters.search) {
+      filters.search_terms = await translationService.resolveSearchTermsForLanguage(filters.search, lang);
+    }
+
     const data = await productModel.findProducts(filters);
     const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
     const withInquiry = await attachInquiryStateToProductList(withWishlist, req.user?.id);
@@ -288,7 +347,8 @@ const getProducts = async (req, res, next) => {
       });
     }
 
-    return success(res, 'Products list retrieved successfully', withInquiry);
+    const finalData = await applyProductLanguageTranslation(withInquiry, lang);
+    return success(res, 'Products list retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -343,16 +403,23 @@ const clearProductSearchHistory = async (req, res, next) => {
  */
 const getMyProducts = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const filters = withWishlistFilter(req, {
       ...buildProductListFilters(req, { defaultActiveOnly: false, publicOnly: false }),
       seller_id: req.user.id,
       exclude_seller_id: undefined,
       public_only: false,
     });
+
+    if (filters.search) {
+      filters.search_terms = await translationService.resolveSearchTermsForLanguage(filters.search, lang);
+    }
+
     const data = await productModel.findProducts(filters);
     const withWishlist = await wishlistService.attachWishlistToProductList(data, req.user?.id);
     const withInquiry = await attachInquiryStateToProductList(withWishlist, req.user?.id);
-    return success(res, 'Products list retrieved successfully', withInquiry);
+    const finalData = await applyProductLanguageTranslation(withInquiry, lang);
+    return success(res, 'Products list retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -363,6 +430,7 @@ const getMyProducts = async (req, res, next) => {
  */
 const getTrendingProducts = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const filters = withWishlistFilter(
       req,
       pickProductListFilters(req, {
@@ -373,6 +441,11 @@ const getTrendingProducts = async (req, res, next) => {
         subcategory_id: req.query.subcategory_id,
       }),
     );
+
+    if (filters.search) {
+      filters.search_terms = await translationService.resolveSearchTermsForLanguage(filters.search, lang);
+    }
+
     const data = await productModel.findProducts(filters);
 
     const formatted = data.results.map((p) => ({
@@ -397,10 +470,15 @@ const getTrendingProducts = async (req, res, next) => {
     const withWishlist = await wishlistService.attachWishlistFlags(formatted, req.user?.id);
     const results = await attachInquiryStateToProducts(withWishlist, req.user?.id);
 
-    return success(res, 'Trending products retrieved successfully', {
-      ...data,
-      results,
-    });
+    const finalData = await applyProductLanguageTranslation(
+      {
+        ...data,
+        results,
+      },
+      extractRequestLanguage(req)
+    );
+
+    return success(res, 'Trending products retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -446,10 +524,15 @@ const getRelatedProducts = async (req, res, next) => {
     const withWishlist = await wishlistService.attachWishlistFlags(formatted, req.user?.id);
     const results = await attachInquiryStateToProducts(withWishlist, req.user?.id);
 
-    return success(res, 'Related products retrieved successfully', {
-      ...data,
-      results,
-    });
+    const finalData = await applyProductLanguageTranslation(
+      {
+        ...data,
+        results,
+      },
+      extractRequestLanguage(req)
+    );
+
+    return success(res, 'Related products retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }

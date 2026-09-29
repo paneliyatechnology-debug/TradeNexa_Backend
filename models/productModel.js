@@ -588,19 +588,34 @@ const findProducts = async (filters = {}) => {
       'products.created_at',
     );
 
-  if (filters.search) {
-    const term = `%${filters.search}%`;
+  if (filters.search || (Array.isArray(filters.search_terms) && filters.search_terms.length > 0)) {
+    const searchTerms = Array.isArray(filters.search_terms) && filters.search_terms.length > 0
+      ? filters.search_terms
+      : [filters.search];
+
     if (filters.admin_search) {
       q.where(function () {
-        this.where('products.name', 'like', term)
-          .orWhere('products.id', parseInt(filters.search, 10) || 0)
-          .orWhere('company_details.company_name', 'like', term)
-          .orWhere('sellers.full_name', 'like', term)
-          .orWhere('categories.name', 'like', term)
-          .orWhere('brands.name', 'like', term);
+        searchTerms.forEach((sTerm) => {
+          const term = `%${sTerm}%`;
+          this.orWhere('products.name', 'like', term)
+            .orWhere('products.id', parseInt(sTerm, 10) || 0)
+            .orWhere('company_details.company_name', 'like', term)
+            .orWhere('sellers.full_name', 'like', term)
+            .orWhere('categories.name', 'like', term)
+            .orWhere('brands.name', 'like', term);
+        });
       });
     } else {
-      q.where('products.name', 'like', term);
+      q.where(function () {
+        searchTerms.forEach((sTerm) => {
+          const term = `%${sTerm}%`;
+          this.orWhere('products.name', 'like', term)
+            .orWhere('products.description', 'like', term)
+            .orWhere('products.short_description', 'like', term)
+            .orWhere('categories.name', 'like', term)
+            .orWhere('brands.name', 'like', term);
+        });
+      });
     }
   }
 
@@ -610,6 +625,10 @@ const findProducts = async (filters = {}) => {
 
   if (filters.subcategory_id) {
     q.where('products.subcategory_id', filters.subcategory_id);
+  }
+
+  if (filters.state_id) {
+    q.where('addresses.state_id', filters.state_id);
   }
 
   if (filters.city_id) {

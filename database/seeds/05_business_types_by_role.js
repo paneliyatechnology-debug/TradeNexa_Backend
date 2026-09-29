@@ -51,30 +51,8 @@ const buildRows = (names, roleId) =>
 // Seed data
 // ==========================================
 
-/**
- * @param { import("knex").Knex } knex
- */
 exports.seed = async function (knex) {
-  await knex('business_types').del();
-
-  const roles = await knex('roles').select('id', 'code');
-  const roleMap = Object.fromEntries(roles.map((r) => [r.code, r.id]));
-
-  const buyerId = roleMap.buyer;
-  const sellerId = roleMap.seller;
-  const buyerSellerId = roleMap.buyer_seller;
-
-  if (!buyerId || !sellerId || !buyerSellerId) {
-    throw new Error('Buyer, Seller, and Buyer+Seller roles must exist before seeding business types');
-  }
-
-  const rows = [
-    ...buildRows(BUYER_TYPES, buyerId),
-    ...buildRows(SELLER_TYPES, sellerId),
-    ...buildRows(BUYER_SELLER_TYPES, buyerSellerId),
-  ];
-
-  await knex('business_types').insert(rows);
+  // Auto-seeding disabled to prevent clearing and overwriting manual database entries
 };
 
 module.exports.BUYER_SELLER_TYPES = BUYER_SELLER_TYPES;

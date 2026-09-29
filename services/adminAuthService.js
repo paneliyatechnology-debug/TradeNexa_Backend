@@ -15,6 +15,7 @@ const { ADMIN_PANEL_ROLE_CODES } = require('../constants');
  * @throws {AppError} 403 when role is not an admin-panel role
  */
 const assertAdminPanelRole = (roleCode) => {
+  console.log("roleCode", roleCode)
   if (!roleCode || !ADMIN_PANEL_ROLE_CODES.includes(roleCode)) {
     throw new AppError('Access denied. Admin panel login is restricted to authorized roles', 403);
   }
@@ -34,8 +35,10 @@ const assertAdminPanelRole = (roleCode) => {
  * @returns {Promise<{ user: Object, access_token: string, refresh_token: string }>}
  */
 const login = async (email, password, req) => {
+  console.log("email", email)
+  console.log("password", password)
   const user = await userModel.findUserWithRoleByEmail(email);
-
+  console.log("user", user)
   if (!user?.password || !user.is_active) {
     throw new AppError('Invalid email or password', 401);
   }

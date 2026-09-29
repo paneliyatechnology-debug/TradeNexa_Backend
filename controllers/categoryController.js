@@ -2,8 +2,25 @@
 
 const categoryService = require('../services/categoryService');
 const categoryModel = require('../models/categoryModel');
+const translationService = require('../services/translationTestService');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS } = require('../constants');
+
+/**
+ * Extracts language code from query ('lang' or 'language') or headers ('x-language' or 'accept-language').
+ */
+const extractRequestLanguage = (req) => {
+  const queryLang = req.query?.lang || req.query?.language;
+  if (queryLang && typeof queryLang === 'string') return queryLang.toLowerCase().trim();
+  const headerLang = req.headers?.['x-language'] || req.headers?.['accept-language'];
+  if (headerLang && typeof headerLang === 'string') {
+    const firstCode = headerLang.split(',')[0].split('-')[0].trim().toLowerCase();
+    if (firstCode && firstCode !== '*' && translationService.SUPPORTED_LANGUAGES[firstCode]) {
+      return firstCode;
+    }
+  }
+  return 'en';
+};
 
 // ==========================================
 // Main categories
@@ -31,11 +48,13 @@ const createCategory = async (req, res, next) => {
  */
 const getCategory = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const category = await categoryModel.getCategoryWithSubcategories(req.params.id);
     if (!category) {
       return next(new AppError('Category not found', HTTP_STATUS.NOT_FOUND));
     }
-    return success(res, 'Category details retrieved successfully', category);
+    const finalData = await translationService.translateCategoryItem(category, lang);
+    return success(res, 'Category details retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -47,8 +66,14 @@ const getCategory = async (req, res, next) => {
  */
 const getCategories = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
+    let searchTerms = [];
+    if (req.query.search) {
+      searchTerms = await translationService.resolveSearchTermsForLanguage(req.query.search, lang);
+    }
     const filters = {
       search: req.query.search,
+      search_terms: searchTerms,
       slug: req.query.slug,
       page: req.query.page,
       limit: req.query.limit,
@@ -57,7 +82,8 @@ const getCategories = async (req, res, next) => {
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
     };
     const data = await categoryModel.findCategories(filters);
-    return success(res, 'Categories list retrieved successfully', data);
+    const finalData = await translationService.translateCategoryList(data, lang);
+    return success(res, 'Categories list retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -128,11 +154,13 @@ const createSubcategory = async (req, res, next) => {
  */
 const getSubcategory = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const subcategory = await categoryModel.getSubcategoryDetail(req.params.id);
     if (!subcategory || String(subcategory.category_id) !== String(req.params.categoryId)) {
       return next(new AppError('Subcategory not found', HTTP_STATUS.NOT_FOUND));
     }
-    return success(res, 'Subcategory details retrieved successfully', subcategory);
+    const finalData = await translationService.translateCategoryItem(subcategory, lang);
+    return success(res, 'Subcategory details retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -144,8 +172,14 @@ const getSubcategory = async (req, res, next) => {
  */
 const getSubcategories = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
+    let searchTerms = [];
+    if (req.query.search) {
+      searchTerms = await translationService.resolveSearchTermsForLanguage(req.query.search, lang);
+    }
     const filters = {
       search: req.query.search,
+      search_terms: searchTerms,
       slug: req.query.slug,
       page: req.query.page,
       limit: req.query.limit,
@@ -154,7 +188,8 @@ const getSubcategories = async (req, res, next) => {
       is_active: req.query.is_active !== undefined ? req.query.is_active === 'true' : true,
     };
     const data = await categoryModel.findSubcategories(req.params.categoryId, filters);
-    return success(res, 'Subcategories list retrieved successfully', data);
+    const finalData = await translationService.translateCategoryList(data, lang);
+    return success(res, 'Subcategories list retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }

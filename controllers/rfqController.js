@@ -5,10 +5,27 @@ const rfqService = require('../services/rfqService');
 const rfqModel = require('../models/rfqModel');
 const quotationModel = require('../models/quotationModel');
 const userModel = require('../models/userModel');
+const translationService = require('../services/translationTestService');
 const { success, AppError } = require('../utils/response');
 const { HTTP_STATUS, ADMIN_PANEL_ROLE_CODES } = require('../constants');
 
 const isAdmin = (user) => ADMIN_PANEL_ROLE_CODES.includes(user?.role);
+
+/**
+ * Extracts language code from query ('lang' or 'language') or headers ('x-language' or 'accept-language').
+ */
+const extractRequestLanguage = (req) => {
+  const queryLang = req.query?.lang || req.query?.language;
+  if (queryLang && typeof queryLang === 'string') return queryLang.toLowerCase().trim();
+  const headerLang = req.headers?.['x-language'] || req.headers?.['accept-language'];
+  if (headerLang && typeof headerLang === 'string') {
+    const firstCode = headerLang.split(',')[0].split('-')[0].trim().toLowerCase();
+    if (firstCode && firstCode !== '*' && translationService.SUPPORTED_LANGUAGES[firstCode]) {
+      return firstCode;
+    }
+  }
+  return 'en';
+};
 
 /**
  * @param {object} req
@@ -58,8 +75,10 @@ const buildQuotationListFilters = (req) => ({
 
 const createRfq = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const rfq = await rfqService.createDraftRfq(req.body, req.user.id);
-    return success(res, 'RFQ created successfully', rfq, HTTP_STATUS.CREATED);
+    const finalData = await translationService.translateRfqItem(rfq, lang);
+    return success(res, 'RFQ created successfully', finalData, HTTP_STATUS.CREATED);
   } catch (err) {
     next(err);
   }
@@ -67,8 +86,10 @@ const createRfq = async (req, res, next) => {
 
 const publishRfq = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const rfq = await rfqService.publishRfq(req.params.id, req.user.id);
-    return success(res, 'RFQ published successfully', rfq);
+    const finalData = await translationService.translateRfqItem(rfq, lang);
+    return success(res, 'RFQ published successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -76,11 +97,13 @@ const publishRfq = async (req, res, next) => {
 
 const getRfq = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const rfq = await rfqService.getRfqDetailForUser(req.params.id, {
       id: req.user.id,
       role: req.user.role,
     });
-    return success(res, 'RFQ details retrieved successfully', rfq);
+    const finalData = await translationService.translateRfqItem(rfq, lang);
+    return success(res, 'RFQ details retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -88,9 +111,11 @@ const getRfq = async (req, res, next) => {
 
 const getRfqs = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     // Authenticated user: hide own RFQs (buyer_id from JWT)
     const data = await rfqModel.findRfqs(buildListFilters(req, { excludeOwnBuyer: true }));
-    return success(res, 'RFQs list retrieved successfully', data);
+    const finalData = await translationService.translateRfqList(data, lang);
+    return success(res, 'RFQs list retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -98,8 +123,10 @@ const getRfqs = async (req, res, next) => {
 
 const getMyRfqs = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await rfqService.getBuyerRfqs(req.user.id, buildListFilters(req));
-    return success(res, 'My RFQs retrieved successfully', data);
+    const finalData = await translationService.translateRfqList(data, lang);
+    return success(res, 'My RFQs retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -107,6 +134,7 @@ const getMyRfqs = async (req, res, next) => {
 
 const getLatestRfqs = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await rfqModel.findRfqs({
       page: req.query.page,
       limit: req.query.limit,
@@ -129,7 +157,8 @@ const getLatestRfqs = async (req, res, next) => {
       product: r.product ?? null,
       company: r.company ?? null,
     }));
-    return success(res, 'Latest RFQs retrieved successfully', { ...data, results: formatted });
+    const finalResults = await translationService.translateRfqList(formatted, lang);
+    return success(res, 'Latest RFQs retrieved successfully', { ...data, results: finalResults });
   } catch (err) {
     next(err);
   }
@@ -137,8 +166,10 @@ const getLatestRfqs = async (req, res, next) => {
 
 const updateRfq = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const rfq = await rfqService.updateRfq(req.params.id, req.body, req.user.id, isAdmin(req.user));
-    return success(res, 'RFQ updated successfully', rfq);
+    const finalData = await translationService.translateRfqItem(rfq, lang);
+    return success(res, 'RFQ updated successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -155,8 +186,10 @@ const deleteRfq = async (req, res, next) => {
 
 const cancelRfq = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const rfq = await rfqService.cancelRfq(req.params.id, req.user.id, isAdmin(req.user));
-    return success(res, 'RFQ cancelled successfully', rfq);
+    const finalData = await translationService.translateRfqItem(rfq, lang);
+    return success(res, 'RFQ cancelled successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -164,8 +197,10 @@ const cancelRfq = async (req, res, next) => {
 
 const closeRfq = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const rfq = await rfqService.closeRfq(req.params.id, req.user.id, isAdmin(req.user));
-    return success(res, 'RFQ closed successfully', rfq);
+    const finalData = await translationService.translateRfqItem(rfq, lang);
+    return success(res, 'RFQ closed successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -173,13 +208,15 @@ const closeRfq = async (req, res, next) => {
 
 const getRfqQuotations = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const rfq = await rfqModel.findRfqById(req.params.id, { raw: true });
     if (!rfq) return next(new AppError('RFQ not found', HTTP_STATUS.NOT_FOUND));
     if (!isAdmin(req.user) && rfqService.getBuyerId(rfq) !== req.user.id) {
       return next(new AppError('Forbidden: Access denied', HTTP_STATUS.FORBIDDEN));
     }
     const quotations = await quotationModel.findByRfqId(req.params.id, buildQuotationListFilters(req));
-    return success(res, 'RFQ quotations retrieved successfully', quotations);
+    const finalData = await translationService.translateRfqQuotationList(quotations, lang);
+    return success(res, 'RFQ quotations retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -187,13 +224,17 @@ const getRfqQuotations = async (req, res, next) => {
 
 const compareRfqQuotations = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const rfq = await rfqModel.findRfqById(req.params.id, { raw: true });
     if (!rfq) return next(new AppError('RFQ not found', HTTP_STATUS.NOT_FOUND));
     if (!isAdmin(req.user) && rfqService.getBuyerId(rfq) !== req.user.id) {
       return next(new AppError('Forbidden: Access denied', HTTP_STATUS.FORBIDDEN));
     }
     const data = await quotationModel.compareByRfqId(req.params.id);
-    return success(res, 'Quotation comparison retrieved successfully', data);
+    const finalData = Array.isArray(data)
+      ? await Promise.all(data.map((q) => translationService.translateRfqQuotationItem(q, lang)))
+      : data;
+    return success(res, 'Quotation comparison retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -205,6 +246,7 @@ const compareRfqQuotations = async (req, res, next) => {
 
 const getSellerRfqs = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     await rfqModel.expireOverdueRfqs();
     // Hide RFQs created by the authenticated user (buyer_id from JWT)
     const filters = buildListFilters(req, { excludeOwnBuyer: true });
@@ -218,7 +260,8 @@ const getSellerRfqs = async (req, res, next) => {
     }
 
     const data = await rfqModel.findSellerFeed(req.user.id, filters);
-    return success(res, 'Seller RFQ feed retrieved successfully', data);
+    const finalData = await translationService.translateRfqList(data, lang);
+    return success(res, 'Seller RFQ feed retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -226,8 +269,10 @@ const getSellerRfqs = async (req, res, next) => {
 
 const getSellerRfq = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const rfq = await rfqService.getSellerRfqDetail(req.params.id, req.user.id);
-    return success(res, 'RFQ details retrieved successfully', rfq);
+    const finalData = await translationService.translateRfqItem(rfq, lang);
+    return success(res, 'RFQ details retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -235,8 +280,10 @@ const getSellerRfq = async (req, res, next) => {
 
 const getMyQuotations = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await quotationModel.findSellerQuotations(req.user.id, buildQuotationListFilters(req));
-    return success(res, 'Seller quotations retrieved successfully', data);
+    const finalData = await translationService.translateRfqQuotationList(data, lang);
+    return success(res, 'Seller quotations retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -244,12 +291,14 @@ const getMyQuotations = async (req, res, next) => {
 
 const getMyQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const quotation = await quotationModel.findById(req.params.quotationId);
     if (!quotation) return next(new AppError('Quotation not found', HTTP_STATUS.NOT_FOUND));
     if (quotation.seller_id !== req.user.id) {
       return next(new AppError('Forbidden: Access denied', HTTP_STATUS.FORBIDDEN));
     }
-    return success(res, 'Quotation details retrieved successfully', quotation);
+    const finalData = await translationService.translateRfqQuotationItem(quotation, lang);
+    return success(res, 'Quotation details retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -261,8 +310,10 @@ const getMyQuotation = async (req, res, next) => {
 
 const submitQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const quotation = await rfqService.submitQuotation(req.params.id, req.body, req.user.id);
-    return success(res, 'Quotation submitted successfully', quotation, HTTP_STATUS.CREATED);
+    const finalData = await translationService.translateRfqQuotationItem(quotation, lang);
+    return success(res, 'Quotation submitted successfully', finalData, HTTP_STATUS.CREATED);
   } catch (err) {
     next(err);
   }
@@ -270,9 +321,11 @@ const submitQuotation = async (req, res, next) => {
 
 const getQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const quotation = await quotationModel.findById(req.params.quotationId);
     if (!quotation) return next(new AppError('Quotation not found', HTTP_STATUS.NOT_FOUND));
-    return success(res, 'Quotation details retrieved successfully', quotation);
+    const finalData = await translationService.translateRfqQuotationItem(quotation, lang);
+    return success(res, 'Quotation details retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -280,8 +333,10 @@ const getQuotation = async (req, res, next) => {
 
 const updateQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const quotation = await rfqService.updateQuotation(req.params.quotationId, req.body, req.user.id);
-    return success(res, 'Quotation updated successfully', quotation);
+    const finalData = await translationService.translateRfqQuotationItem(quotation, lang);
+    return success(res, 'Quotation updated successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -289,8 +344,10 @@ const updateQuotation = async (req, res, next) => {
 
 const withdrawQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const quotation = await rfqService.withdrawQuotation(req.params.quotationId, req.user.id);
-    return success(res, 'Quotation withdrawn successfully', quotation);
+    const finalData = await translationService.translateRfqQuotationItem(quotation, lang);
+    return success(res, 'Quotation withdrawn successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -298,8 +355,10 @@ const withdrawQuotation = async (req, res, next) => {
 
 const acceptQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const quotation = await rfqService.acceptQuotation(req.params.quotationId, req.user.id, isAdmin(req.user));
-    return success(res, 'Quotation accepted successfully', quotation);
+    const finalData = await translationService.translateRfqQuotationItem(quotation, lang);
+    return success(res, 'Quotation accepted successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -307,8 +366,10 @@ const acceptQuotation = async (req, res, next) => {
 
 const rejectQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const quotation = await rfqService.rejectQuotation(req.params.quotationId, req.user.id, isAdmin(req.user));
-    return success(res, 'Quotation rejected successfully', quotation);
+    const finalData = await translationService.translateRfqQuotationItem(quotation, lang);
+    return success(res, 'Quotation rejected successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -316,8 +377,10 @@ const rejectQuotation = async (req, res, next) => {
 
 const requestRevision = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const quotation = await rfqService.requestRevision(req.params.quotationId, req.user.id, req.body.remarks);
-    return success(res, 'Revision requested successfully', quotation);
+    const finalData = await translationService.translateRfqQuotationItem(quotation, lang);
+    return success(res, 'Revision requested successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -325,8 +388,10 @@ const requestRevision = async (req, res, next) => {
 
 const reviseQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const quotation = await rfqService.reviseQuotation(req.params.quotationId, req.body, req.user.id);
-    return success(res, 'Revised quotation submitted successfully', quotation);
+    const finalData = await translationService.translateRfqQuotationItem(quotation, lang);
+    return success(res, 'Revised quotation submitted successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -338,8 +403,10 @@ const reviseQuotation = async (req, res, next) => {
 
 const getAdminRfqs = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await rfqModel.findRfqs({ ...buildListFilters(req), include_private: true });
-    return success(res, 'Admin RFQs retrieved successfully', data);
+    const finalData = await translationService.translateRfqList(data, lang);
+    return success(res, 'Admin RFQs retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -347,9 +414,11 @@ const getAdminRfqs = async (req, res, next) => {
 
 const getAdminRfq = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const rfq = await rfqService.getRfqDetail(req.params.id, { includeQuotations: true });
     if (!rfq) return next(new AppError('RFQ not found', HTTP_STATUS.NOT_FOUND));
-    return success(res, 'Admin RFQ details retrieved successfully', rfq);
+    const finalData = await translationService.translateRfqItem(rfq, lang);
+    return success(res, 'Admin RFQ details retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -357,8 +426,10 @@ const getAdminRfq = async (req, res, next) => {
 
 const updateAdminRfqStatus = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const rfq = await rfqService.adminUpdateStatus(req.params.id, req.body.status, req.user.id);
-    return success(res, 'RFQ status updated successfully', rfq);
+    const finalData = await translationService.translateRfqItem(rfq, lang);
+    return success(res, 'RFQ status updated successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -366,8 +437,10 @@ const updateAdminRfqStatus = async (req, res, next) => {
 
 const getAdminQuotations = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await quotationModel.findAllQuotations(buildQuotationListFilters(req));
-    return success(res, 'Admin quotations retrieved successfully', data);
+    const finalData = await translationService.translateRfqQuotationList(data, lang);
+    return success(res, 'Admin quotations retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }

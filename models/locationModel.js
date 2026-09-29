@@ -93,6 +93,11 @@ const listCitiesByStateId = async (stateId, filters = {}) => {
 
 const findCountryById = (countryId) => db('countries').where({ id: countryId }).first();
 
+const findCountryByCode = (code) =>
+  db('countries').where('code', String(code).toUpperCase()).first();
+
+const findFirstCountry = () => db('countries').where({ is_active: true }).first();
+
 const findStateById = (stateId) => db('states').where({ id: stateId }).first();
 
 const findCityById = (cityId) => db('cities').where({ id: cityId }).first();
@@ -102,7 +107,8 @@ const findCityById = (cityId) => db('cities').where({ id: cityId }).first();
  * @returns {Promise<boolean>}
  */
 const validateLocationIds = async (countryId, stateId, cityId) => {
-  const country = await findCountryById(countryId);
+  let country = await findCountryById(countryId);
+  if (!country) country = await findCountryByCode('IN') || await findFirstCountry();
   if (!country?.is_active) return false;
 
   const state = await findStateById(stateId);
@@ -119,6 +125,8 @@ module.exports = {
   listStatesByCountryId,
   listCitiesByStateId,
   findCountryById,
+  findCountryByCode,
+  findFirstCountry,
   findStateById,
   findCityById,
   validateLocationIds,

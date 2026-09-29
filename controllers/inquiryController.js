@@ -5,7 +5,24 @@
  */
 const inquiryService = require('../services/inquiryService');
 const inquiryQuotationModel = require('../models/inquiryQuotationModel');
+const translationService = require('../services/translationTestService');
 const { success } = require('../utils/response');
+
+/**
+ * Extracts language code from query ('lang' or 'language') or headers ('x-language' or 'accept-language').
+ */
+const extractRequestLanguage = (req) => {
+  const queryLang = req.query?.lang || req.query?.language;
+  if (queryLang && typeof queryLang === 'string') return queryLang.toLowerCase().trim();
+  const headerLang = req.headers?.['x-language'] || req.headers?.['accept-language'];
+  if (headerLang && typeof headerLang === 'string') {
+    const firstCode = headerLang.split(',')[0].split('-')[0].trim().toLowerCase();
+    if (firstCode && firstCode !== '*' && translationService.SUPPORTED_LANGUAGES[firstCode]) {
+      return firstCode;
+    }
+  }
+  return 'en';
+};
 
 // ==========================================
 // Buyer operations
@@ -17,8 +34,10 @@ const { success } = require('../utils/response');
  */
 const createInquiry = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryService.createInquiry(req.user.id, req.body);
-    return success(res, 'Inquiry created successfully', data, 201);
+    const finalData = await translationService.translateInquiryItem(data, lang);
+    return success(res, 'Inquiry created successfully', finalData, 201);
   } catch (err) {
     next(err);
   }
@@ -30,8 +49,10 @@ const createInquiry = async (req, res, next) => {
  */
 const getMyInquiries = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryService.listBuyerInquiries(req.user.id, req.query);
-    return success(res, 'Inquiries retrieved successfully', data);
+    const finalData = await translationService.translateInquiryList(data, lang);
+    return success(res, 'Inquiries retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -43,11 +64,13 @@ const getMyInquiries = async (req, res, next) => {
  */
 const getInquiry = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const markViewed = req.query.mark_viewed !== 'false';
     const data = await inquiryService.getInquiryForUser(req.params.id, req.user.id, {
       markViewed,
     });
-    return success(res, 'Inquiry retrieved successfully', data);
+    const finalData = await translationService.translateInquiryItem(data, lang);
+    return success(res, 'Inquiry retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -59,8 +82,10 @@ const getInquiry = async (req, res, next) => {
  */
 const updateInquiry = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryService.updateInquiry(req.params.id, req.user.id, req.body);
-    return success(res, 'Inquiry updated successfully', data);
+    const finalData = await translationService.translateInquiryItem(data, lang);
+    return success(res, 'Inquiry updated successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -72,8 +97,10 @@ const updateInquiry = async (req, res, next) => {
  */
 const cancelInquiry = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryService.cancelInquiry(req.params.id, req.user.id);
-    return success(res, 'Inquiry cancelled successfully', data);
+    const finalData = await translationService.translateInquiryItem(data, lang);
+    return success(res, 'Inquiry cancelled successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -89,8 +116,10 @@ const cancelInquiry = async (req, res, next) => {
  */
 const getSellerInquiries = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryService.listSellerInquiries(req.user.id, req.query);
-    return success(res, 'Seller inquiries retrieved successfully', data);
+    const finalData = await translationService.translateInquiryList(data, lang);
+    return success(res, 'Seller inquiries retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -102,12 +131,14 @@ const getSellerInquiries = async (req, res, next) => {
  */
 const rejectInquiry = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryService.rejectInquiry(
       req.params.id,
       req.user.id,
       req.body.reason || req.body.reject_reason || null,
     );
-    return success(res, 'Inquiry rejected successfully', data);
+    const finalData = await translationService.translateInquiryItem(data, lang);
+    return success(res, 'Inquiry rejected successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -136,8 +167,10 @@ const startChat = async (req, res, next) => {
  */
 const submitQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryService.submitQuotation(req.params.id, req.user.id, req.body);
-    return success(res, 'Quotation submitted successfully', data, 201);
+    const finalData = await translationService.translateInquiryItem(data, lang);
+    return success(res, 'Quotation submitted successfully', finalData, 201);
   } catch (err) {
     next(err);
   }
@@ -149,8 +182,10 @@ const submitQuotation = async (req, res, next) => {
  */
 const getMyQuotations = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryQuotationModel.listBySeller(req.user.id, req.query);
-    return success(res, 'Quotations retrieved successfully', data);
+    const finalData = await translationService.translateInquiryQuotationList(data, lang);
+    return success(res, 'Quotations retrieved successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -162,8 +197,10 @@ const getMyQuotations = async (req, res, next) => {
  */
 const updateQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryService.updateQuotation(req.params.quotationId, req.user.id, req.body);
-    return success(res, 'Quotation updated successfully', data);
+    const finalData = await translationService.translateInquiryItem(data, lang);
+    return success(res, 'Quotation updated successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -175,8 +212,10 @@ const updateQuotation = async (req, res, next) => {
  */
 const withdrawQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryService.withdrawQuotation(req.params.quotationId, req.user.id);
-    return success(res, 'Quotation withdrawn successfully', data);
+    const finalData = await translationService.translateInquiryItem(data, lang);
+    return success(res, 'Quotation withdrawn successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -188,8 +227,10 @@ const withdrawQuotation = async (req, res, next) => {
  */
 const acceptQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryService.acceptQuotation(req.params.quotationId, req.user.id);
-    return success(res, 'Quotation accepted successfully', data);
+    const finalData = await translationService.translateInquiryItem(data, lang);
+    return success(res, 'Quotation accepted successfully', finalData);
   } catch (err) {
     next(err);
   }
@@ -201,8 +242,10 @@ const acceptQuotation = async (req, res, next) => {
  */
 const rejectQuotation = async (req, res, next) => {
   try {
+    const lang = extractRequestLanguage(req);
     const data = await inquiryService.rejectQuotation(req.params.quotationId, req.user.id);
-    return success(res, 'Quotation rejected successfully', data);
+    const finalData = await translationService.translateInquiryItem(data, lang);
+    return success(res, 'Quotation rejected successfully', finalData);
   } catch (err) {
     next(err);
   }

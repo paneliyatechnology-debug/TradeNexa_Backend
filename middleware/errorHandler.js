@@ -71,9 +71,10 @@ const errorHandler = (err, req, res, _next) => {
   // ==========================================
 
   if (statusCode >= 500) {
+    console.error(`[ErrorHandler 500] ${req.method} ${req.originalUrl}:`, err);
     logger.error(message, { stack: err.stack, path: req.originalUrl });
-    if (process.env.NODE_ENV === 'production') {
-      message = 'Internal server error';
+    if (process.env.NODE_ENV === 'production' && !process.env.SHOW_ERRORS) {
+      message = err.message || 'Internal server error';
     }
   }
 

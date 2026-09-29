@@ -79,7 +79,14 @@ const createCategory = async (data, files = {}, userId = null) => {
   const category = await categoryModel.createCategory(payload, userId);
   const withImages = await applyCreateImages(category.id, files);
   const row = withImages || (await categoryModel.findCategoryById(category.id));
-  return formatCategory(row);
+  const result = formatCategory(row);
+  console.log('✨ [CATEGORY CREATED]:', {
+    id: result?.id,
+    name: result?.name,
+    icon: result?.icon,
+    image: result?.image,
+  });
+  return result;
 };
 
 /**
@@ -90,7 +97,14 @@ const updateCategory = async (id, data, files = {}, userId = null) => {
   const existing = await categoryModel.findCategoryById(id);
   const imageUpdates = await applyUpdateImages(id, files, existing || {});
   const row = await categoryModel.updateCategory(id, { ...payload, ...imageUpdates }, userId);
-  return formatCategory(row);
+  const result = formatCategory(row);
+  console.log('✨ [CATEGORY UPDATED]:', {
+    id: result?.id,
+    name: result?.name,
+    icon: result?.icon,
+    image: result?.image,
+  });
+  return result;
 };
 
 // ==========================================
@@ -105,7 +119,15 @@ const createSubcategory = async (parentId, data, files = {}, userId = null) => {
   const subcategory = await categoryModel.createSubcategory(parentId, payload, userId);
   const withImages = await applyCreateImages(subcategory.id, files);
   const row = withImages || (await categoryModel.findSubcategoryById(subcategory.id, parentId));
-  return formatSubcategory(row);
+  const result = formatSubcategory(row);
+  console.log('✨ [SUBCATEGORY CREATED]:', {
+    id: result?.id,
+    category_id: result?.category_id,
+    name: result?.name,
+    icon: result?.icon,
+    image: result?.image,
+  });
+  return result;
 };
 
 /**
@@ -121,7 +143,15 @@ const updateSubcategory = async (parentId, id, data, files = {}, userId = null) 
     { ...payload, ...imageUpdates },
     userId,
   );
-  return formatSubcategory(row);
+  const result = formatSubcategory(row);
+  console.log('✨ [SUBCATEGORY UPDATED]:', {
+    id: result?.id,
+    category_id: result?.category_id,
+    name: result?.name,
+    icon: result?.icon,
+    image: result?.image,
+  });
+  return result;
 };
 
 module.exports = {
