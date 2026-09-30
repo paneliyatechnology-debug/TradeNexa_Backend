@@ -83,11 +83,6 @@ const findBusinessTypes = async (filters = {}) => {
         const allowedRoleIds = [role.id];
         if (buyerSellerRole) allowedRoleIds.push(buyerSellerRole.id);
         q.whereIn('business_types.role_id', allowedRoleIds);
-      } else if (role.code === 'buyer_seller' || role.code === 'both') {
-        const allowedRoleIds = [role.id];
-        if (buyerRole) allowedRoleIds.push(buyerRole.id);
-        if (sellerRole) allowedRoleIds.push(sellerRole.id);
-        q.whereIn('business_types.role_id', allowedRoleIds);
       } else {
         q.where('business_types.role_id', role.id);
       }
