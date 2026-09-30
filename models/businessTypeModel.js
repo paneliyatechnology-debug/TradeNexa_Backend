@@ -64,29 +64,7 @@ const findBusinessTypes = async (filters = {}) => {
 
   if (filters.role_id !== undefined && filters.role_id !== null && filters.role_id !== 'all' && filters.role_id !== '') {
     const numericRoleId = parseInt(filters.role_id, 10);
-    const role = await db('roles').where({ id: numericRoleId }).first();
-
-    if (!role) {
-      q.where('business_types.role_id', numericRoleId);
-    } else if (filters.exact_role) {
-      q.where('business_types.role_id', role.id);
-    } else {
-      const buyerSellerRole = await db('roles').where({ code: 'buyer_seller' }).first();
-      const buyerRole = await db('roles').where({ code: 'buyer' }).first();
-      const sellerRole = await db('roles').where({ code: 'seller' }).first();
-
-      if (role.code === 'buyer') {
-        const allowedRoleIds = [role.id];
-        if (buyerSellerRole) allowedRoleIds.push(buyerSellerRole.id);
-        q.whereIn('business_types.role_id', allowedRoleIds);
-      } else if (role.code === 'seller') {
-        const allowedRoleIds = [role.id];
-        if (buyerSellerRole) allowedRoleIds.push(buyerSellerRole.id);
-        q.whereIn('business_types.role_id', allowedRoleIds);
-      } else {
-        q.where('business_types.role_id', role.id);
-      }
-    }
+    q.where('business_types.role_id', numericRoleId);
   }
 
   if (filters.search) {
