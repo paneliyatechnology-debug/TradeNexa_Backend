@@ -26,6 +26,10 @@ const start = async () => {
     await db.raw('SELECT 1');
     console.log('[Server] Database connected successfully!');
 
+    // Ensure business types and roles are initialized if empty
+    const { ensureDefaultBusinessTypes } = require('./models/businessTypeModel');
+    await ensureDefaultBusinessTypes();
+
     const server = http.createServer(app);
     initSocket(server);
 

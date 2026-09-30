@@ -55,11 +55,87 @@ const baseQuery = () =>
 const findById = (id) => baseQuery().where('business_types.id', id).first();
 
 /**
+ * Ensure default business types exist in the database if the table is empty.
+ */
+const ensureDefaultBusinessTypes = async () => {
+  try {
+    const countRow = await db('business_types').count('id as cnt').first();
+    const count = Number(countRow?.cnt || 0);
+    if (count > 0) return;
+
+    let buyerRole = await db('roles').where({ code: 'buyer' }).first();
+    let sellerRole = await db('roles').where({ code: 'seller' }).first();
+    let buyerSellerRole = await db('roles').where({ code: 'buyer_seller' }).first();
+
+    // If roles don't exist yet, seed standard roles
+    if (!buyerRole || !sellerRole) {
+      const defaultRoles = [
+        { id: 1, code: 'super_admin', name: 'Super Admin', description: 'Super Administrator', is_active: 1 },
+        { id: 2, code: 'buyer', name: 'Buyer', description: 'Buyer', is_active: 1 },
+        { id: 3, code: 'seller', name: 'Seller', description: 'Seller', is_active: 1 },
+        { id: 4, code: 'buyer_seller', name: 'Buyer + Seller', description: 'Buyer and Seller', is_active: 1 },
+        { id: 5, code: 'admin', name: 'Admin', description: 'Admin', is_active: 1 },
+      ];
+      for (const r of defaultRoles) {
+        const exists = await db('roles').where({ id: r.id }).first();
+        if (!exists) {
+          try {
+            await db('roles').insert(r);
+          } catch {}
+        }
+      }
+      buyerRole = await db('roles').where({ code: 'buyer' }).first();
+      sellerRole = await db('roles').where({ code: 'seller' }).first();
+      buyerSellerRole = await db('roles').where({ code: 'buyer_seller' }).first();
+    }
+
+    const BUYER_TYPES = [
+      'Retailer',
+      'Wholesaler',
+      'Distributor',
+      'Trader',
+      'Importer',
+      'Contractor',
+      'Service Provider',
+      'Corporate Company',
+      'Startup',
+    ];
+
+    const SELLER_TYPES = [
+      'Manufacturer',
+      'Wholesaler',
+      'Distributor',
+      'Exporter',
+      'Importer',
+      'Supplier',
+      'Dealer',
+      'Trader',
+      'Brand Owner',
+    ];
+
+    const BUYER_SELLER_TYPES = Array.from(new Set([...BUYER_TYPES, ...SELLER_TYPES]));
+
+    const rows = [
+      ...(buyerRole ? BUYER_TYPES.map((name) => ({ name, code: slugify(name), role_id: buyerRole.id, is_active: true })) : []),
+      ...(sellerRole ? SELLER_TYPES.map((name) => ({ name, code: slugify(name), role_id: sellerRole.id, is_active: true })) : []),
+      ...(buyerSellerRole ? BUYER_SELLER_TYPES.map((name) => ({ name, code: slugify(name), role_id: buyerSellerRole.id, is_active: true })) : []),
+    ];
+
+    if (rows.length > 0) {
+      await db('business_types').insert(rows);
+    }
+  } catch (err) {
+    console.warn('[BusinessType] Failed to auto-initialize default business types:', err.message);
+  }
+};
+
+/**
  * List business types with optional role, search, filters, and sorting.
  * @param {Object} [filters] - role_id, search, is_active, page, limit, sort_by, sort_order
  * @returns {Promise<Object>}
  */
 const findBusinessTypes = async (filters = {}) => {
+  await ensureDefaultBusinessTypes();
   const q = baseQuery();
 
   if (filters.role_id) {
@@ -71,8 +147,18 @@ const findBusinessTypes = async (filters = {}) => {
       q.where('business_types.role_id', filters.role_id);
     } else {
       const buyerSellerRole = await db('roles').where({ code: 'buyer_seller', is_active: true }).first();
-      if (buyerSellerRole && (role.code === 'buyer' || role.code === 'seller')) {
-        q.whereIn('business_types.role_id', [filters.role_id, buyerSellerRole.id]);
+      if (role.code === 'buyer' || role.code === 'seller') {
+        const allowedRoleIds = [filters.role_id];
+        if (buyerSellerRole) allowedRoleIds.push(buyerSellerRole.id);
+        q.whereIn('business_types.role_id', allowedRoleIds);
+      } else if (role.code === 'buyer_seller') {
+        // Return all business types suitable for buyer and seller
+        const buyer = await db('roles').where({ code: 'buyer' }).first();
+        const seller = await db('roles').where({ code: 'seller' }).first();
+        const allowedRoleIds = [filters.role_id];
+        if (buyer) allowedRoleIds.push(buyer.id);
+        if (seller) allowedRoleIds.push(seller.id);
+        q.whereIn('business_types.role_id', allowedRoleIds);
       } else {
         q.where('business_types.role_id', filters.role_id);
       }
@@ -257,5 +343,6 @@ module.exports = {
   softDelete,
   deleteMany,
   deleteAll,
+  ensureDefaultBusinessTypes,
 };
 
