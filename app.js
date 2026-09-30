@@ -37,10 +37,15 @@ app.set('trust proxy', 1);
 const ALWAYS_ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:3001',
+  'http://localhost:5173',
+  'http://localhost:5174',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
   'https://www.tradenexa.co',
   'https://tradenexa.co',
+  'https://admin.tradenexa.co',
   'https://tradenexabackend-dev.up.railway.app',
   'https://tradenexabackend-production.up.railway.app',
 ];
@@ -64,6 +69,16 @@ const corsOptions = {
       return callback(null, origin);
     }
 
+    // Allow all *.tradenexa.co subdomains (e.g. admin.tradenexa.co, app.tradenexa.co)
+    if (/^https:\/\/([a-zA-Z0-9-]+\.)*tradenexa\.co$/.test(origin)) {
+      return callback(null, origin);
+    }
+
+    // Allow railway app domains
+    if (/^https:\/\/([a-zA-Z0-9-]+\.)*railway\.app$/.test(origin)) {
+      return callback(null, origin);
+    }
+
     // Allow private LAN IPs for mobile/LAN testing.
     if (/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(origin)) {
       return callback(null, origin);
@@ -78,8 +93,8 @@ const corsOptions = {
       return callback(null, origin);
     }
 
-    // Reject unknown origins.
-    return callback(new Error(`CORS: origin '${origin}' not allowed`));
+    // Disallow unknown origins gracefully without throwing unhandled exceptions
+    return callback(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
