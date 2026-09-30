@@ -55,95 +55,18 @@ const baseQuery = () =>
 const findById = (id) => baseQuery().where('business_types.id', id).first();
 
 /**
- * Ensure default business types exist in the database if the table is empty.
- */
-const ensureDefaultBusinessTypes = async () => {
-  try {
-    const countRow = await db('business_types').count('id as cnt').first();
-    const count = Number(countRow?.cnt || 0);
-    if (count > 0) return;
-
-    let buyerRole = await db('roles').where({ code: 'buyer' }).first();
-    let sellerRole = await db('roles').where({ code: 'seller' }).first();
-    let buyerSellerRole = await db('roles').where({ code: 'buyer_seller' }).first();
-
-    // If roles don't exist yet, seed standard roles
-    if (!buyerRole || !sellerRole) {
-      const defaultRoles = [
-        { id: 1, code: 'super_admin', name: 'Super Admin', description: 'Super Administrator', is_active: 1 },
-        { id: 2, code: 'buyer', name: 'Buyer', description: 'Buyer', is_active: 1 },
-        { id: 3, code: 'seller', name: 'Seller', description: 'Seller', is_active: 1 },
-        { id: 4, code: 'buyer_seller', name: 'Buyer + Seller', description: 'Buyer and Seller', is_active: 1 },
-        { id: 5, code: 'admin', name: 'Admin', description: 'Admin', is_active: 1 },
-      ];
-      for (const r of defaultRoles) {
-        const exists = await db('roles').where({ id: r.id }).first();
-        if (!exists) {
-          try {
-            await db('roles').insert(r);
-          } catch {}
-        }
-      }
-      buyerRole = await db('roles').where({ code: 'buyer' }).first();
-      sellerRole = await db('roles').where({ code: 'seller' }).first();
-      buyerSellerRole = await db('roles').where({ code: 'buyer_seller' }).first();
-    }
-
-    const BUYER_TYPES = [
-      'Retailer',
-      'Wholesaler',
-      'Distributor',
-      'Trader',
-      'Importer',
-      'Contractor',
-      'Service Provider',
-      'Corporate Company',
-      'Startup',
-    ];
-
-    const SELLER_TYPES = [
-      'Manufacturer',
-      'Wholesaler',
-      'Distributor',
-      'Exporter',
-      'Importer',
-      'Supplier',
-      'Dealer',
-      'Trader',
-      'Brand Owner',
-    ];
-
-    const BUYER_SELLER_TYPES = Array.from(new Set([...BUYER_TYPES, ...SELLER_TYPES]));
-
-    const rows = [
-      ...(buyerRole ? BUYER_TYPES.map((name) => ({ name, code: slugify(name), role_id: buyerRole.id, is_active: true })) : []),
-      ...(sellerRole ? SELLER_TYPES.map((name) => ({ name, code: slugify(name), role_id: sellerRole.id, is_active: true })) : []),
-      ...(buyerSellerRole ? BUYER_SELLER_TYPES.map((name) => ({ name, code: slugify(name), role_id: buyerSellerRole.id, is_active: true })) : []),
-    ];
-
-    if (rows.length > 0) {
-      await db('business_types').insert(rows);
-    }
-  } catch (err) {
-    console.warn('[BusinessType] Failed to auto-initialize default business types:', err.message);
-  }
-};
-
-/**
  * List business types with optional role, search, filters, and sorting.
  * @param {Object} [filters] - role_id, search, is_active, page, limit, sort_by, sort_order
  * @returns {Promise<Object>}
  */
 const findBusinessTypes = async (filters = {}) => {
-  await ensureDefaultBusinessTypes();
   const q = baseQuery();
 
-  if (filters.role_id !== undefined && filters.role_id !== null && filters.role_id !== 'all') {
+  if (filters.role_id !== undefined && filters.role_id !== null && filters.role_id !== 'all' && filters.role_id !== '') {
     const numericRoleId = parseInt(filters.role_id, 10);
     const role = await db('roles').where({ id: numericRoleId }).first();
 
     if (!role) {
-      // Fallback: search directly by numeric role_id
       q.where('business_types.role_id', numericRoleId);
     } else if (filters.exact_role) {
       q.where('business_types.role_id', role.id);
@@ -230,26 +153,6 @@ const create = async (data) => {
   }
 
   const code = data.code ? slugify(data.code) : slugify(data.name);
-
-  // If table is completely empty, insert the first record with ID 0
-  const countRow = await db('business_types').count('id as cnt').first();
-  const count = Number(countRow?.cnt || 0);
-
-  if (count === 0) {
-    try {
-      await db.raw("SET sql_mode = 'NO_AUTO_VALUE_ON_ZERO';");
-      await db('business_types').insert({
-        id: 0,
-        name: data.name.trim(),
-        code,
-        role_id: data.role_id,
-        is_active: data.is_active !== undefined ? data.is_active : true,
-      });
-      return findById(0);
-    } catch {
-      // Fallback to default auto-increment if engine rejects 0
-    }
-  }
 
   const [id] = await db('business_types').insert({
     name: data.name.trim(),
@@ -349,6 +252,5 @@ module.exports = {
   softDelete,
   deleteMany,
   deleteAll,
-  ensureDefaultBusinessTypes,
 };
 
