@@ -115,7 +115,7 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
 /**
  * Fallback free translator (MyMemory API) if Google is rate limited
  */
-const translateWithMyMemory = async (text, targetLang, sourceLang = 'auto', timeoutMs = 10000) => {
+const translateWithMyMemory = async (text, targetLang, sourceLang = 'auto', timeoutMs = 2500) => {
   let sLang = sourceLang;
   if (!sLang || sLang === 'auto' || sLang === 'autodetect') {
     sLang = detectScriptLanguage(text);
@@ -143,7 +143,7 @@ const translateWithMyMemory = async (text, targetLang, sourceLang = 'auto', time
 /**
  * 1. Google Web / Free Translation Provider (Zero-config for instant local testing)
  */
-const translateWithFreeGoogle = async (text, targetLang, sourceLang = 'auto', timeoutMs = 10000) => {
+const translateWithFreeGoogle = async (text, targetLang, sourceLang = 'auto', timeoutMs = 2500) => {
   if (!text || typeof text !== 'string') return '';
   const sl = sourceLang || 'auto';
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(
@@ -395,7 +395,7 @@ const translateSingleText = async (text, targetLang, sourceLang = 'auto', option
   const apiKey = options.apiKey || config.translation?.apiKey || process.env.TRANSLATION_API_KEY;
   const baseUrl = options.baseUrl || config.translation?.baseUrl || process.env.TRANSLATION_BASE_URL;
   const timeoutMs = parseInt(
-    options.timeoutMs || config.translation?.timeoutMs || process.env.TRANSLATION_TIMEOUT_MS || 10000,
+    options.timeoutMs || config.translation?.timeoutMs || process.env.TRANSLATION_TIMEOUT_MS || 2500,
     10
   );
 
@@ -505,7 +505,12 @@ const translateProduct = async ({
  * Safe text translation helper that returns the original text if error occurs.
  */
 const translateTextSafe = async (text, targetLang, sourceLang = 'auto', options = {}) => {
-  if (!text || typeof text !== 'string' || !text.trim()) {
+  if (!text || typeof text !== 'string' || !text.trim() || text.trim().length <= 1) {
+    return text;
+  }
+  const trimmed = text.trim();
+  // Skip pure numbers or email addresses
+  if (/^\d+$/.test(trimmed) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
     return text;
   }
   const detected = detectScriptLanguage(text);
@@ -524,6 +529,119 @@ const translateTextSafe = async (text, targetLang, sourceLang = 'auto', options 
   } catch (err) {
     return text;
   }
+};
+
+/**
+ * Batch text translation helper that translates an array of strings in a SINGLE external request.
+ * Drastically reduces network round-trips and eliminates user details translation latency.
+ */
+const translateBatchTextSafe = async (texts, targetLang, sourceLang = 'auto', options = {}) => {
+  if (!Array.isArray(texts) || texts.length === 0) return [];
+  if (!targetLang || targetLang === sourceLang) return texts;
+
+  const results = [...texts];
+  const indicesToTranslate = [];
+
+  for (let i = 0; i < texts.length; i++) {
+    const text = texts[i];
+    if (!text || typeof text !== 'string' || !text.trim() || text.trim().length <= 1) {
+      continue;
+    }
+    const trimmed = text.trim();
+    if (/^\d+$/.test(trimmed) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      continue;
+    }
+    const detected = detectScriptLanguage(text);
+    if (detected !== 'auto' && detected === targetLang) {
+      continue;
+    }
+    if (sourceLang !== 'auto' && targetLang === sourceLang) {
+      continue;
+    }
+    indicesToTranslate.push(i);
+  }
+
+  if (indicesToTranslate.length === 0) {
+    return results;
+  }
+
+  // Check cache for individual items first
+  const missingIndices = [];
+  const provider = (
+    options.provider ||
+    config.translation?.provider ||
+    process.env.TRANSLATION_PROVIDER ||
+    'free_google'
+  ).toLowerCase();
+
+  for (const idx of indicesToTranslate) {
+    const text = texts[idx];
+    const detected = detectScriptLanguage(text);
+    const effectiveSource = sourceLang === 'auto' ? (detected !== 'auto' ? detected : 'auto') : sourceLang;
+    const cacheKey = `${provider}:${effectiveSource}:${targetLang}:${text.trim()}`;
+
+    if (translationCache.has(cacheKey)) {
+      const cached = translationCache.get(cacheKey);
+      if (cached && !isInvalidTranslation(cached)) {
+        results[idx] = cached;
+        continue;
+      }
+    }
+    missingIndices.push(idx);
+  }
+
+  if (missingIndices.length === 0) {
+    return results;
+  }
+
+  if (missingIndices.length === 1) {
+    const idx = missingIndices[0];
+    results[idx] = await translateTextSafe(texts[idx], targetLang, sourceLang, options);
+    return results;
+  }
+
+  // Join missing items with delimiter for single-request batch translation
+  const DELIMITER = '\n|||\n';
+  const joinedText = missingIndices.map((idx) => texts[idx]).join(DELIMITER);
+
+  try {
+    const translatedJoined = await translateSingleText(joinedText, targetLang, sourceLang, {
+      ...options,
+      timeoutMs: options.timeoutMs || 2500,
+    });
+
+    if (translatedJoined && !isInvalidTranslation(translatedJoined)) {
+      const parts = translatedJoined.split(/\s*\|\|\|\s*/);
+      if (parts.length === missingIndices.length) {
+        missingIndices.forEach((idx, i) => {
+          const translatedItem = parts[i]?.trim();
+          if (translatedItem && !isInvalidTranslation(translatedItem)) {
+            results[idx] = translatedItem;
+            // Cache individual item result
+            const text = texts[idx];
+            const detected = detectScriptLanguage(text);
+            const effectiveSource = sourceLang === 'auto' ? (detected !== 'auto' ? detected : 'auto') : sourceLang;
+            const cacheKey = `${provider}:${effectiveSource}:${targetLang}:${text.trim()}`;
+            translationCache.set(cacheKey, translatedItem);
+          }
+        });
+        return results;
+      }
+    }
+  } catch (err) {
+    // Fall back to parallel individual translateTextSafe
+  }
+
+  await Promise.all(
+    missingIndices.map(async (idx) => {
+      results[idx] = await translateTextSafe(texts[idx], targetLang, sourceLang, {
+        ...options,
+        timeoutMs: 1500,
+      });
+    })
+  );
+
+  return results;
 };
 
 /**
@@ -892,6 +1010,20 @@ const translateCategoryList = async (categoryData, targetLang, sourceLang = 'en'
 const translateUserProfile = async (userProfile, targetLang, sourceLang = 'en', options = {}) => {
   if (!userProfile || !targetLang || targetLang === sourceLang) return userProfile;
 
+  const rawFields = [
+    userProfile.full_name,
+    userProfile.company_name,
+    userProfile.industry,
+    userProfile.business_description,
+    userProfile.business_type?.name,
+    userProfile.category?.name,
+    userProfile.address?.city,
+    userProfile.address?.state,
+    userProfile.address?.country,
+    userProfile.address?.address_line_1,
+    userProfile.address?.address_line_2,
+  ];
+
   const [
     tFullName,
     tCompanyName,
@@ -904,19 +1036,7 @@ const translateUserProfile = async (userProfile, targetLang, sourceLang = 'en', 
     tCountry,
     tAddress1,
     tAddress2,
-  ] = await Promise.all([
-    translateTextSafe(userProfile.full_name, targetLang, sourceLang, options),
-    translateTextSafe(userProfile.company_name, targetLang, sourceLang, options),
-    translateTextSafe(userProfile.industry, targetLang, sourceLang, options),
-    translateTextSafe(userProfile.business_description, targetLang, sourceLang, options),
-    translateTextSafe(userProfile.business_type?.name, targetLang, sourceLang, options),
-    translateTextSafe(userProfile.category?.name, targetLang, sourceLang, options),
-    translateTextSafe(userProfile.address?.city, targetLang, sourceLang, options),
-    translateTextSafe(userProfile.address?.state, targetLang, sourceLang, options),
-    translateTextSafe(userProfile.address?.country, targetLang, sourceLang, options),
-    translateTextSafe(userProfile.address?.address_line_1, targetLang, sourceLang, options),
-    translateTextSafe(userProfile.address?.address_line_2, targetLang, sourceLang, options),
-  ]);
+  ] = await translateBatchTextSafe(rawFields, targetLang, sourceLang, options);
 
   return {
     ...userProfile,
@@ -968,6 +1088,19 @@ const translateUserProfile = async (userProfile, targetLang, sourceLang = 'en', 
 const translateSellerProfile = async (seller, targetLang, sourceLang = 'en', options = {}) => {
   if (!seller || !targetLang || targetLang === sourceLang) return seller;
 
+  const rawFields = [
+    seller.name,
+    seller.company_name,
+    seller.business_name,
+    seller.business_type,
+    seller.industry,
+    seller.business_description || seller.description,
+    seller.city || seller.address?.city,
+    seller.state || seller.address?.state,
+    seller.country || seller.address?.country,
+    seller.address_line_1 || seller.address?.address_line_1,
+  ];
+
   const [
     tName,
     tCompanyName,
@@ -979,18 +1112,7 @@ const translateSellerProfile = async (seller, targetLang, sourceLang = 'en', opt
     tState,
     tCountry,
     tAddress1,
-  ] = await Promise.all([
-    translateTextSafe(seller.name, targetLang, sourceLang, options),
-    translateTextSafe(seller.company_name, targetLang, sourceLang, options),
-    translateTextSafe(seller.business_name, targetLang, sourceLang, options),
-    translateTextSafe(seller.business_type, targetLang, sourceLang, options),
-    translateTextSafe(seller.industry, targetLang, sourceLang, options),
-    translateTextSafe(seller.business_description || seller.description, targetLang, sourceLang, options),
-    translateTextSafe(seller.city || seller.address?.city, targetLang, sourceLang, options),
-    translateTextSafe(seller.state || seller.address?.state, targetLang, sourceLang, options),
-    translateTextSafe(seller.country || seller.address?.country, targetLang, sourceLang, options),
-    translateTextSafe(seller.address_line_1 || seller.address?.address_line_1, targetLang, sourceLang, options),
-  ]);
+  ] = await translateBatchTextSafe(rawFields, targetLang, sourceLang, options);
 
   return {
     ...seller,
@@ -1417,6 +1539,7 @@ module.exports = {
   clearTranslationCache,
   translateSingleText,
   translateTextSafe,
+  translateBatchTextSafe,
   translateProduct,
   translateFullProductDetail,
   translateProductListItem,
