@@ -8,5 +8,18 @@ const { LANGUAGE_CODES } = require('../../constants');
 // ==========================================
 
 exports.seed = async function (knex) {
-  // Disabled as per configuration - only admin user seed should run
+  const languages = [
+    { id: 1, code: LANGUAGE_CODES.ENGLISH, name: 'English', is_active: true },
+    { id: 2, code: LANGUAGE_CODES.HINDI, name: 'Hindi', is_active: true },
+    { id: 3, code: LANGUAGE_CODES.GUJARATI, name: 'Gujarati', is_active: true },
+  ];
+
+  for (const lang of languages) {
+    const existing = await knex('languages').where({ code: lang.code }).first();
+    if (existing) {
+      await knex('languages').where({ id: existing.id }).update({ name: lang.name, is_active: lang.is_active });
+    } else {
+      await knex('languages').insert(lang);
+    }
+  }
 };
