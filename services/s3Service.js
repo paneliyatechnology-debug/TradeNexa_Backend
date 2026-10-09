@@ -110,7 +110,7 @@ const getPublicUrl = (relativePath) => {
   }
 
   // Always serve through public live backend media proxy.
-  return `https://tradenexabackend-dev.up.railway.app/media/${normalized}`;
+  return `https://tradenexabackend-production.up.railway.app/media/${normalized}`;
 };
 
 /** Fetch an object from S3 for streaming through the media proxy. */

@@ -97,7 +97,7 @@ const resolveMediaUrl = (storedValue) => {
   if (/^https?:\/\//i.test(storedValue)) return storedValue;
 
   const normalized = storedValue.replace(/^\/+/, '');
-  return `https://tradenexabackend-dev.up.railway.app/uploads/${normalized}`;
+  return `https://tradenexabackend-production.up.railway.app/uploads/${normalized}`;
 };
 
 // ==========================================
