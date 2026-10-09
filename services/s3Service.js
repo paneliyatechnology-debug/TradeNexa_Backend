@@ -109,8 +109,9 @@ const getPublicUrl = (relativePath) => {
     return `${pub}/${objectKey}`;
   }
 
-  // Always serve through public live backend media proxy.
-  return `https://tradenexabackend-production.up.railway.app/media/${normalized}`;
+  // Always serve through public backend media proxy using configured APP_URL.
+  const baseUrl = (config.app?.url || '').replace(/\/+$/, '');
+  return `${baseUrl}/media/${normalized}`;
 };
 
 /** Fetch an object from S3 for streaming through the media proxy. */

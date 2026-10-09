@@ -76,7 +76,7 @@ const normalizeBaseUrl = (url) => {
   let clean = String(url).trim().replace(/\/+$/, '');
   if (!clean) return '';
   if (!/^https?:\/\//i.test(clean)) {
-    clean = `https://${clean}`;
+    clean = /^(localhost|127\.0\.0\.1)/i.test(clean) ? `http://${clean}` : `https://${clean}`;
   }
   return clean;
 };
@@ -97,7 +97,8 @@ const resolveMediaUrl = (storedValue) => {
   if (/^https?:\/\//i.test(storedValue)) return storedValue;
 
   const normalized = storedValue.replace(/^\/+/, '');
-  return `https://tradenexabackend-production.up.railway.app/uploads/${normalized}`;
+  const baseUrl = normalizeBaseUrl(config.app?.url);
+  return `${baseUrl}/uploads/${normalized}`;
 };
 
 // ==========================================
