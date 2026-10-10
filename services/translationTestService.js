@@ -710,17 +710,30 @@ const translateFullProductDetail = async (product, targetLang, sourceLang = 'en'
   }
 
   // Translate specifications
-  let translatedSpecifications = product.specifications || [];
-  if (Array.isArray(product.specifications) && product.specifications.length > 0) {
-    translatedSpecifications = await Promise.all(
-      product.specifications.map(async (spec) => ({
-        ...spec,
-        original_key: spec.key,
-        original_value: spec.value,
-        key: await translateTextSafe(spec.key, targetLang, sourceLang, options),
-        value: await translateTextSafe(spec.value, targetLang, sourceLang, options),
-      }))
-    );
+  let translatedSpecifications = null;
+  if (product.specifications) {
+    if (Array.isArray(product.specifications) && product.specifications.length > 0) {
+      translatedSpecifications = await Promise.all(
+        product.specifications.map(async (spec) => ({
+          ...spec,
+          original_key: spec.key,
+          original_value: spec.value,
+          key: await translateTextSafe(spec.key, targetLang, sourceLang, options),
+          value: await translateTextSafe(spec.value, targetLang, sourceLang, options),
+        }))
+      );
+    } else if (typeof product.specifications === 'object' && !Array.isArray(product.specifications)) {
+      const entries = Object.entries(product.specifications);
+      if (entries.length > 0) {
+        const translatedEntries = await Promise.all(
+          entries.map(async ([key, value]) => [
+            await translateTextSafe(key, targetLang, sourceLang, options),
+            await translateTextSafe(typeof value === 'string' ? value : String(value), targetLang, sourceLang, options),
+          ])
+        );
+        translatedSpecifications = Object.fromEntries(translatedEntries);
+      }
+    }
   }
 
   return {
@@ -859,17 +872,30 @@ const translateProductListItem = async (product, targetLang, sourceLang = 'en', 
     );
   }
 
-  let translatedSpecifications = product.specifications || [];
-  if (Array.isArray(product.specifications) && product.specifications.length > 0) {
-    translatedSpecifications = await Promise.all(
-      product.specifications.map(async (spec) => ({
-        ...spec,
-        original_key: spec.key,
-        original_value: spec.value,
-        key: await translateTextSafe(spec.key, targetLang, sourceLang, options),
-        value: await translateTextSafe(spec.value, targetLang, sourceLang, options),
-      }))
-    );
+  let translatedSpecifications = null;
+  if (product.specifications) {
+    if (Array.isArray(product.specifications) && product.specifications.length > 0) {
+      translatedSpecifications = await Promise.all(
+        product.specifications.map(async (spec) => ({
+          ...spec,
+          original_key: spec.key,
+          original_value: spec.value,
+          key: await translateTextSafe(spec.key, targetLang, sourceLang, options),
+          value: await translateTextSafe(spec.value, targetLang, sourceLang, options),
+        }))
+      );
+    } else if (typeof product.specifications === 'object' && !Array.isArray(product.specifications)) {
+      const entries = Object.entries(product.specifications);
+      if (entries.length > 0) {
+        const translatedEntries = await Promise.all(
+          entries.map(async ([key, value]) => [
+            await translateTextSafe(key, targetLang, sourceLang, options),
+            await translateTextSafe(typeof value === 'string' ? value : String(value), targetLang, sourceLang, options),
+          ])
+        );
+        translatedSpecifications = Object.fromEntries(translatedEntries);
+      }
+    }
   }
 
   return {

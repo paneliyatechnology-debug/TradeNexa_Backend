@@ -44,6 +44,19 @@ const formatSearchTags = (value) => {
   return [];
 };
 
+/** Parse specifications for API responses; returns object/data if non-empty, otherwise null. */
+const formatSpecifications = (value) => {
+  const parsed = parseStoredJson(value, null);
+  if (!parsed) return null;
+  if (Array.isArray(parsed)) {
+    return parsed.length > 0 ? parsed : null;
+  }
+  if (typeof parsed === 'object') {
+    return Object.keys(parsed).length > 0 ? parsed : null;
+  }
+  return null;
+};
+
 /** Strip raw seller address columns after formatting nested `address` object. */
 const SELLER_ADDRESS_ROW_KEYS = [
   'address_line_1',
@@ -138,7 +151,7 @@ const formatRow = (row) => {
     accept_inquiry:
       row.accept_inquiry !== undefined && row.accept_inquiry !== null ? !!row.accept_inquiry : null,
     search_tags: formatSearchTags(row.search_tags),
-    specifications: parseStoredJson(row.specifications, []),
+    specifications: formatSpecifications(row.specifications),
     category_id: row.category_id ?? null,
     subcategory_id: row.subcategory_id ?? null,
     is_wishlist: row.is_wishlist !== undefined ? !!row.is_wishlist : false,
@@ -282,7 +295,7 @@ const formatProductDetail = (row, images = [], videos = []) => {
     reviews: [],
     warranty: row.warranty ?? null,
     search_tags: formatSearchTags(row.search_tags),
-    specifications: parseStoredJson(row.specifications, []),
+    specifications: formatSpecifications(row.specifications),
     created_at: row.created_at ?? null,
     updated_at: row.updated_at ?? null,
   };
@@ -727,7 +740,7 @@ const buildProductPayload = (data, { forCreate = false } = {}) => {
   assign('hsn_code');
   assign('gst_percentage');
   assign('search_tags');
-  assign('specifications');
+  assign('specifications', (v) => (v === '' ? null : (v ?? null)));
   assign('is_trending', (v) => !!v);
   assign('show_price', (v) => !!v);
   assign('accept_inquiry', (v) => !!v);
@@ -846,6 +859,7 @@ const deleteProduct = async (id, userId = null) => {
 module.exports = {
   formatRow,
   formatProductDetail,
+  formatSpecifications,
   findProductById,
   findProductDetailById,
   findProductImages,

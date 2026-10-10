@@ -40,12 +40,13 @@ const parseNumber = (value, parser = Number) => {
 
 /** Store specifications as a JSON string for MySQL JSON columns (knex/mysql2). */
 const parseSpecificationsForStorage = (value) => {
-  if (value === undefined || value === null || value === '') return undefined;
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
 
   let parsed = value;
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    if (!trimmed) return undefined;
+    if (!trimmed) return null;
     try {
       parsed = JSON.parse(trimmed);
     } catch {
@@ -55,6 +56,13 @@ const parseSpecificationsForStorage = (value) => {
 
   if (typeof parsed !== 'object' || parsed === null) {
     throw new Error('specifications must be a JSON object or array');
+  }
+
+  if (Array.isArray(parsed)) {
+    return parsed.length > 0 ? JSON.stringify(parsed) : null;
+  }
+  if (Object.keys(parsed).length === 0) {
+    return null;
   }
 
   return JSON.stringify(parsed);

@@ -816,13 +816,11 @@ MODULE 06: PRODUCTS & CATALOG (/products)
     - name                 : (String, 2-200 chars) [Required]
     - category_id          : (Integer) [Required]
     - subcategory_id       : (Integer) [Required]
-    - brand_id             : (Integer) [Required]
     - short_description    : (String, 10-500 chars) [Required]
     - price                : (Float, e.g. 180.00) [Required]
     - currency             : (String, e.g. "INR") [Required]
     - moq                  : (Integer, min: 1, e.g. 100) [Required]
     - unit                 : (String, e.g. "Meter", "Pieces", "Kg") [Required]
-    - material             : (String, max 150 chars) [Required]
     - country_of_origin    : (String, e.g. "India") [Required]
     - product_condition    : ("new" | "used" | "refurbished") [Required]
     - stock_status         : ("in_stock" | "out_of_stock" | "made_to_order") [Required]
@@ -831,6 +829,9 @@ MODULE 06: PRODUCTS & CATALOG (/products)
     - is_active            : ("true" | "false") [Required]
 
   • Optional Text Fields:
+    - brand_id             : (Integer) [Optional]
+    - brand_name           : (String, max 100 chars) [Optional]
+    - material             : (String, max 150 chars) [Optional]
     - description          : (String, max 5000 chars) Full rich description
     - warranty             : (String, max 100 chars)
     - stock_quantity       : (Integer, min: 0)

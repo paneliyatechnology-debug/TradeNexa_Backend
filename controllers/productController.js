@@ -83,7 +83,7 @@ const PRODUCT_EXTENDED_FIELD_DEFAULTS = {
   show_price: null,
   accept_inquiry: null,
   search_tags: [],
-  specifications: [],
+  specifications: null,
   approval_status: null,
   review_version: null,
   submitted_at: null,
@@ -111,7 +111,9 @@ const withExtendedProductFields = (product = {}) => ({
   show_price: product.show_price ?? null,
   accept_inquiry: product.accept_inquiry ?? null,
   search_tags: Array.isArray(product.search_tags) ? product.search_tags : [],
-  specifications: Array.isArray(product.specifications) ? product.specifications : [],
+  specifications: productModel.formatSpecifications
+    ? productModel.formatSpecifications(product.specifications)
+    : (product.specifications ?? null),
   approval_status: product.approval_status ?? null,
   review_version: product.review_version ?? null,
   submitted_at: product.submitted_at ?? null,
