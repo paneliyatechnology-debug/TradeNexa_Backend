@@ -715,10 +715,10 @@ const buildProductPayload = (data, { forCreate = false } = {}) => {
   assign('seller_id');
   assign('category_id');
   assign('subcategory_id');
-  assign('brand_id');
+  assign('brand_id', (v) => (v === 0 ? null : (v ?? null)));
   assign('short_description');
   assign('description');
-  assign('material');
+  assign('material', (v) => (typeof v === 'string' && !v.trim() ? null : (v ?? null)));
   assign('country_of_origin');
   assign('product_condition');
   assign('stock_status');

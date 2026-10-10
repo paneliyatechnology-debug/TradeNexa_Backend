@@ -369,7 +369,7 @@ const productCreateRules = [
   body('currency').trim().notEmpty().withMessage('Currency is required').isLength({ max: 10 }).withMessage('Currency code too long'),
   body('moq').isInt({ min: 1 }).withMessage('MOQ is required and must be at least 1'),
   body('unit').trim().notEmpty().withMessage('Unit is required').isLength({ max: 50 }).withMessage('Unit string too long'),
-  body('material').trim().notEmpty().withMessage('Material is required').isLength({ max: 150 }).withMessage('Material must be at most 150 chars'),
+  body('material').optional({ values: 'falsy' }).trim().isLength({ max: 150 }).withMessage('Material must be at most 150 chars'),
   body('country_of_origin').trim().notEmpty().withMessage('Country of origin is required').isLength({ max: 100 }).withMessage('Country of origin too long'),
   body('product_condition')
     .trim()
@@ -421,7 +421,8 @@ const productUpdateRules = [
   optionalRequiredText('name', 'Product name', 2, 200),
   optionalRequiredInt('category_id', 'Category ID', { min: 1 }),
   optionalRequiredInt('subcategory_id', 'Subcategory ID', { min: 1 }),
-  optionalRequiredInt('brand_id', 'Brand ID', { min: 1 }),
+  body('brand_id').optional({ values: 'falsy' }).isInt({ min: 1 }).withMessage('Brand ID must be a positive integer'),
+  body('brand_name').optional().trim().isLength({ max: 100 }).withMessage('Brand name must be at most 100 chars'),
   optionalRequiredText('short_description', 'Short description', 10, 500),
   blockedUploadField('thumbnail', 'Main image'),
   blockedOptionalUploadField('image', 'Product image'),
@@ -430,7 +431,7 @@ const productUpdateRules = [
   body('currency').optional().trim().isLength({ max: 10 }).withMessage('Currency code too long'),
   body('moq').optional().isInt({ min: 1 }).withMessage('MOQ must be at least 1'),
   body('unit').optional().trim().isLength({ max: 50 }).withMessage('Unit string too long'),
-  body('material').optional().trim().isLength({ max: 150 }).withMessage('Material must be at most 150 chars'),
+  body('material').optional({ values: 'falsy' }).trim().isLength({ max: 150 }).withMessage('Material must be at most 150 chars'),
   body('country_of_origin').optional().trim().isLength({ max: 100 }).withMessage('Country of origin too long'),
   body('product_condition')
     .optional({ values: 'falsy' })

@@ -89,7 +89,7 @@ const parseProductBody = (body = {}) => {
     seller_id: parseNumber(clean.seller_id, (v) => parseInt(v, 10)),
     category_id: parseNumber(clean.category_id, (v) => parseInt(v, 10)),
     subcategory_id: parseNumber(clean.subcategory_id, (v) => parseInt(v, 10)),
-    brand_id: parseNumber(clean.brand_id, (v) => parseInt(v, 10)),
+    brand_id: clean.brand_id === null ? null : parseNumber(clean.brand_id, (v) => parseInt(v, 10)),
     stock_quantity: parseNumber(clean.stock_quantity, (v) => parseInt(v, 10)),
     gst_percentage: parseNumber(clean.gst_percentage, parseFloat),
     is_trending: parseBoolean(clean.is_trending),
@@ -194,6 +194,9 @@ const createProduct = async (data, files = {}, userId = null, actorRole = 'selle
       }
     }
   }
+  if (!payload.brand_id || payload.brand_id === 0) {
+    payload.brand_id = null;
+  }
 
   const product = await productModel.createProduct(payload, userId);
   await applyCreateThumbnail(product.id, files);
@@ -234,6 +237,9 @@ const updateProduct = async (id, data, files = {}, userId = null, actorRole = 's
         payload.brand_id = resolvedBrandId;
       }
     }
+  }
+  if (payload.brand_id === 0) {
+    payload.brand_id = null;
   }
 
   const existing = await productModel.findProductById(id, { raw: true });
