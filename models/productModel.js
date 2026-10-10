@@ -190,9 +190,7 @@ const formatSellerDetail = (row) => ({
   contact: {
     show_phone: null,
     show_email: null,
-    phone: row?.seller_phone ?? null,
     whatsapp: null,
-    email: row?.seller_email ?? null,
     website: null,
   },
   address: formatAddressResponse(row),
@@ -410,8 +408,6 @@ const findProductDetailById = async (id) => {
       'company_details.company_logo',
       'company_details.years_in_business',
       'company_details.rating as seller_rating',
-      'sellers.mobile_number as seller_phone',
-      'sellers.email as seller_email',
       'categories.name as category_name',
       'subcategories.name as subcategory_name',
       'brands.name as brand_name',
