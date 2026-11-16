@@ -1534,14 +1534,14 @@ MODULE 16: DASHBOARD ANALYTICS (/dashboard)
 
 
 ====================================================================================================
-MODULE 17: MEDIA & FILE STREAMING (/media, /uploads)
+MODULE 17: MEDIA & FILE STREAMING (/uploads, /media)
 ====================================================================================================
 
-All files stored on private storage/S3 or local uploads can be retrieved via:
-- GET /media/:key   (e.g., https://tradenexabackend-dev.up.railway.app/media/products/15/thumb.jpg)
-- GET /uploads/:key (e.g., https://tradenexabackend-dev.up.railway.app/uploads/profiles/1/avatar.png)
+All files stored locally in the uploads folder can be retrieved via:
+- GET /uploads/:path (e.g., https://tradenexabackend-dev.up.railway.app/uploads/products/15/thumb.jpg)
+- GET /media/:path   (backward-compatible alias, e.g., https://tradenexabackend-dev.up.railway.app/media/products/15/thumb.jpg)
 
-Both endpoints automatically stream the requested image/document with correct Content-Type header.
+Both endpoints automatically serve the requested image/video/document with proper caching and Content-Type headers.
 
 ====================================================================================================
 DOCUMENTATION END

@@ -2,7 +2,6 @@ const multer = require('multer');
 const path = require('path');
 const { AppError } = require('../utils/response');
 const uploadConfig = require('../config/upload');
-const s3Service = require('./s3Service');
 const {
   buildStoredFileName,
   assignStoredFileNames,
@@ -104,12 +103,11 @@ const createChatFileFilter = () => (req, file, cb) => {
   cb(null, true);
 };
 
-const buildMulterStorage = (getDestination) => {
-  if (s3Service.isEnabled()) {
-    return multer.memoryStorage();
-  }
-
-  return multer.diskStorage({
+/**
+ * Configure multer disk storage targeting local upload directory.
+ */
+const buildMulterStorage = (getDestination) =>
+  multer.diskStorage({
     destination: (req, _file, cb) => {
       try {
         const dir = getDestination(req);
@@ -123,7 +121,6 @@ const buildMulterStorage = (getDestination) => {
       cb(null, buildStoredFileName(file.fieldname, file.originalname));
     },
   });
-};
 
 // ==========================================
 // Public API
@@ -131,7 +128,7 @@ const buildMulterStorage = (getDestination) => {
 
 /**
  * Create reusable multer middleware for one or more file fields.
- * Files are stored in S3 when configured; otherwise saved to local uploads/.
+ * Files are stored on local disk under uploads/.
  *
  * @param {{ fields: Array, getDestination: Function, maxFileSize?: number, fileFilter?: Function }} options
  * @returns {Function} Express middleware
@@ -151,9 +148,7 @@ const createUploadMiddleware = ({
   return (req, res, next) => {
     upload.fields(fields)(req, res, (err) => {
       if (err) return next(formatMulterError(err));
-      if (s3Service.isEnabled()) {
-        assignStoredFileNames(req.files);
-      }
+      assignStoredFileNames(req.files);
       return next();
     });
   };
@@ -161,7 +156,7 @@ const createUploadMiddleware = ({
 
 /**
  * Process uploaded files and return stored path updates.
- * Uploads to S3 (or local disk) at pathSegments.
+ * Saves to local uploads/ at pathSegments.
  *
  * @param {{ files: Object, fields: string[], pathSegments: string[], existing?: Object, mode?: 'direct'|'inbox' }} options
  * @returns {Promise<Object>} Map of field name → relative stored path

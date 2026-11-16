@@ -30,6 +30,8 @@ pids
 # Application Uploads & Runtime Assets
 uploads/*
 !uploads/.gitkeep
+upload/*
+!upload/.gitkeep
 
 # Local dev scripts (not part of the application)
 scratch/

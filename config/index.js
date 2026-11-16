@@ -3,15 +3,20 @@
  */
 require('dotenv').config();
 
-const env = (process.env.APP_ENV || process.env.NODE_ENV || 'development').toLowerCase();
 const port = parseInt(process.env.PORT, 10) || 3000;
 
 /**
- * Determine application base URL based on APP_URL env or environment type (local, dev, production).
+ * Determine backend application URL directly from BACKEND_URL (or FRONTEND_URL fallback).
+ * Falls back to http://localhost:{port} only if no environment variable is provided.
  */
 const resolveAppUrl = () => {
-  if (process.env.APP_URL) {
-    let clean = String(process.env.APP_URL).trim().replace(/\/+$/, '');
+  const envUrl =
+    process.env.BACKEND_URL ||
+    process.env.APP_URL ||
+    process.env.BASE_URL ||
+    process.env.FRONTEND_URL;
+  if (envUrl) {
+    let clean = String(envUrl).trim().replace(/\/+$/, '');
     if (clean) {
       if (!/^https?:\/\//i.test(clean)) {
         clean = /^(localhost|127\.0\.0\.1)/i.test(clean) ? `http://${clean}` : `https://${clean}`;
@@ -20,18 +25,7 @@ const resolveAppUrl = () => {
     }
   }
 
-  switch (env) {
-    case 'production':
-    case 'prod':
-      return 'https://tradenexabackend-production.up.railway.app';
-    case 'staging':
-    case 'dev':
-    case 'development':
-      return 'https://tradenexabackend-dev.up.railway.app';
-    case 'local':
-    default:
-      return `http://localhost:${port}`;
-  }
+  return `http://localhost:${port}`;
 };
 
 const appUrl = resolveAppUrl();
@@ -46,6 +40,8 @@ module.exports = {
   app: {
     name: process.env.APP_NAME || 'TradeNexa',
     url: appUrl,
+    backendUrl: appUrl,
+    baseUrl: appUrl,
   },
   /** Web / deep-link targets for push notification click actions. */
   frontend: {

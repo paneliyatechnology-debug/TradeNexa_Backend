@@ -10,7 +10,6 @@ const compression = require('compression');
 const morgan = require('morgan');
 const config = require('./config');
 const uploadConfig = require('./config/upload');
-const s3Service = require('./services/s3Service');
 const routers = require('./routers');
 const mediaRouter = require('./routers/mediaRouter');
 const errorHandler = require('./middleware/errorHandler');
@@ -26,7 +25,7 @@ firebase.init();
 const app = express();
 
 // Railway / reverse proxies — required so rate limits use the real client IP
-// (without this, all users share one bucket and hit 429 Too Many Requests).
+// (without this, all users share one rate limit counter and hit 429 Too Many Requests).
 app.set('trust proxy', 1);
 
 // ==========================================
@@ -124,13 +123,18 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ==========================================
-// Media proxy (private S3 bucket) & static files
+// Static files & Media serving (local uploads)
 // ==========================================
 
-app.use('/media', mediaRouter);
-app.use(uploadConfig.publicPath, mediaRouter);
-app.use('/api/media', mediaRouter);
-app.use('/api/uploads', mediaRouter);
+const staticOptions = {
+  maxAge: '1d',
+  dotfiles: 'deny',
+};
+
+app.use(uploadConfig.publicPath, express.static(uploadConfig.rootDir, staticOptions), mediaRouter);
+app.use('/media', express.static(uploadConfig.rootDir, staticOptions), mediaRouter);
+app.use('/api/uploads', express.static(uploadConfig.rootDir, staticOptions), mediaRouter);
+app.use('/api/media', express.static(uploadConfig.rootDir, staticOptions), mediaRouter);
 
 app.get('/health', (_req, res) => {
   res.json({ success: true, message: 'Server is running' });

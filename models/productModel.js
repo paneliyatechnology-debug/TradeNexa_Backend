@@ -518,7 +518,7 @@ const findProductVideoById = (productId, videoId) =>
     .first();
 
 /**
- * Delete a gallery image from DB and storage (S3 or local).
+ * Delete a gallery image from DB and local storage.
  * Promotes the next image to primary when the deleted one was primary.
  */
 const deleteProductImage = async (productId, imageId) => {
@@ -542,7 +542,7 @@ const deleteProductImage = async (productId, imageId) => {
   return image;
 };
 
-/** Delete a video from DB and storage (S3 or local). */
+/** Delete a video from DB and local storage. */
 const deleteProductVideo = async (productId, videoId) => {
   const video = await findProductVideoById(productId, videoId);
   if (!video) return null;

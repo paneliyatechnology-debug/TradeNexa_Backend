@@ -279,7 +279,7 @@ const updateProduct = async (id, data, files = {}, userId = null, actorRole = 's
 };
 
 /**
- * Delete gallery images and/or videos from a product (DB + S3/local storage).
+ * Delete gallery images and/or videos from a product (DB + local storage).
  */
 const deleteProductMedia = async (productId, { imageIds = [], videoIds = [] } = {}) => {
   const deletedImages = [];

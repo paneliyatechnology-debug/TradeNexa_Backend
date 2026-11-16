@@ -1,12 +1,10 @@
 /**
- * Shared media/file path utilities.
- * Local disk fallback when S3 is not configured; S3 when Railway bucket env vars are set.
+ * Shared media/file path utilities for local disk storage under uploads/.
  */
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 const uploadConfig = require('../config/upload');
-const s3Service = require('../services/s3Service');
 
 // ==========================================
 // Constants
@@ -33,7 +31,7 @@ const IMAGE_FIELD_LABELS = {
  * Example: 1730284732123456.jpg
  */
 const buildStoredFileName = (fieldName, originalName) => {
-  const ext = path.extname(originalName).toLowerCase();
+  const ext = path.extname(originalName || '').toLowerCase();
   const timestamp = Date.now();
   const unique = Math.floor(Math.random() * 1000)
     .toString()
@@ -41,9 +39,10 @@ const buildStoredFileName = (fieldName, originalName) => {
   return `${timestamp}${unique}${ext}`;
 };
 
-/** Assign generated filenames to in-memory multer files. */
+/** Assign generated filenames to in-memory or disk multer files. */
 const assignStoredFileNames = (files = {}) => {
   Object.values(files).forEach((fieldFiles) => {
+    if (!Array.isArray(fieldFiles)) return;
     fieldFiles.forEach((file) => {
       if (!file.filename) {
         file.filename = buildStoredFileName(file.fieldname, file.originalname);
@@ -54,10 +53,12 @@ const assignStoredFileNames = (files = {}) => {
 
 /** Create directory recursively if it does not exist. */
 const ensureDir = (dir) => {
-  fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 };
 
-/** Absolute filesystem path under uploads/ (local dev fallback). */
+/** Absolute filesystem path under uploads/ directory. */
 const getAbsoluteUploadDir = (...segments) =>
   path.join(uploadConfig.rootDir, ...segments.map(String));
 
@@ -68,7 +69,7 @@ const buildRelativeStoredPath = (...segments) => segments.map(String).join('/');
 const getMulterFile = (files, field) => files?.[field]?.[0] || null;
 
 // ==========================================
-// URL resolution
+// URL resolution & Path Normalization
 // ==========================================
 
 const normalizeBaseUrl = (url) => {
@@ -82,46 +83,110 @@ const normalizeBaseUrl = (url) => {
 };
 
 /**
- * Convert a stored relative path to a public URL.
- * S3: returns APP_URL/media/... proxy URL (Railway buckets are private).
+ * Extract clean relative path from any stored value (URL, relative path, or legacy S3 key).
+ * Returns true external third-party URLs as-is.
+ * @param {string} storedValue
+ * @returns {string|null}
+ */
+const extractRelativePath = (storedValue) => {
+  if (!storedValue) return null;
+  let str = String(storedValue).trim();
+  if (!str) return null;
+
+  if (/^https?:\/\//i.test(str)) {
+    try {
+      const parsed = new URL(str);
+      const pathname = parsed.pathname;
+
+      // Matches /media/..., /uploads/..., /api/media/..., /api/uploads/...
+      const mediaMatch = pathname.match(/^\/(?:media|uploads|api\/media|api\/uploads)\/(.+)$/i);
+      if (mediaMatch) {
+        str = mediaMatch[1];
+      } else {
+        const parts = pathname.replace(/^\/+/, '').split('/');
+        if (parts[0] === 'tradenexa' || parts[1] === 'tradenexa') {
+          const idx = parts.indexOf('tradenexa');
+          str = parts.slice(idx + 1).join('/');
+        } else if (
+          parsed.hostname.includes('storageapi.dev') ||
+          parsed.hostname.includes('amazonaws.com') ||
+          parsed.hostname.includes('railway.app') ||
+          parsed.hostname.includes('tradenexa.co') ||
+          parsed.hostname.includes('localhost') ||
+          parsed.hostname.includes('127.0.0.1')
+        ) {
+          // Internal host: strip bucket name if it was first path segment
+          str = parts.join('/');
+        } else {
+          // True external URL (e.g. Google profile picture, external CDN)
+          return str;
+        }
+      }
+    } catch {
+      /* ignore URL parsing failure */
+    }
+  }
+
+  // Strip leading slashes/backslashes and normalize separators
+  str = str.replace(/^[/\\]+/, '').replace(/\\/g, '/');
+  // Strip redundant prefix folders like tradenexa/ or uploads/
+  str = str.replace(/^(?:tradenexa\/|uploads\/)+/i, '');
+
+  return str || null;
+};
+
+/**
+ * Convert a stored relative path or legacy URL to a clean, professional public URL:
+ * Format: {BACKEND_URL}/uploads/{relativePath}
+ * @param {string} storedValue
+ * @returns {string|null}
  */
 const resolveMediaUrl = (storedValue) => {
   if (!storedValue) return null;
 
-  if (s3Service.isEnabled()) {
-    const relativePath = s3Service.normalizeStoredPath(storedValue);
-    if (!relativePath) return storedValue;
-    return s3Service.getPublicUrl(relativePath);
+  const relativePath = extractRelativePath(storedValue);
+  if (!relativePath) return null;
+
+  // External CDN / third-party URLs returned untouched
+  if (/^https?:\/\//i.test(relativePath)) {
+    return relativePath;
   }
 
-  if (/^https?:\/\//i.test(storedValue)) return storedValue;
-
-  const normalized = storedValue.replace(/^\/+/, '');
-  const baseUrl = normalizeBaseUrl(config.app?.url);
-  return `${baseUrl}/uploads/${normalized}`;
+  const backendUrl = normalizeBaseUrl(config.app?.backendUrl || config.app?.baseUrl || config.app?.url);
+  return `${backendUrl}/uploads/${relativePath}`;
 };
 
 // ==========================================
-// Storage operations
+// Storage operations (Local Disk)
 // ==========================================
 
-/** Persist file buffer or disk file to storage (S3 or local). */
+/**
+ * Persist uploaded file (buffer or disk file) into local uploads/{relativePath}.
+ * Moves files out of temporary inbox directories into their final destination.
+ * @param {string} relativePath
+ * @param {Object} file - Multer file object
+ * @returns {Promise<string>} relativePath
+ */
 const persistFile = async (relativePath, file) => {
-  if (s3Service.isEnabled()) {
-    if (!file?.buffer) {
-      throw new Error('File buffer is required for S3 upload');
-    }
-    return s3Service.uploadBuffer(relativePath, file.buffer, file.mimetype);
-  }
-
-  const destPath = path.join(uploadConfig.rootDir, relativePath);
+  const destPath = path.resolve(uploadConfig.rootDir, relativePath);
   ensureDir(path.dirname(destPath));
 
   if (file.buffer) {
     await fs.promises.writeFile(destPath, file.buffer);
   } else if (file.path) {
-    if (file.path !== destPath) {
-      await fs.promises.rename(file.path, destPath);
+    const sourcePath = path.resolve(file.path);
+    if (sourcePath !== destPath) {
+      try {
+        await fs.promises.rename(sourcePath, destPath);
+      } catch (err) {
+        if (err.code === 'EXDEV') {
+          await fs.promises.copyFile(sourcePath, destPath);
+          await fs.promises.unlink(sourcePath);
+        } else {
+          throw err;
+        }
+      }
+      file.path = destPath;
     }
   } else {
     throw new Error('No file data available to persist');
@@ -130,31 +195,36 @@ const persistFile = async (relativePath, file) => {
   return relativePath;
 };
 
-/** Delete a previously stored file (S3 or local disk). */
+/**
+ * Delete a previously stored file from local disk.
+ * @param {string} storedValue - DB path or URL
+ */
 const deleteStoredFile = async (storedValue) => {
-  if (!storedValue || /^https?:\/\//i.test(storedValue)) {
-    if (storedValue && s3Service.isEnabled()) {
-      await s3Service.deleteObject(storedValue);
-    }
-    return;
-  }
+  if (!storedValue) return;
 
-  if (s3Service.isEnabled()) {
-    await s3Service.deleteObject(storedValue);
-    return;
-  }
+  const relativePath = extractRelativePath(storedValue);
+  if (!relativePath || /^https?:\/\//i.test(relativePath)) return;
 
-  const filePath = path.join(uploadConfig.rootDir, storedValue);
+  const filePath = path.resolve(uploadConfig.rootDir, relativePath);
   try {
-    await fs.promises.unlink(filePath);
+    if (fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath);
+      console.log(`🗑️ [MEDIA DELETE SUCCESS] Deleted local file: ${relativePath}`);
+    }
   } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
+    if (err.code !== 'ENOENT') {
+      console.error(`⚠️ [MEDIA DELETE ERROR] Could not delete ${relativePath}:`, err.message);
+    }
   }
 };
 
 /**
  * Upload a single field file to the destination path (create or update).
- * @returns {Promise<string|null>}
+ * @param {Object} files - Multer req.files
+ * @param {string} field - Field name
+ * @param {string[]} pathSegments - Target folder segments under uploads/
+ * @param {string|null} [existingStoredPath=null] - Previous file path to clean up
+ * @returns {Promise<string|null>} Relative path saved in DB
  */
 const storeUploadedFile = async (files, field, pathSegments, existingStoredPath = null) => {
   const file = getMulterFile(files, field);
@@ -173,7 +243,13 @@ const storeUploadedFile = async (files, field, pathSegments, existingStoredPath 
   return relativePath;
 };
 
-/** Upload multiple files for one field. */
+/**
+ * Upload multiple files for one field.
+ * @param {Object} files - Multer req.files
+ * @param {string} field - Field name
+ * @param {string[]} pathSegments - Target folder segments under uploads/
+ * @returns {Promise<string[]>} Array of relative paths
+ */
 const storeMultipleUploadedFiles = async (files, field, pathSegments) => {
   const fileList = files?.[field] || [];
   if (!fileList.length) return [];
@@ -190,11 +266,11 @@ const storeMultipleUploadedFiles = async (files, field, pathSegments) => {
   return paths;
 };
 
-/** @deprecated Use storeUploadedFile — kept for uploadService compatibility. */
+/** @deprecated Use storeUploadedFile — kept for backward compatibility. */
 const replaceUploadedFile = async (files, field, pathSegments, existingStoredPath) =>
   storeUploadedFile(files, field, pathSegments, existingStoredPath);
 
-/** @deprecated Use storeUploadedFile — inbox flow uploads directly to final path. */
+/** @deprecated Use storeUploadedFile — inbox flow moves directly to final path. */
 const finalizeInboxUpload = async (files, field, destSegments) =>
   storeUploadedFile(files, field, destSegments);
 
@@ -221,6 +297,8 @@ module.exports = {
   getAbsoluteUploadDir,
   buildRelativeStoredPath,
   getUploadedRelativePath,
+  extractRelativePath,
+  normalizeStoredPath: extractRelativePath,
   resolveMediaUrl,
   deleteStoredFile,
   persistFile,

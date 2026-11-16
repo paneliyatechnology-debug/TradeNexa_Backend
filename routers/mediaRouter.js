@@ -1,5 +1,5 @@
 /**
- * Public media proxy — streams files from private S3 bucket.
+ * Media route handler — serves uploaded files from the local uploads directory.
  */
 const express = require('express');
 const mediaController = require('../controllers/mediaController');
