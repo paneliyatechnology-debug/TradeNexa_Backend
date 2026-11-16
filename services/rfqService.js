@@ -174,14 +174,19 @@ const notifySellersOfNewRfq = async (rfq, buyerId, sellerIds = null) => {
 
 const getBuyerId = (rfq) => rfq.buyer_id;
 
-const mapRfqAddressFields = (data) => ({
-  address_line_1: data.address_line_1 || null,
-  address_line_2: data.address_line_2 || null,
-  city: data.city || data.address_city || null,
-  state: data.state || data.address_state || null,
-  country: data.country || data.address_country || null,
-  pincode: data.pincode || null,
-});
+const mapRfqAddressFields = (data) => {
+  const city = data.address_city || data.city || null;
+  const state = data.address_state || data.state || null;
+  const country = data.address_country || data.country || null;
+  return {
+    address_line_1: data.address_line_1 || null,
+    address_line_2: data.address_line_2 || null,
+    address_city: city,
+    address_state: state,
+    address_country: country,
+    pincode: data.pincode || null,
+  };
+};
 
 const formatRfqAddress = (rfq) => ({
   address_line_1: rfq.address_line_1 || null,
@@ -431,15 +436,22 @@ const updateRfq = async (id, data, actorId, isAdmin = false) => {
       'visibility',
       'address_line_1',
       'address_line_2',
-      'city',
-      'state',
-      'country',
       'pincode',
     ];
 
     fields.forEach((field) => {
       if (data[field] !== undefined) payload[field] = data[field];
     });
+
+    if (data.address_city !== undefined || data.city !== undefined) {
+      payload.address_city = data.address_city !== undefined ? data.address_city : data.city;
+    }
+    if (data.address_state !== undefined || data.state !== undefined) {
+      payload.address_state = data.address_state !== undefined ? data.address_state : data.state;
+    }
+    if (data.address_country !== undefined || data.country !== undefined) {
+      payload.address_country = data.address_country !== undefined ? data.address_country : data.country;
+    }
 
     if (data.expected_price !== undefined || data.budget !== undefined) {
       const price = data.expected_price ?? data.budget;

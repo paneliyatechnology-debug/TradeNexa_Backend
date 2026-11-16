@@ -93,7 +93,7 @@ const baseConversationQuery = () =>
       'ctx_rfq.status as context_rfq_status',
       'ctx_rfq.quotation_deadline as context_rfq_quotation_deadline',
       'ctx_rfq.required_before as context_rfq_required_before',
-      'ctx_rfq.city as context_rfq_city',
+      'ctx_rfq.address_city as context_rfq_city',
       'ctx_rfq.product_id as context_rfq_product_id',
       'ctx_rfq.category_id as context_rfq_category_id',
       'ctx_rfq.subcategory_id as context_rfq_subcategory_id',

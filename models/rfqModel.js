@@ -17,7 +17,7 @@ const RFQ_SORT_FIELDS = {
   budget: 'rfqs.budget',
   quantity: 'rfqs.quantity',
   category: 'categories.name',
-  city: 'rfqs.city',
+  city: 'rfqs.address_city',
 };
 
 const BUYER_COMPANY_SELECT = [
@@ -83,6 +83,9 @@ const formatRow = (row) => {
   if (!row) return null;
   const formatted = {
     ...row,
+    city: row.city ?? row.address_city ?? null,
+    state: row.state ?? row.address_state ?? null,
+    country: row.country ?? row.address_country ?? null,
     expected_price:
       row.expected_price !== undefined && row.expected_price !== null
         ? parseFloat(row.expected_price)
@@ -137,16 +140,16 @@ const applyRfqFilters = (q, filters = {}) => {
         .orWhere('products.name', 'like', term)
         .orWhere('buyers.full_name', 'like', term)
         .orWhere('buyer_company.company_name', 'like', term)
-        .orWhere('rfqs.city', 'like', term);
+        .orWhere('rfqs.address_city', 'like', term);
     });
   }
 
   if (filters.status) q.where('rfqs.status', filters.status);
   if (filters.category_id) q.where('rfqs.category_id', filters.category_id);
   if (filters.subcategory_id) q.where('rfqs.subcategory_id', filters.subcategory_id);
-  if (filters.city) q.where('rfqs.city', 'like', `%${filters.city}%`);
-  if (filters.state) q.where('rfqs.state', 'like', `%${filters.state}%`);
-  if (filters.country) q.where('rfqs.country', 'like', `%${filters.country}%`);
+  if (filters.city) q.where('rfqs.address_city', 'like', `%${filters.city}%`);
+  if (filters.state) q.where('rfqs.address_state', 'like', `%${filters.state}%`);
+  if (filters.country) q.where('rfqs.address_country', 'like', `%${filters.country}%`);
   // Include filter (e.g. GET /rfqs/my, admin filter by buyer)
   if (filters.buyer_id) q.where('rfqs.buyer_id', filters.buyer_id);
   // Exclude filter (public list — hide caller’s own RFQs, same pattern as products.seller_id)
@@ -206,9 +209,9 @@ const findRfqs = async (filters = {}) => {
     'rfqs.quotation_deadline',
     'rfqs.total_quotations',
     'rfqs.created_at',
-    'rfqs.city as city',
-    'rfqs.state as state',
-    'rfqs.country as country',
+    'rfqs.address_city as city',
+    'rfqs.address_state as state',
+    'rfqs.address_country as country',
     'rfqs.unit',
     'categories.name as category',
     ...PRODUCT_LIST_SELECT,
@@ -257,9 +260,9 @@ const findSellerFeed = async (sellerId, filters = {}) => {
       'rfqs.unit',
       'rfqs.quotation_deadline',
       'rfqs.created_at',
-      'rfqs.city as city',
-      'rfqs.state as state',
-      'rfqs.country as country',
+      'rfqs.address_city as city',
+      'rfqs.address_state as state',
+      'rfqs.address_country as country',
       'categories.name as category',
       'invite.status as invite_status',
       ...PRODUCT_LIST_SELECT,
